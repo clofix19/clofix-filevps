@@ -1,0 +1,71 @@
+# Local development stack: db + admin (UI + controller) + worker.
+#   cp .env.example .env && docker compose up --build
+# No enrollment secret lives in this file. Enroll the worker interactively (see README).
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: clofix
+      POSTGRES_USER: clofix
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./admin/db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clofix -d clofix"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  admin:
+    build:
+      context: .
+      dockerfile: admin/Dockerfile
+    environment:
+      CLOFIX_ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in .env (min 16 chars)}
+      CLOFIX_DB_URL: postgres://clofix:${DB_PASSWORD}@db:5432/clofix?sslmode=disable
+      CLOFIX_DATA_DIR: /data
+      CLOFIX_LOG_DIR: /worker-logs/instances
+      CLOFIX_TLS_NAMES: localhost,127.0.0.1,admin
+    ports:
+      - "8080:8080"   # Admin UI + API
+      - "8443:8443"   # Worker API (mTLS)
+    volumes:
+      - ctldata:/data   # CA key and certificates
+      - workerlogs:/worker-logs:ro
+      - ./admin/web:/app/web:ro # local UI changes are served without rebuilding the image
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    build: ./worker
+    restart: unless-stopped
+    # DEV ONLY: fx needs namespaces, cgroups v2, overlayfs and mounts
+    privileged: true
+    cgroup: host
+    environment:
+      CLOFIX_CONFIG_DIR: /etc/clofix-filevps
+      CLOFIX_STATE_DIR: /var/lib/clofix-filevps
+      CLOFIX_LOG_DIR: /var/log/clofix-filevps
+      CLOFIX_USER_NS: "false" # local Docker Desktop only; production keeps user namespaces enabled
+      CLOFIX_ZRAM_MB: ${ZRAM_MB:-0} # set ZRAM_MB in .env on Linux hosts with /dev/zram0
+    volumes:
+      - workerstate:/var/lib/clofix-filevps
+      - workerconfig:/etc/clofix-filevps
+      - workerlogs:/var/log/clofix-filevps
+    ports:
+      - "127.0.0.1:22000-22099:22000-22099" # SSH forwarding for up to 100 local VPSs
+      - "127.0.0.1:23000-23099:23000-23099" # HTTP port 80 for each local VPS
+      - "127.0.0.1:23100-23199:23100-23199" # HTTPS port 443 for each local VPS
+      - "127.0.0.1:24000-24099:24000-24099/tcp" # Manually mapped TCP guest ports
+      - "127.0.0.1:24000-24099:24000-24099/udp" # Manually mapped UDP guest ports
+    depends_on:
+      - admin
+
+volumes:
+  dbdata:
+  ctldata:
+  workerstate:
+  workerconfig:
+  workerlogs:

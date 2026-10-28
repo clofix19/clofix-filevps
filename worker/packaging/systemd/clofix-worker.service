@@ -1,0 +1,18 @@
+[Unit]
+Description=CloFix FileVPS Worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/clofix-worker run
+Restart=on-failure
+RestartSec=5
+# Worker needs root for namespaces, cgroups, mounts, nftables
+User=root
+RuntimeDirectory=clofix-filevps
+StateDirectory=clofix-filevps
+LogsDirectory=clofix-filevps
+ConfigurationDirectory=clofix-filevps
+
+[Install]
+WantedBy=multi-user.target

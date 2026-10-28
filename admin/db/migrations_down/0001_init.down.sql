@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS audit_events, usage_samples, operations, snapshots, network_allocations, instances, resource_profiles, images, object_storage_configs, workers, enrollment_tokens, licenses, users, organizations CASCADE;

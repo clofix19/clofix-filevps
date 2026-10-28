@@ -1,0 +1,7 @@
+{{define "content"}}
+<section class="page active" id="page-services">
+      <div class="section-head"><div><p class="eyebrow">VPS software</p><h2>Service catalog</h2><p>Install common web servers, runtimes, databases, and CMS packages into a running VPS.</p></div></div>
+      <div class="panel"><div class="form-field"><label for="service-vps">Target VPS</label><select id="service-vps"><option value="">Select a VPS</option></select></div><div class="message" id="catalog-message"></div><p class="muted">Installs use Ubuntu APT repositories inside the VPS. Protection Mode must be disabled for that VPS in VPS Details. Package installation uses guest network access and may take several minutes.</p></div>
+      <div class="cards" id="service-catalog"></div>
+    </section>
+{{end}}

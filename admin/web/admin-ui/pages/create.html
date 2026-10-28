@@ -1,0 +1,15 @@
+{{define "content"}}
+<section class="page active" id="page-create">
+      <div class="section-head"><div><h2>Create FileVPS</h2><p>Deploy a Linux VPS on an enrolled worker.</p></div></div>
+      <div class="panel"><div class="form-grid">
+        <div class="form-field"><label for="img">Image</label><input id="img" value="ubuntu" placeholder="image name"></div>
+        <div class="form-field"><label for="ver">Image version</label><input id="ver" value="24.04" placeholder="version"></div>
+        <div class="form-field form-span"><label for="sshkey">SSH public key</label><textarea id="sshkey" required placeholder="Paste ~/.ssh/id_ed25519.pub from your Mac" rows="2"></textarea></div>
+        <div class="form-field"><label for="ram">Memory (MB)</label><input id="ram" type="number" value="512" min="128"></div>
+        <div class="form-field"><label for="cpu">CPU cores</label><input id="cpu" type="number" step="0.25" value="1" min="0.25"></div>
+        <div class="form-field"><label for="disk">Disk (MB)</label><input id="disk" type="number" value="4096" min="512"></div><div class="form-field"><label for="swap">Swap limit (MB)</label><input id="swap" type="number" value="512" min="0"><small class="muted">0 disables swap for this VPS; placement checks worker swap capacity.</small></div>
+        <div class="form-field"><label for="wsel">Worker placement</label><select id="wsel"><option value="">Automatic placement</option></select></div>
+        <details class="form-field form-span"><summary class="muted" style="cursor:pointer">Custom image (optional)</summary><div class="form-grid" style="margin-top:10px"><div class="form-field"><label for="url">Image archive URL</label><input id="url" placeholder="https://…/rootfs.tar.gz"></div><div class="form-field"><label for="sha">SHA-256</label><input id="sha" placeholder="Archive checksum"></div></div></details>
+      </div><div class="inline-fields" style="margin-top:16px"><button class="primary" id="create">Create FileVPS</button><span id="create-message" class="message"></span></div><pre id="placement" class="code"></pre></div>
+    </section>
+{{end}}

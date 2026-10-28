@@ -1,0 +1,14 @@
+CREATE TABLE organizations (id UUID PRIMARY KEY, name TEXT NOT NULL, status TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE users (id UUID PRIMARY KEY, org_id UUID REFERENCES organizations(id), email TEXT UNIQUE NOT NULL, role TEXT NOT NULL, mfa_enabled BOOLEAN NOT NULL DEFAULT false);
+CREATE TABLE licenses (id UUID PRIMARY KEY, org_id UUID REFERENCES organizations(id), entitlement BYTEA NOT NULL, worker_quota INT NOT NULL, instance_quota INT NOT NULL, features JSONB, expires_at TIMESTAMPTZ);
+CREATE TABLE enrollment_tokens (id UUID PRIMARY KEY, org_id UUID REFERENCES organizations(id), token_hash BYTEA NOT NULL, scope TEXT, expires_at TIMESTAMPTZ NOT NULL, used_at TIMESTAMPTZ, created_by UUID);
+CREATE TABLE workers (id UUID PRIMARY KEY, org_id UUID REFERENCES organizations(id), status TEXT NOT NULL, version TEXT, cert_fingerprint TEXT, capacity JSONB, last_heartbeat TIMESTAMPTZ);
+CREATE TABLE object_storage_configs (id UUID PRIMARY KEY, endpoint TEXT NOT NULL, bucket TEXT NOT NULL, region TEXT, ssl BOOLEAN NOT NULL DEFAULT true, credentials_enc BYTEA NOT NULL);
+CREATE TABLE images (id UUID PRIMARY KEY, name TEXT NOT NULL, version TEXT NOT NULL, arch TEXT NOT NULL, digest TEXT NOT NULL, object_uri TEXT NOT NULL, signature_status TEXT);
+CREATE TABLE resource_profiles (id UUID PRIMARY KEY, name TEXT, cpu INT, mem_high BIGINT, mem_max BIGINT, swap_max BIGINT, pids INT, storage BIGINT, io JSONB, placement_priority INT);
+CREATE TABLE instances (id UUID PRIMARY KEY, org_id UUID REFERENCES organizations(id), worker_id UUID REFERENCES workers(id), image_id UUID REFERENCES images(id), profile_id UUID REFERENCES resource_profiles(id), state TEXT NOT NULL, placement_method TEXT NOT NULL, desired_config JSONB);
+CREATE TABLE network_allocations (id UUID PRIMARY KEY, instance_id UUID REFERENCES instances(id), address INET, routes JSONB, port_mappings JSONB, policy JSONB);
+CREATE TABLE snapshots (id UUID PRIMARY KEY, instance_id UUID REFERENCES instances(id), object_key TEXT NOT NULL, size_bytes BIGINT, status TEXT, created_at TIMESTAMPTZ DEFAULT now());
+CREATE TABLE operations (id UUID PRIMARY KEY, idempotency_key TEXT UNIQUE NOT NULL, action TEXT NOT NULL, actor UUID, state TEXT NOT NULL, result JSONB, error TEXT);
+CREATE TABLE usage_samples (id BIGSERIAL PRIMARY KEY, instance_id UUID, ts TIMESTAMPTZ NOT NULL, readings JSONB);
+CREATE TABLE audit_events (id BIGSERIAL PRIMARY KEY, actor TEXT, action TEXT NOT NULL, target TEXT, result TEXT, request_id TEXT, source JSONB, ts TIMESTAMPTZ DEFAULT now());

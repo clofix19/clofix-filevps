@@ -1,0 +1,20 @@
+name: clofix-worker
+arch: ${GOARCH}
+platform: linux
+version: ${VERSION}
+section: admin
+maintainer: CloFix Infotech <clofix19@gmail.com>
+description: CloFix FileVPS worker (agent + clofix-fx engine + scheduler)
+vendor: CloFix Infotech
+contents:
+  - src: ./dist/clofix-worker-linux-${GOARCH}
+    dst: /usr/bin/clofix-worker
+    file_info: { mode: 0755 }
+  - src: ./packaging/systemd/clofix-worker.service
+    dst: /lib/systemd/system/clofix-worker.service
+  - src: ./packaging/config/worker.json
+    dst: /etc/clofix-filevps/worker.json
+    type: config|noreplace
+scripts:
+  postinstall: ./packaging/scripts/postinstall.sh
+  preremove: ./packaging/scripts/preremove.sh

@@ -1,0 +1,49 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0a0f16">
+  <title>CloFix · {{.Title}}</title>
+  <link rel="icon" type="image/svg+xml" href="/clofix-mark.svg">
+  <link rel="stylesheet" href="/assets/app.css?v=20261029-9">
+</head>
+<body data-page="{{.Page}}" data-instance-id="{{.InstanceID}}">
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="/instances" aria-label="CloFix FileVPS home">
+        <img class="brand-logo" src="/clofix-logo.png" alt="CloFix">
+        <span class="brand-sub">FileVPS Control</span>
+      </a>
+      <div>
+        <div class="nav-label">WORKSPACE</div>
+        <nav class="nav" aria-label="Main navigation">
+          <a class="{{if or (eq .Page "instances") (eq .Page "details")}}active{{end}}" href="/instances"><span class="nav-icon">▦</span><span>FileVPS</span></a>
+          <a class="{{if eq .Page "create"}}active{{end}}" href="/create"><span class="nav-icon">＋</span><span>Create FileVPS</span></a>
+          <a class="{{if eq .Page "services"}}active{{end}}" href="/services"><span class="nav-icon">▣</span><span>Services</span></a>
+          <a class="{{if eq .Page "security"}}active{{end}}" href="/security"><span class="nav-icon">⬡</span><span>CloFix Security</span></a>
+          <a class="{{if eq .Page "workers"}}active{{end}}" href="/workers"><span class="nav-icon">▤</span><span>Workers</span></a>
+          <a class="{{if eq .Page "storage"}}active{{end}}" href="/storage/s3"><span class="nav-icon">▧</span><span>S3 Filesystem</span></a>
+          <a class="{{if eq .Page "settings"}}active{{end}}" href="/settings"><span class="nav-icon">⚙</span><span>Settings</span></a>
+        </nav>
+      </div>
+      <div class="side-bottom"><span class="live-dot"></span>Control plane connected<br><span id="refresh-time">Refreshing status…</span><br><span style="color:#71849a">CloFix FileVPS</span></div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div><p class="eyebrow">CloFix / Infrastructure</p><h1 id="page-title">{{.Title}}</h1></div>
+        <div class="top-actions"><span id="msg" class="top-status" role="status" aria-live="polite"></span>
+          <details class="token-box"><summary>Admin access</summary><div class="token-content"><strong>Admin token</strong><p class="muted">Use the token configured for your local Compose stack.</p><input id="tok" type="password" placeholder="Admin token" autocomplete="current-password"><button class="primary" id="save" type="button">Save token</button></div></details>
+        </div>
+      </header>
+      <div class="auth-banner" id="auth-banner" hidden><div><strong>Connect to your control plane</strong><p>Enter the admin token to load workers, VPSs, and security settings.</p></div><button class="secondary" id="auth-banner-open" type="button">Enter admin token</button></div>
+      {{template "content" .}}
+    </main>
+  </div>
+  <dialog class="terminal-dialog" id="terminal-dialog"><div class="section-head"><div><p class="eyebrow">SSH Terminal</p><h2 id="terminal-title">Connect to VPS</h2></div><button type="button" class="secondary" id="terminal-close">Close</button></div><p class="muted">Open the Terminal app on your Mac and run this command. SSH will use your default private key. If your key is stored elsewhere, add <code>-i /path/to/private-key</code> after <code>ssh</code>.</p><code class="terminal-command" id="terminal-command"></code><div class="inline-fields"><button type="button" class="primary" id="terminal-copy">Copy SSH command</button><span class="message" id="terminal-message"></span></div><p class="muted">On the first connection, review the host fingerprint and type <code>yes</code> to continue. The VPS must be running and reachable at this Mac's localhost SSH port.</p></dialog>
+  <dialog class="terminal-dialog" id="service-log-dialog"><div class="section-head"><div><p class="eyebrow">Live service log</p><h2 id="service-log-title">Service logs</h2></div><button type="button" class="secondary" id="service-log-close">Close</button></div><p class="muted">Log tail refreshed from the VPS worker heartbeat.</p><pre id="service-log-output" class="log-view"></pre></dialog>
+  <dialog class="terminal-dialog" id="service-error-dialog"><div class="section-head"><div><p class="eyebrow">Application services</p><h2 id="service-error-title">Service error log</h2></div><button type="button" class="secondary" id="service-error-close">Close</button></div><p class="muted">Filtered <code>error.log</code> tail refreshed from the VPS worker heartbeat.</p><pre id="service-error-output" class="log-view"></pre></dialog>
+  <dialog class="terminal-dialog" id="waf-log-dialog"><div class="section-head"><div><p class="eyebrow">CloFix Security · Nginx</p><h2>WAF error log</h2></div><button type="button" class="secondary" id="waf-log-close">Close</button></div><p class="muted">Recent Nginx error entries, including ModSecurity messages. Refreshed from the worker heartbeat.</p><pre id="waf-log-output" class="log-view"></pre></dialog>
+  <script src="/assets/app.js?v=20261029-9" defer></script>
+</body>
+</html>{{end}}
