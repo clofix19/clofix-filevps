@@ -78,7 +78,7 @@ func RunInit(args []string) error {
 		}
 	}
 	for _, bind := range binds {
-		if !strings.HasPrefix(bind.target, "/mnt/") || !filepath.IsAbs(bind.target) || filepath.Clean(bind.target) != bind.target || strings.ContainsAny(bind.target, "\\\x00\r\n") {
+		if !validBindTarget(bind.target) {
 			return fmt.Errorf("invalid bind mount target %q", bind.target)
 		}
 		dest := filepath.Join(root, strings.TrimPrefix(bind.target, "/"))
@@ -132,6 +132,23 @@ func RunInit(args []string) error {
 		path = p
 	}
 	return syscall.Exec(path, argv, env)
+}
+
+func validBindTarget(p string) bool {
+	if !filepath.IsAbs(p) || p == "/" || filepath.Clean(p) != p || strings.ContainsAny(p, "\\\x00\r\n") {
+		return false
+	}
+	for _, part := range strings.Split(strings.TrimPrefix(p, "/"), "/") {
+		if part == "" || part == "." || part == ".." {
+			return false
+		}
+	}
+	for _, root := range []string{"/proc", "/sys", "/dev", "/run", "/etc", "/usr", "/bin", "/sbin", "/lib", "/lib64", "/boot", "/root", "/var/lib", "/var/log", "/var/cache", "/var/run"} {
+		if p == root || strings.HasPrefix(p, root+"/") {
+			return false
+		}
+	}
+	return true
 }
 
 func setupDev(root string) error {

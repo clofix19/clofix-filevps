@@ -62,6 +62,9 @@ type Engine struct {
 	mu                sync.Mutex
 	meta              map[string]*Meta
 	cpuSamples        map[string]cpuSample
+	diskMu            sync.Mutex
+	volumeMu          sync.Mutex
+	diskSamples       map[string]diskSample
 	serviceUsageMu    sync.Mutex
 	serviceCPUSamples map[string]serviceCPUSample
 	s3Mu              sync.Mutex
@@ -70,6 +73,11 @@ type Engine struct {
 
 type cpuSample struct {
 	usage uint64
+	at    time.Time
+}
+
+type diskSample struct {
+	bytes uint64
 	at    time.Time
 }
 
@@ -87,12 +95,16 @@ func New(cfg config.Config) *Engine {
 	return &Engine{
 		StateDir: st, LogDir: envOr("CLOFIX_LOG_DIR", "/var/log/clofix-filevps"), Cfg: cfg,
 		Images: image.New(filepath.Join(st, "images", "cache"), shift),
-		CG:     cgroups.New(), Network: network.New(), meta: map[string]*Meta{}, cpuSamples: map[string]cpuSample{}, serviceCPUSamples: map[string]serviceCPUSample{}, s3Mounts: map[string]*s3MountProcess{},
+		CG:     cgroups.New(), Network: network.New(), meta: map[string]*Meta{}, cpuSamples: map[string]cpuSample{}, diskSamples: map[string]diskSample{}, serviceCPUSamples: map[string]serviceCPUSample{}, s3Mounts: map[string]*s3MountProcess{},
 	}
 }
 
 func protectionEnabled(spec proto.InstanceSpec) bool {
 	return spec.ProtectionMode == nil || *spec.ProtectionMode
+}
+
+func sshLoginBlocked(spec proto.InstanceSpec) bool {
+	return spec.SSHLoginBlocked != nil && *spec.SSHLoginBlocked
 }
 
 func envOr(k, d string) string {
@@ -232,6 +244,9 @@ func (e *Engine) configureSSHFiles(id string, spec proto.InstanceSpec) error {
 	}
 	sshdConfig := filepath.Join(sshdConfigDir, "00-clofix.conf")
 	configBody := "PermitRootLogin prohibit-password\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPubkeyAuthentication yes\n"
+	if sshLoginBlocked(spec) {
+		configBody += "DenyUsers *\n"
+	}
 	if err := os.WriteFile(sshdConfig, []byte(configBody), 0o644); err != nil {
 		return err
 	}
@@ -496,6 +511,22 @@ func (e *Engine) Start(id string) error {
 		}
 		args = append(args, "--bind-mount", s3HostPath, m.S3MountPath)
 	}
+	for _, mount := range m.Spec.StorageMounts {
+		if mount.GuestPath == "" {
+			continue
+		}
+		volumePath := filepath.Join(e.StateDir, "volumes", mount.ID)
+		if _, err := e.volumePath(mount.ID); err != nil {
+			return fail(err)
+		}
+		if err := e.ensureVolumeMounted(mount.ID); err != nil {
+			return fail(err)
+		}
+		if _, err := os.Stat(volumePath); err != nil {
+			return fail(fmt.Errorf("storage volume %s is missing on this worker", mount.ID))
+		}
+		args = append(args, "--bind-mount", volumePath, mount.GuestPath)
+	}
 	args = append(args, "--")
 	args = append(args, m.Spec.Init...)
 	cmd := exec.Command("/proc/self/exe", args...)
@@ -600,8 +631,12 @@ func (e *Engine) Delete(id string) error {
 	if !validID.MatchString(id) {
 		return errors.New("invalid instance id")
 	}
-	if _, err := e.get(id); err != nil {
+	m, err := e.get(id)
+	if err != nil {
 		return nil // already gone: idempotent
+	}
+	if m.Spec.DeleteProtection {
+		return errors.New("VPS Delete Protection is enabled; disable it before deleting")
 	}
 	if err := e.Stop(id); err != nil {
 		return err
@@ -640,6 +675,8 @@ func (e *Engine) Apply(op proto.Operation) error {
 		return e.ControlService(op.InstanceID, op.ServiceName, op.ServiceAction)
 	case proto.ActionInstallService:
 		return e.InstallService(op.InstanceID, op.ServiceID)
+	case proto.ActionUninstallService:
+		return e.UninstallService(op.InstanceID, op.ServiceID)
 	case proto.ActionDelete:
 		return e.Delete(op.InstanceID)
 	case proto.ActionUpdatePorts:
@@ -647,11 +684,35 @@ func (e *Engine) Apply(op proto.Operation) error {
 			return errors.New("port update requires instance spec")
 		}
 		return e.UpdatePorts(op.InstanceID, op.Spec.PortMappings)
+	case proto.ActionUpdateResources:
+		if op.Spec == nil {
+			return errors.New("resource update requires instance spec")
+		}
+		return e.UpdateResources(op.InstanceID, *op.Spec)
+	case proto.ActionUpdateStorageMounts:
+		if op.Spec == nil {
+			return errors.New("storage mount update requires instance spec")
+		}
+		return e.UpdateStorageMounts(op.InstanceID, op.Spec.StorageMounts)
+	case proto.ActionCreateVolume:
+		return e.CreateVolume(op.VolumeID, op.VolumeLimitMB)
+	case proto.ActionDeleteVolume:
+		return e.DeleteVolume(op.VolumeID)
 	case proto.ActionUpdateProtection:
 		if op.Spec == nil || op.Spec.ProtectionMode == nil {
 			return errors.New("protection update requires protection_mode")
 		}
 		return e.UpdateProtection(op.InstanceID, *op.Spec.ProtectionMode)
+	case proto.ActionUpdateSSHLogin:
+		if op.Spec == nil || op.Spec.SSHLoginBlocked == nil {
+			return errors.New("SSH login update requires ssh_login_blocked")
+		}
+		return e.UpdateSSHLogin(op.InstanceID, *op.Spec.SSHLoginBlocked)
+	case proto.ActionUpdateDeleteProtection:
+		if op.Spec == nil {
+			return errors.New("delete protection update requires instance spec")
+		}
+		return e.UpdateDeleteProtection(op.InstanceID, op.Spec.DeleteProtection)
 	case proto.ActionUpdateWAF:
 		return e.UpdateWAFCategory(op.InstanceID, op.WAFCategory, op.WAFEnabled)
 	case proto.ActionUpdateS3Mount:
@@ -664,6 +725,249 @@ func (e *Engine) Apply(op proto.Operation) error {
 		return e.UpdateS3Mount(op.InstanceID, op.S3Mount)
 	}
 	return fmt.Errorf("unknown action %q", op.Action)
+}
+
+// UpdateResources stores the requested limits and recreates the guest cgroup.
+// DiskMB remains placement/accounting metadata; this backend does not enforce quotas.
+func (e *Engine) UpdateResources(id string, requested proto.InstanceSpec) error {
+	m, err := e.get(id)
+	if err != nil {
+		return err
+	}
+	if requested.RAMMB < 128 || requested.RAMMB > 1<<20 || requested.CPU < .1 || requested.CPU > 1024 || requested.DiskMB < 128 || requested.DiskMB > 1<<30 || proto.SwapLimitMB(requested) < 0 || proto.SwapLimitMB(requested) > 1<<20 {
+		return errors.New("resource values are outside supported limits")
+	}
+	previous := m.Spec
+	m.Spec.RAMMB, m.Spec.CPU, m.Spec.DiskMB = requested.RAMMB, requested.CPU, requested.DiskMB
+	swap := proto.SwapLimitMB(requested)
+	m.Spec.SwapMB = &swap
+	if err := e.save(m); err != nil {
+		m.Spec = previous
+		return fmt.Errorf("save VPS resource settings: %w", err)
+	}
+	if e.CG.Alive(id) {
+		return e.Restart(id)
+	}
+	return nil
+}
+
+func (e *Engine) UpdateStorageMounts(id string, mounts []proto.StorageMount) error {
+	m, err := e.get(id)
+	if err != nil {
+		return err
+	}
+	seenIDs, seenPaths := map[string]bool{}, map[string]bool{}
+	for _, mount := range mounts {
+		if !validID.MatchString(mount.ID) || (mount.GuestPath != "" && !validStorageGuestPath(mount.GuestPath)) || seenIDs[mount.ID] || (mount.GuestPath != "" && seenPaths[mount.GuestPath]) || (mount.GuestPath != "" && pathsOverlap(mount.GuestPath, m.Spec.S3MountPath)) {
+			return errors.New("invalid or duplicate storage mount")
+		}
+		seenIDs[mount.ID] = true
+		if mount.GuestPath != "" {
+			for existing := range seenPaths {
+				if pathsOverlap(existing, mount.GuestPath) {
+					return errors.New("storage mount paths cannot overlap")
+				}
+			}
+			seenPaths[mount.GuestPath] = true
+		}
+	}
+	previous := append([]proto.StorageMount(nil), m.Spec.StorageMounts...)
+	m.Spec.StorageMounts = append([]proto.StorageMount(nil), mounts...)
+	if err := e.save(m); err != nil {
+		m.Spec.StorageMounts = previous
+		return fmt.Errorf("save VPS storage mounts: %w", err)
+	}
+	if e.CG.Alive(id) {
+		return e.Restart(id)
+	}
+	return nil
+}
+
+func (e *Engine) volumePath(id string) (string, error) {
+	if !validID.MatchString(id) {
+		return "", errors.New("invalid volume id")
+	}
+	return filepath.Join(e.StateDir, "volumes", id), nil
+}
+
+func (e *Engine) volumeImagePath(id string) (string, error) {
+	if !validID.MatchString(id) {
+		return "", errors.New("invalid volume id")
+	}
+	return filepath.Join(e.StateDir, "volume-images", id+".img"), nil
+}
+
+// CreateVolume creates an ordinary directory when unlimited, or an ext4
+// loopback filesystem when a hard size limit is requested.
+func (e *Engine) CreateVolume(id string, limitMB int64) error {
+	p, err := e.volumePath(id)
+	if err != nil {
+		return err
+	}
+	if limitMB < 0 || limitMB > 1_048_576 || (limitMB > 0 && limitMB < 64) {
+		return errors.New("volume limit must be 0 (unlimited) or 64–1,048,576 MB")
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+		return err
+	}
+	if limitMB == 0 {
+		if err := os.MkdirAll(p, 0o750); err != nil {
+			return fmt.Errorf("create persistent volume: %w", err)
+		}
+		return e.setVolumeOwner(p)
+	}
+	image, err := e.volumeImagePath(id)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(image); os.IsNotExist(err) {
+		if err := os.MkdirAll(filepath.Dir(image), 0o700); err != nil {
+			return err
+		}
+		f, err := os.OpenFile(image, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
+		if err != nil {
+			return fmt.Errorf("create capped volume image: %w", err)
+		}
+		if err := f.Truncate(limitMB << 20); err != nil {
+			f.Close()
+			_ = os.Remove(image)
+			return fmt.Errorf("size capped volume image: %w", err)
+		}
+		if err := f.Close(); err != nil {
+			_ = os.Remove(image)
+			return err
+		}
+		out, err := exec.Command("mkfs.ext4", "-F", "-m", "0", image).CombinedOutput()
+		if err != nil {
+			_ = os.Remove(image)
+			return fmt.Errorf("format capped volume filesystem: %s: %w", strings.TrimSpace(string(out)), err)
+		}
+	} else if err != nil {
+		return err
+	}
+	if err := e.ensureVolumeMounted(id); err != nil {
+		return err
+	}
+	return e.setVolumeOwner(p)
+}
+
+func (e *Engine) setVolumeOwner(p string) error {
+	owner := uint32(0)
+	if e.Cfg.UserNS {
+		owner = e.Cfg.UIDBase
+	}
+	if err := os.Chown(p, int(owner), int(owner)); err != nil {
+		return fmt.Errorf("set volume ownership: %w", err)
+	}
+	// The volume root is commonly mounted as a website document root. Keep it
+	// traversable by unprivileged guest services such as nginx (www-data).
+	if err := os.Chmod(p, 0o755); err != nil {
+		return fmt.Errorf("set volume permissions: %w", err)
+	}
+	return nil
+}
+
+func (e *Engine) ensureVolumeMounted(id string) error {
+	e.volumeMu.Lock()
+	defer e.volumeMu.Unlock()
+	p, err := e.volumePath(id)
+	if err != nil {
+		return err
+	}
+	image, err := e.volumeImagePath(id)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(image); os.IsNotExist(err) {
+		return e.setVolumeOwner(p)
+	} else if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(p, 0o750); err != nil {
+		return err
+	}
+	if isMounted(p) {
+		return e.setVolumeOwner(p)
+	}
+	out, err := exec.Command("mount", "-t", "ext4", "-o", "loop", image, p).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("mount capped volume %s (loop/ext4 support required): %s: %w", id, strings.TrimSpace(string(out)), err)
+	}
+	return e.setVolumeOwner(p)
+}
+
+func (e *Engine) DeleteVolume(id string) error {
+	p, err := e.volumePath(id)
+	if err != nil {
+		return err
+	}
+	e.volumeMu.Lock()
+	defer e.volumeMu.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, m := range e.meta {
+		for _, mount := range m.Spec.StorageMounts {
+			if mount.ID == id && mount.GuestPath != "" {
+				return errors.New("volume is still attached to a VPS")
+			}
+		}
+	}
+	if isMounted(p) {
+		if err := syscall.Unmount(p, 0); err != nil {
+			return fmt.Errorf("unmount capped volume before deleting: %w", err)
+		}
+	}
+	if err := os.RemoveAll(p); err != nil {
+		return fmt.Errorf("delete persistent volume data: %w", err)
+	}
+	image, err := e.volumeImagePath(id)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(image); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("delete capped volume image: %w", err)
+	}
+	return nil
+}
+
+func (e *Engine) VolumeStatuses() []proto.WorkerVolumeStatus {
+	root := filepath.Join(e.StateDir, "volumes")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return []proto.WorkerVolumeStatus{}
+	}
+	out := make([]proto.WorkerVolumeStatus, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() && validID.MatchString(entry.Name()) {
+			_ = e.ensureVolumeMounted(entry.Name())
+			out = append(out, proto.WorkerVolumeStatus{ID: entry.Name(), UsageBytes: e.cachedDirectoryBytes("volume/"+entry.Name(), filepath.Join(root, entry.Name()))})
+		}
+	}
+	return out
+}
+
+func pathsOverlap(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	return a == b || strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
+}
+
+func validStorageGuestPath(p string) bool {
+	if !filepath.IsAbs(p) || p == "/" || filepath.Clean(p) != p || strings.ContainsAny(p, "\\\x00\r\n") || len(p) > 256 {
+		return false
+	}
+	for _, part := range strings.Split(strings.TrimPrefix(p, "/"), "/") {
+		if part == "" || part == "." || part == ".." {
+			return false
+		}
+	}
+	for _, root := range []string{"/proc", "/sys", "/dev", "/run", "/etc", "/usr", "/bin", "/sbin", "/lib", "/lib64", "/boot", "/root", "/var/lib", "/var/log", "/var/cache", "/var/run"} {
+		if p == root || strings.HasPrefix(p, root+"/") {
+			return false
+		}
+	}
+	return true
 }
 
 // Restart stops the existing guest and starts it again, preserving its disk and settings.
@@ -716,6 +1020,59 @@ func (e *Engine) UpdateProtection(id string, enabled bool) error {
 	return nil
 }
 
+// UpdateSSHLogin applies the SSH login policy. sshd reads the generated config
+// at guest startup, so a running guest is restarted after the config is saved.
+func (e *Engine) UpdateSSHLogin(id string, blocked bool) error {
+	m, err := e.get(id)
+	if err != nil {
+		return err
+	}
+	if sshLoginBlocked(m.Spec) == blocked {
+		return nil
+	}
+	running := e.CG.Alive(id)
+	previous := m.Spec.SSHLoginBlocked
+	updated := m.Spec
+	updated.SSHLoginBlocked = &blocked
+	if err := e.configureSSHFiles(id, updated); err != nil {
+		return fmt.Errorf("configure SSH login policy: %w", err)
+	}
+	m.Spec.SSHLoginBlocked = &blocked
+	if err := e.save(m); err != nil {
+		m.Spec.SSHLoginBlocked = previous
+		_ = e.configureSSHFiles(id, m.Spec)
+		return fmt.Errorf("save SSH login policy: %w", err)
+	}
+	if running {
+		if err := e.Stop(id); err != nil {
+			return fmt.Errorf("stop guest to apply SSH login policy: %w", err)
+		}
+		if err := e.Start(id); err != nil {
+			return fmt.Errorf("restart guest with updated SSH login policy: %w", err)
+		}
+	}
+	return nil
+}
+
+// UpdateDeleteProtection persists the worker-side deletion guard without
+// restarting the guest. The controller also enforces this setting at its API.
+func (e *Engine) UpdateDeleteProtection(id string, enabled bool) error {
+	m, err := e.get(id)
+	if err != nil {
+		return err
+	}
+	if m.Spec.DeleteProtection == enabled {
+		return nil
+	}
+	previous := m.Spec.DeleteProtection
+	m.Spec.DeleteProtection = enabled
+	if err := e.save(m); err != nil {
+		m.Spec.DeleteProtection = previous
+		return fmt.Errorf("save VPS delete protection: %w", err)
+	}
+	return nil
+}
+
 func (e *Engine) Statuses() []proto.InstanceStatus {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -745,11 +1102,33 @@ func (e *Engine) Statuses() []proto.InstanceStatus {
 		}
 		out = append(out, proto.InstanceStatus{
 			ID: m.ID, State: st, Error: m.Error, Pid: m.Pid,
-			Metrics:  proto.InstanceMetrics{CPUPercent: cpuPercent, MemoryCurrentBytes: memoryCurrent, MemoryLimitBytes: uint64(m.Spec.RAMMB) << 20, SwapCurrentBytes: e.CG.MemorySwapCurrent(m.ID), SwapLimitBytes: uint64(proto.SwapLimitMB(m.Spec)) << 20},
+			Metrics:  e.instanceMetrics(m, cpuPercent, memoryCurrent),
 			Services: e.applicationServices(m.ID, m.Pid, st == proto.StateRunning), ServiceInstalls: cloneStringMap(m.ServiceInstalls),
 		})
 	}
 	return out
+}
+
+func (e *Engine) instanceMetrics(m *Meta, cpuPercent float64, memoryCurrent uint64) proto.InstanceMetrics {
+	metrics := proto.InstanceMetrics{CPUPercent: cpuPercent, MemoryCurrentBytes: memoryCurrent, MemoryLimitBytes: uint64(m.Spec.RAMMB) << 20, SwapCurrentBytes: e.CG.MemorySwapCurrent(m.ID), SwapLimitBytes: uint64(proto.SwapLimitMB(m.Spec)) << 20, DiskUsageBytes: e.cachedDirectoryBytes("upper/"+m.ID, filepath.Join(e.idir(m.ID), "upper"))}
+	for _, mount := range m.Spec.StorageMounts {
+		bytes := e.cachedDirectoryBytes("volume/"+mount.ID, filepath.Join(e.StateDir, "volumes", mount.ID))
+		metrics.DiskUsageBytes += bytes
+		metrics.StorageVolumes = append(metrics.StorageVolumes, proto.StorageVolumeMetric{ID: mount.ID, UsageBytes: bytes})
+	}
+	return metrics
+}
+
+func (e *Engine) cachedDirectoryBytes(key, path string) uint64 {
+	e.diskMu.Lock()
+	defer e.diskMu.Unlock()
+	now := time.Now()
+	if sample, ok := e.diskSamples[key]; ok && now.Sub(sample.at) < 30*time.Second {
+		return sample.bytes
+	}
+	bytes := directoryBytes(path)
+	e.diskSamples[key] = diskSample{bytes: bytes, at: now}
+	return bytes
 }
 
 func cloneStringMap(in map[string]string) map[string]string {
@@ -761,6 +1140,22 @@ func cloneStringMap(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func directoryBytes(root string) uint64 {
+	var total uint64
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.Type().IsRegular() {
+			if info, e := d.Info(); e == nil && info.Size() > 0 {
+				total += uint64(info.Size())
+			}
+		}
+		return nil
+	})
+	return total
 }
 
 // InstallService accepts catalog IDs only; package names and shell commands are never supplied by the API.
@@ -827,6 +1222,133 @@ func (e *Engine) InstallService(id, serviceID string) error {
 	}
 	e.mu.Lock()
 	setInstallState(m, serviceID, "INSTALLED")
+	e.mu.Unlock()
+	return nil
+}
+
+// UninstallService removes packages installed through the fixed service catalog.
+// Package names and paths are selected here, never supplied by the API caller.
+func (e *Engine) UninstallService(id, serviceID string) error {
+	if serviceID == "owasp-waf" {
+		return e.UninstallWAF(id, serviceID)
+	}
+	packages, ok := map[string][]string{
+		"nginx": {"nginx"}, "apache": {"apache2"}, "mysql": {"mysql-server"},
+		"mariadb": {"mariadb-server"}, "postgresql": {"postgresql"}, "redis": {"redis-server"},
+		"php":    {"php-fpm", "php-cli", "php-mysql", "php-xml", "php-mbstring", "php-curl", "php-zip", "php-gd"},
+		"nodejs": {"nodejs", "npm"}, "wordpress": {"wordpress"},
+	}[serviceID]
+	if !ok && serviceID != "joomla" {
+		return errors.New("service does not support uninstall from CloFix")
+	}
+	m, err := e.get(id)
+	if err != nil {
+		return err
+	}
+	if protectionEnabled(m.Spec) {
+		return errors.New("disable Protection Mode before uninstalling packages")
+	}
+	if !e.CG.Alive(id) || m.Pid <= 0 {
+		return errors.New("VPS must be running to uninstall a service")
+	}
+	e.mu.Lock()
+	if m.ServiceInstalls == nil {
+		m.ServiceInstalls = map[string]string{}
+	}
+	state := m.ServiceInstalls[serviceID]
+	if state == "INSTALLING" || state == "UNINSTALLING" {
+		e.mu.Unlock()
+		return errors.New("wait for the current service change to finish before uninstalling")
+	}
+	if state != "INSTALLED" && state != "FAILED" && state != "UNINSTALL_FAILED" {
+		e.mu.Unlock()
+		return errors.New("service is not installed or there is no failed install to clean up")
+	}
+	if serviceID == "nginx" && m.ServiceInstalls["owasp-waf"] != "UNINSTALLED" && m.ServiceInstalls["owasp-waf"] != "" {
+		e.mu.Unlock()
+		return errors.New("uninstall the OWASP CRS WAF before removing Nginx")
+	}
+	for _, dependent := range []string{"wordpress", "joomla"} {
+		if (serviceID == "apache" || serviceID == "php" || serviceID == "mariadb") && m.ServiceInstalls[dependent] != "" && m.ServiceInstalls[dependent] != "UNINSTALLED" {
+			e.mu.Unlock()
+			return fmt.Errorf("uninstall %s before removing its shared %s dependency", dependent, serviceID)
+		}
+	}
+	setInstallState(m, serviceID, "UNINSTALLING")
+	_ = e.save(m)
+	e.mu.Unlock()
+	defer func() { e.mu.Lock(); _ = e.save(m); e.mu.Unlock() }()
+	if serviceID == "joomla" {
+		if err := e.guestShell(id, m.Pid, "set -eu; rm -rf -- /var/www/html/joomla"); err != nil {
+			e.mu.Lock()
+			setInstallState(m, serviceID, "UNINSTALL_FAILED")
+			e.mu.Unlock()
+			return fmt.Errorf("Joomla uninstall failed: %w", err)
+		}
+		e.mu.Lock()
+		setInstallState(m, serviceID, "UNINSTALLED")
+		e.mu.Unlock()
+		return nil
+	}
+	if err := e.guestPackageCommand(id, m.Pid, append([]string{"remove", "--no-install-recommends"}, packages...)); err != nil {
+		e.mu.Lock()
+		setInstallState(m, serviceID, "UNINSTALL_FAILED")
+		e.mu.Unlock()
+		return fmt.Errorf("%s uninstall failed: %w", serviceID, err)
+	}
+	e.mu.Lock()
+	setInstallState(m, serviceID, "UNINSTALLED")
+	e.mu.Unlock()
+	return nil
+}
+
+// UninstallWAF removes the WAF integration and its packages without removing Nginx.
+func (e *Engine) UninstallWAF(id, serviceID string) error {
+	if serviceID != "owasp-waf" {
+		return errors.New("unknown WAF service")
+	}
+	m, err := e.get(id)
+	if err != nil {
+		return err
+	}
+	if protectionEnabled(m.Spec) {
+		return errors.New("disable Protection Mode before uninstalling packages")
+	}
+	if !e.CG.Alive(id) || m.Pid <= 0 {
+		return errors.New("VPS must be running to uninstall the WAF")
+	}
+	e.mu.Lock()
+	if m.ServiceInstalls == nil {
+		m.ServiceInstalls = map[string]string{}
+	}
+	state := m.ServiceInstalls[serviceID]
+	if state == "INSTALLING" || state == "UNINSTALLING" {
+		e.mu.Unlock()
+		return errors.New("wait for the current WAF change to finish before uninstalling")
+	}
+	if state != "INSTALLED" && state != "FAILED" && state != "UNINSTALL_FAILED" {
+		e.mu.Unlock()
+		return errors.New("OWASP CRS WAF is not installed")
+	}
+	setInstallState(m, serviceID, "UNINSTALLING")
+	_ = e.save(m)
+	e.mu.Unlock()
+	defer func() { e.mu.Lock(); _ = e.save(m); e.mu.Unlock() }()
+	script := "set -eu; " +
+		"rm -f /etc/nginx/conf.d/clofix-modsecurity.conf /etc/nginx/modsecurity_includes.conf /etc/nginx/clofix-modsecurity-overrides.conf; " +
+		"apt-get -y purge modsecurity-crs libnginx-mod-http-modsecurity; " +
+		"if [ -f /etc/modsecurity/modsecurity.conf ]; then " +
+		"sed -i 's/^[[:space:]]*SecRuleEngine.*/SecRuleEngine DetectionOnly/' /etc/modsecurity/modsecurity.conf; " +
+		"sed -i 's/^[[:space:]]*SecResponseBodyAccess.*/SecResponseBodyAccess Off/' /etc/modsecurity/modsecurity.conf; fi; " +
+		"nginx -t; if service nginx status >/dev/null 2>&1; then service nginx reload; fi"
+	if err := e.guestShell(id, m.Pid, script); err != nil {
+		e.mu.Lock()
+		setInstallState(m, serviceID, "UNINSTALL_FAILED")
+		e.mu.Unlock()
+		return fmt.Errorf("OWASP CRS WAF uninstall failed: %w", err)
+	}
+	e.mu.Lock()
+	setInstallState(m, serviceID, "UNINSTALLED")
 	e.mu.Unlock()
 	return nil
 }

@@ -24,5 +24,9 @@ func storeFactory() store.Store {
 	if err := db.Ping(); err != nil {
 		log.Fatal("database: ", err)
 	}
-	return store.NewPostgres(db)
+	st := store.NewPostgres(db)
+	if err := st.EnsureSchema(); err != nil {
+		log.Fatal("database schema: ", err)
+	}
+	return st
 }

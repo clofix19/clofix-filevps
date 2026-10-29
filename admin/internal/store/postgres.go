@@ -17,6 +17,31 @@ type Postgres struct{ db *sql.DB }
 
 func NewPostgres(db *sql.DB) *Postgres { return &Postgres{db} }
 
+func (p *Postgres) EnsureSchema() error {
+	_, err := p.db.Exec(`CREATE TABLE IF NOT EXISTS cf_volumes (
+		id TEXT PRIMARY KEY, name TEXT NOT NULL, worker_id TEXT NOT NULL, state TEXT NOT NULL,
+		instance_id TEXT, guest_path TEXT, usage_bytes BIGINT NOT NULL DEFAULT 0, limit_mb BIGINT NOT NULL DEFAULT 0, error TEXT,
+		created TIMESTAMPTZ NOT NULL DEFAULT now())`)
+	if err != nil {
+		return err
+	}
+	if _, err = p.db.Exec(`ALTER TABLE cf_volumes ADD COLUMN IF NOT EXISTS limit_mb BIGINT NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	for _, ddl := range []string{
+		`CREATE TABLE IF NOT EXISTS cf_iam_users (id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, role TEXT NOT NULL, status TEXT NOT NULL, group_ids JSONB NOT NULL DEFAULT '[]', policy_ids JSONB NOT NULL DEFAULT '[]', created TIMESTAMPTZ NOT NULL DEFAULT now())`,
+		`CREATE TABLE IF NOT EXISTS cf_iam_groups (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT NOT NULL DEFAULT '', policy_ids JSONB NOT NULL DEFAULT '[]', created TIMESTAMPTZ NOT NULL DEFAULT now())`,
+		`CREATE TABLE IF NOT EXISTS cf_iam_policies (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT NOT NULL DEFAULT '', permissions JSONB NOT NULL DEFAULT '[]', created TIMESTAMPTZ NOT NULL DEFAULT now())`,
+		`CREATE TABLE IF NOT EXISTS cf_iam_access_keys (access_key_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES cf_iam_users(id) ON DELETE CASCADE, secret_hash TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT true, created TIMESTAMPTZ NOT NULL DEFAULT now())`,
+		`CREATE INDEX IF NOT EXISTS cf_iam_keys_user ON cf_iam_access_keys(user_id, created)`,
+	} {
+		if _, err := p.db.Exec(ddl); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (p *Postgres) CreateToken(hash string, expires time.Time, by string) error {
 	_, err := p.db.Exec(`INSERT INTO cf_tokens(hash, expires_at, created_by) VALUES($1,$2,$3)`, hash, expires, by)
 	return err
@@ -147,6 +172,58 @@ func (p *Postgres) DeleteInstance(id string) error {
 	return err
 }
 
+func (p *Postgres) SaveVolume(v Volume) error {
+	_, err := p.db.Exec(`INSERT INTO cf_volumes(id,name,worker_id,state,instance_id,guest_path,usage_bytes,limit_mb,error,created) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		ON CONFLICT(id) DO UPDATE SET name=$2,worker_id=$3,state=$4,instance_id=$5,guest_path=$6,usage_bytes=$7,limit_mb=$8,error=$9`, v.ID, v.Name, v.WorkerID, v.State, nullString(v.InstanceID), nullString(v.GuestPath), v.UsageBytes, v.LimitMB, nullString(v.Error), v.Created)
+	return err
+}
+
+func nullString(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+func scanVolume(s scanner) (Volume, error) {
+	var v Volume
+	var inst, path, errText sql.NullString
+	if err := s.Scan(&v.ID, &v.Name, &v.WorkerID, &v.State, &inst, &path, &v.UsageBytes, &v.LimitMB, &errText, &v.Created); err != nil {
+		return v, err
+	}
+	v.InstanceID, v.GuestPath, v.Error = inst.String, path.String, errText.String
+	return v, nil
+}
+
+const volumeCols = `id,name,worker_id,state,instance_id,guest_path,usage_bytes,limit_mb,error,created`
+
+func (p *Postgres) GetVolume(id string) (Volume, error) {
+	v, err := scanVolume(p.db.QueryRow(`SELECT `+volumeCols+` FROM cf_volumes WHERE id=$1`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return v, ErrNotFound
+	}
+	return v, err
+}
+func (p *Postgres) ListVolumes() ([]Volume, error) {
+	rows, err := p.db.Query(`SELECT ` + volumeCols + ` FROM cf_volumes ORDER BY created`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Volume{}
+	for rows.Next() {
+		v, e := scanVolume(rows)
+		if e != nil {
+			return nil, e
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+func (p *Postgres) DeleteVolume(id string) error {
+	_, err := p.db.Exec(`DELETE FROM cf_volumes WHERE id=$1`, id)
+	return err
+}
+
 func (p *Postgres) QueueOp(workerID string, op proto.Operation) error {
 	b, _ := json.Marshal(op)
 	_, err := p.db.Exec(`INSERT INTO cf_ops(worker_id, op) VALUES($1,$2)`, workerID, b)
@@ -177,6 +254,211 @@ func (p *Postgres) TakeOps(workerID string) ([]proto.Operation, error) {
 func (p *Postgres) Audit(actor, action, target, result string) error {
 	_, err := p.db.Exec(`INSERT INTO cf_audit(actor,action,target,result) VALUES($1,$2,$3,$4)`, actor, action, target, result)
 	return err
+}
+
+func scanIAMUser(s scanner) (IAMUser, error) {
+	var u IAMUser
+	var groups, policies []byte
+	err := s.Scan(&u.ID, &u.Username, &u.Role, &u.Status, &groups, &policies, &u.Created)
+	if err == nil {
+		_ = json.Unmarshal(groups, &u.GroupIDs)
+		_ = json.Unmarshal(policies, &u.PolicyIDs)
+	}
+	return u, err
+}
+
+const iamUserCols = `id,username,role,status,group_ids,policy_ids,created`
+
+func (p *Postgres) ListIAMUsers() ([]IAMUser, error) {
+	rows, err := p.db.Query(`SELECT ` + iamUserCols + ` FROM cf_iam_users ORDER BY username`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []IAMUser{}
+	for rows.Next() {
+		v, e := scanIAMUser(rows)
+		if e != nil {
+			return nil, e
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+func (p *Postgres) GetIAMUser(id string) (IAMUser, error) {
+	v, err := scanIAMUser(p.db.QueryRow(`SELECT `+iamUserCols+` FROM cf_iam_users WHERE id=$1`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return v, ErrNotFound
+	}
+	return v, err
+}
+func (p *Postgres) SaveIAMUser(v IAMUser) error {
+	g, _ := json.Marshal(v.GroupIDs)
+	ps, _ := json.Marshal(v.PolicyIDs)
+	_, err := p.db.Exec(`INSERT INTO cf_iam_users(id,username,role,status,group_ids,policy_ids,created) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO UPDATE SET username=$2,role=$3,status=$4,group_ids=$5,policy_ids=$6`, v.ID, v.Username, v.Role, v.Status, g, ps, v.Created)
+	return err
+}
+func (p *Postgres) DeleteIAMUser(id string) error {
+	res, err := p.db.Exec(`DELETE FROM cf_iam_users WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func scanIAMGroup(s scanner) (IAMGroup, error) {
+	var g IAMGroup
+	var policies []byte
+	err := s.Scan(&g.ID, &g.Name, &g.Description, &policies, &g.Created)
+	if err == nil {
+		_ = json.Unmarshal(policies, &g.PolicyIDs)
+	}
+	return g, err
+}
+
+const iamGroupCols = `id,name,description,policy_ids,created`
+
+func (p *Postgres) ListIAMGroups() ([]IAMGroup, error) {
+	rows, err := p.db.Query(`SELECT ` + iamGroupCols + ` FROM cf_iam_groups ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []IAMGroup{}
+	for rows.Next() {
+		v, e := scanIAMGroup(rows)
+		if e != nil {
+			return nil, e
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+func (p *Postgres) GetIAMGroup(id string) (IAMGroup, error) {
+	v, err := scanIAMGroup(p.db.QueryRow(`SELECT `+iamGroupCols+` FROM cf_iam_groups WHERE id=$1`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return v, ErrNotFound
+	}
+	return v, err
+}
+func (p *Postgres) SaveIAMGroup(v IAMGroup) error {
+	ps, _ := json.Marshal(v.PolicyIDs)
+	_, err := p.db.Exec(`INSERT INTO cf_iam_groups(id,name,description,policy_ids,created) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET name=$2,description=$3,policy_ids=$4`, v.ID, v.Name, v.Description, ps, v.Created)
+	return err
+}
+func (p *Postgres) DeleteIAMGroup(id string) error {
+	res, err := p.db.Exec(`DELETE FROM cf_iam_groups WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func scanIAMPolicy(s scanner) (IAMPolicy, error) {
+	var v IAMPolicy
+	var permissions []byte
+	err := s.Scan(&v.ID, &v.Name, &v.Description, &permissions, &v.Created)
+	if err == nil {
+		_ = json.Unmarshal(permissions, &v.Permissions)
+	}
+	return v, err
+}
+
+const iamPolicyCols = `id,name,description,permissions,created`
+
+func (p *Postgres) ListIAMPolicies() ([]IAMPolicy, error) {
+	rows, err := p.db.Query(`SELECT ` + iamPolicyCols + ` FROM cf_iam_policies ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []IAMPolicy{}
+	for rows.Next() {
+		v, e := scanIAMPolicy(rows)
+		if e != nil {
+			return nil, e
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+func (p *Postgres) GetIAMPolicy(id string) (IAMPolicy, error) {
+	v, err := scanIAMPolicy(p.db.QueryRow(`SELECT `+iamPolicyCols+` FROM cf_iam_policies WHERE id=$1`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return v, ErrNotFound
+	}
+	return v, err
+}
+func (p *Postgres) SaveIAMPolicy(v IAMPolicy) error {
+	ps, _ := json.Marshal(v.Permissions)
+	_, err := p.db.Exec(`INSERT INTO cf_iam_policies(id,name,description,permissions,created) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET name=$2,description=$3,permissions=$4`, v.ID, v.Name, v.Description, ps, v.Created)
+	return err
+}
+func (p *Postgres) DeleteIAMPolicy(id string) error {
+	res, err := p.db.Exec(`DELETE FROM cf_iam_policies WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (p *Postgres) SaveIAMAccessKey(v IAMAccessKey) error {
+	_, err := p.db.Exec(`INSERT INTO cf_iam_access_keys(access_key_id,user_id,secret_hash,active,created) VALUES($1,$2,$3,$4,$5)`, v.AccessKeyID, v.UserID, v.SecretHash, v.Active, v.Created)
+	return err
+}
+func scanIAMAccessKey(s scanner) (IAMAccessKey, error) {
+	var v IAMAccessKey
+	err := s.Scan(&v.AccessKeyID, &v.UserID, &v.SecretHash, &v.Active, &v.Created)
+	return v, err
+}
+
+const iamAccessKeyCols = `access_key_id,user_id,secret_hash,active,created`
+
+func (p *Postgres) GetIAMAccessKey(id string) (IAMAccessKey, error) {
+	v, err := scanIAMAccessKey(p.db.QueryRow(`SELECT `+iamAccessKeyCols+` FROM cf_iam_access_keys WHERE access_key_id=$1`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return v, ErrNotFound
+	}
+	return v, err
+}
+func (p *Postgres) ListIAMAccessKeys(userID string) ([]IAMAccessKey, error) {
+	rows, err := p.db.Query(`SELECT `+iamAccessKeyCols+` FROM cf_iam_access_keys WHERE user_id=$1 ORDER BY created`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []IAMAccessKey{}
+	for rows.Next() {
+		v, e := scanIAMAccessKey(rows)
+		if e != nil {
+			return nil, e
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+func (p *Postgres) DeleteIAMAccessKey(id string) error {
+	res, err := p.db.Exec(`DELETE FROM cf_iam_access_keys WHERE access_key_id=$1`, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 var _ = scheduler.Capacity{}

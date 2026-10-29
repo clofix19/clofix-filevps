@@ -86,7 +86,7 @@ func (a *Agent) beat() error {
 	res := a.results
 	a.results = nil
 	a.mu.Unlock()
-	body, _ := json.Marshal(proto.Heartbeat{Version: Version, Capacity: a.capacity(), Instances: a.Engine.Statuses(), Results: res})
+	body, _ := json.Marshal(proto.Heartbeat{Version: Version, Capacity: a.capacity(), Instances: a.Engine.Statuses(), Volumes: a.Engine.VolumeStatuses(), Results: res})
 	resp, err := a.hc.Post(a.Cfg.ControllerURL+"/v1/heartbeat", "application/json", bytes.NewReader(body))
 	if err != nil {
 		a.requeue(res)
@@ -138,10 +138,15 @@ func (a *Agent) executor(ctx context.Context) {
 				continue
 			}
 			err := a.admit(op)
-			if err == nil {
+			var volumeFile *proto.VolumeFileResult
+			if err == nil && op.VolumeFile != nil {
+				result, fileErr := a.Engine.ManageVolumeFile(*op.VolumeFile)
+				volumeFile, err = &result, fileErr
+			} else if err == nil {
 				err = a.Engine.Apply(op)
 			}
 			r := proto.OpResult{OpID: op.ID, OK: err == nil}
+			r.VolumeFile = volumeFile
 			if err != nil {
 				r.Error = err.Error()
 				log.Printf("op %s %s: %v", op.ID, op.Action, err)

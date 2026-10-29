@@ -1,6 +1,7 @@
 package store
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -18,16 +19,202 @@ type AuditRec struct {
 }
 
 type MemoryStore struct {
-	mu        sync.Mutex
-	tokens    map[string]*tokenRec
-	workers   map[string]Worker
-	instances map[string]Instance
-	ops       map[string][]proto.Operation
-	audit     []AuditRec
+	mu          sync.Mutex
+	tokens      map[string]*tokenRec
+	workers     map[string]Worker
+	instances   map[string]Instance
+	volumes     map[string]Volume
+	iamUsers    map[string]IAMUser
+	iamGroups   map[string]IAMGroup
+	iamPolicies map[string]IAMPolicy
+	iamKeys     map[string]IAMAccessKey
+	ops         map[string][]proto.Operation
+	audit       []AuditRec
 }
 
 func NewMemory() *MemoryStore {
-	return &MemoryStore{tokens: map[string]*tokenRec{}, workers: map[string]Worker{}, instances: map[string]Instance{}, ops: map[string][]proto.Operation{}}
+	return &MemoryStore{tokens: map[string]*tokenRec{}, workers: map[string]Worker{}, instances: map[string]Instance{}, volumes: map[string]Volume{}, iamUsers: map[string]IAMUser{}, iamGroups: map[string]IAMGroup{}, iamPolicies: map[string]IAMPolicy{}, iamKeys: map[string]IAMAccessKey{}, ops: map[string][]proto.Operation{}}
+}
+
+func copyIAMUser(v IAMUser) IAMUser {
+	v.GroupIDs = append([]string(nil), v.GroupIDs...)
+	v.PolicyIDs = append([]string(nil), v.PolicyIDs...)
+	return v
+}
+func copyIAMGroup(v IAMGroup) IAMGroup { v.PolicyIDs = append([]string(nil), v.PolicyIDs...); return v }
+func copyIAMPolicy(v IAMPolicy) IAMPolicy {
+	v.Permissions = append([]string(nil), v.Permissions...)
+	return v
+}
+
+func (m *MemoryStore) ListIAMUsers() ([]IAMUser, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]IAMUser, 0, len(m.iamUsers))
+	for _, v := range m.iamUsers {
+		out = append(out, copyIAMUser(v))
+	}
+	return out, nil
+}
+func (m *MemoryStore) GetIAMUser(id string) (IAMUser, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.iamUsers[id]
+	if !ok {
+		return v, ErrNotFound
+	}
+	return copyIAMUser(v), nil
+}
+func (m *MemoryStore) SaveIAMUser(v IAMUser) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, old := range m.iamUsers {
+		if id != v.ID && strings.EqualFold(old.Username, v.Username) {
+			return ErrConflict
+		}
+	}
+	m.iamUsers[v.ID] = copyIAMUser(v)
+	return nil
+}
+func (m *MemoryStore) DeleteIAMUser(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.iamUsers[id]; !ok {
+		return ErrNotFound
+	}
+	delete(m.iamUsers, id)
+	for k, v := range m.iamKeys {
+		if v.UserID == id {
+			delete(m.iamKeys, k)
+		}
+	}
+	return nil
+}
+func (m *MemoryStore) ListIAMGroups() ([]IAMGroup, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]IAMGroup, 0, len(m.iamGroups))
+	for _, v := range m.iamGroups {
+		out = append(out, copyIAMGroup(v))
+	}
+	return out, nil
+}
+func (m *MemoryStore) GetIAMGroup(id string) (IAMGroup, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.iamGroups[id]
+	if !ok {
+		return v, ErrNotFound
+	}
+	return copyIAMGroup(v), nil
+}
+func (m *MemoryStore) SaveIAMGroup(v IAMGroup) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, old := range m.iamGroups {
+		if id != v.ID && strings.EqualFold(old.Name, v.Name) {
+			return ErrConflict
+		}
+	}
+	m.iamGroups[v.ID] = copyIAMGroup(v)
+	return nil
+}
+func (m *MemoryStore) DeleteIAMGroup(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.iamGroups[id]; !ok {
+		return ErrNotFound
+	}
+	delete(m.iamGroups, id)
+	for uid, u := range m.iamUsers {
+		u.GroupIDs = removeString(u.GroupIDs, id)
+		m.iamUsers[uid] = u
+	}
+	return nil
+}
+func (m *MemoryStore) ListIAMPolicies() ([]IAMPolicy, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]IAMPolicy, 0, len(m.iamPolicies))
+	for _, v := range m.iamPolicies {
+		out = append(out, copyIAMPolicy(v))
+	}
+	return out, nil
+}
+func (m *MemoryStore) GetIAMPolicy(id string) (IAMPolicy, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.iamPolicies[id]
+	if !ok {
+		return v, ErrNotFound
+	}
+	return copyIAMPolicy(v), nil
+}
+func (m *MemoryStore) SaveIAMPolicy(v IAMPolicy) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, old := range m.iamPolicies {
+		if id != v.ID && strings.EqualFold(old.Name, v.Name) {
+			return ErrConflict
+		}
+	}
+	m.iamPolicies[v.ID] = copyIAMPolicy(v)
+	return nil
+}
+func (m *MemoryStore) DeleteIAMPolicy(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.iamPolicies[id]; !ok {
+		return ErrNotFound
+	}
+	delete(m.iamPolicies, id)
+	for gid, g := range m.iamGroups {
+		g.PolicyIDs = removeString(g.PolicyIDs, id)
+		m.iamGroups[gid] = g
+	}
+	for uid, u := range m.iamUsers {
+		u.PolicyIDs = removeString(u.PolicyIDs, id)
+		m.iamUsers[uid] = u
+	}
+	return nil
+}
+func (m *MemoryStore) SaveIAMAccessKey(v IAMAccessKey) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.iamUsers[v.UserID]; !ok {
+		return ErrNotFound
+	}
+	m.iamKeys[v.AccessKeyID] = v
+	return nil
+}
+func (m *MemoryStore) GetIAMAccessKey(id string) (IAMAccessKey, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.iamKeys[id]
+	if !ok {
+		return v, ErrNotFound
+	}
+	return v, nil
+}
+func (m *MemoryStore) ListIAMAccessKeys(userID string) ([]IAMAccessKey, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := []IAMAccessKey{}
+	for _, v := range m.iamKeys {
+		if v.UserID == userID {
+			out = append(out, v)
+		}
+	}
+	return out, nil
+}
+func (m *MemoryStore) DeleteIAMAccessKey(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.iamKeys[id]; !ok {
+		return ErrNotFound
+	}
+	delete(m.iamKeys, id)
+	return nil
 }
 
 func (m *MemoryStore) CreateToken(hash string, expires time.Time, _ string) error {
@@ -118,6 +305,37 @@ func (m *MemoryStore) DeleteInstance(id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.instances, id)
+	return nil
+}
+
+func (m *MemoryStore) SaveVolume(v Volume) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.volumes[v.ID] = v
+	return nil
+}
+func (m *MemoryStore) GetVolume(id string) (Volume, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.volumes[id]
+	if !ok {
+		return v, ErrNotFound
+	}
+	return v, nil
+}
+func (m *MemoryStore) ListVolumes() ([]Volume, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]Volume, 0, len(m.volumes))
+	for _, v := range m.volumes {
+		out = append(out, v)
+	}
+	return out, nil
+}
+func (m *MemoryStore) DeleteVolume(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.volumes, id)
 	return nil
 }
 

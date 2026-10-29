@@ -1,20 +1,31 @@
 // Package proto holds the controller <-> worker wire types.
 package proto
 
-import "github.com/clofix/filevps/worker/pkg/scheduler"
+import (
+	"time"
+
+	"github.com/clofix/filevps/worker/pkg/scheduler"
+)
 
 const (
-	ActionCreate           = "create"
-	ActionStart            = "start"
-	ActionStop             = "stop"
-	ActionRestart          = "restart"
-	ActionDelete           = "delete"
-	ActionUpdatePorts      = "update-ports"
-	ActionUpdateProtection = "update-protection"
-	ActionUpdateWAF        = "update-waf"
-	ActionUpdateS3Mount    = "update-s3-mount"
-	ActionServiceControl   = "service-control"
-	ActionInstallService   = "install-service"
+	ActionCreate                 = "create"
+	ActionStart                  = "start"
+	ActionStop                   = "stop"
+	ActionRestart                = "restart"
+	ActionDelete                 = "delete"
+	ActionUpdatePorts            = "update-ports"
+	ActionUpdateProtection       = "update-protection"
+	ActionUpdateSSHLogin         = "update-ssh-login"
+	ActionUpdateDeleteProtection = "update-delete-protection"
+	ActionUpdateWAF              = "update-waf"
+	ActionUpdateS3Mount          = "update-s3-mount"
+	ActionUpdateResources        = "update-resources"
+	ActionUpdateStorageMounts    = "update-storage-mounts"
+	ActionCreateVolume           = "create-volume"
+	ActionDeleteVolume           = "delete-volume"
+	ActionServiceControl         = "service-control"
+	ActionInstallService         = "install-service"
+	ActionUninstallService       = "uninstall-service"
 )
 
 const DefaultSwapMB int64 = 512
@@ -77,20 +88,53 @@ type InstanceSpec struct {
 	SSHAuthorizedKey string          `json:"ssh_authorized_key,omitempty"`
 	PortMappings     []PortMapping   `json:"port_mappings,omitempty"`
 	ProtectionMode   *bool           `json:"protection_mode,omitempty"`
+	SSHLoginBlocked  *bool           `json:"ssh_login_blocked,omitempty"`
+	DeleteProtection bool            `json:"delete_protection,omitempty"`
 	OWASPProtection  map[string]bool `json:"owasp_protection,omitempty"`
 	S3MountPath      string          `json:"s3_mount_path,omitempty"`
+	S3ConnectionID   string          `json:"s3_connection_id,omitempty"`
+	StorageMounts    []StorageMount  `json:"storage_mounts,omitempty"`
+}
+
+// StorageMount is a per-VPS host-backed persistent directory mounted in the guest.
+// It has no size quota; bytes consume the worker's shared storage pool.
+type StorageMount struct {
+	ID        string `json:"id"`
+	GuestPath string `json:"guest_path"`
+}
+
+type VolumeFileRequest struct {
+	VolumeID  string `json:"volume_id"`
+	Action    string `json:"action"` // list|read|write|mkdir|delete
+	Path      string `json:"path"`   // relative to the volume root; empty only for list root
+	Content   []byte `json:"content,omitempty"`
+	Recursive bool   `json:"recursive,omitempty"`
+}
+
+type VolumeFileEntry struct {
+	Name     string    `json:"name"`
+	Path     string    `json:"path"`
+	Kind     string    `json:"kind"` // file|folder|symlink
+	Size     int64     `json:"size"`
+	Modified time.Time `json:"modified,omitempty"`
+}
+
+type VolumeFileResult struct {
+	Entries []VolumeFileEntry `json:"entries,omitempty"`
+	Content []byte            `json:"content,omitempty"`
 }
 
 // S3Mount carries a one-time credential payload over the worker's mTLS channel.
 // The worker stores credentials separately from ordinary instance metadata.
 type S3Mount struct {
-	Endpoint  string `json:"endpoint"`
-	Bucket    string `json:"bucket"`
-	Region    string `json:"region,omitempty"`
-	Prefix    string `json:"prefix,omitempty"`
-	AccessKey string `json:"access_key"`
-	SecretKey string `json:"secret_key"`
-	GuestPath string `json:"guest_path"`
+	ConnectionID string `json:"connection_id,omitempty"`
+	Endpoint     string `json:"endpoint"`
+	Bucket       string `json:"bucket"`
+	Region       string `json:"region,omitempty"`
+	Prefix       string `json:"prefix,omitempty"`
+	AccessKey    string `json:"access_key"`
+	SecretKey    string `json:"secret_key"`
+	GuestPath    string `json:"guest_path"`
 }
 
 type PortMapping struct {
@@ -100,23 +144,28 @@ type PortMapping struct {
 }
 
 type Operation struct {
-	ID            string        `json:"id"`
-	Action        string        `json:"action"`
-	InstanceID    string        `json:"instance_id"`
-	Spec          *InstanceSpec `json:"spec,omitempty"` // create or update operation
-	S3Mount       *S3Mount      `json:"s3_mount,omitempty"`
-	UnmountS3     bool          `json:"unmount_s3,omitempty"`
-	ServiceName   string        `json:"service_name,omitempty"`
-	ServiceAction string        `json:"service_action,omitempty"`
-	ServiceID     string        `json:"service_id,omitempty"`
-	WAFCategory   string        `json:"waf_category,omitempty"`
-	WAFEnabled    bool          `json:"waf_enabled,omitempty"`
+	ID            string             `json:"id"`
+	Action        string             `json:"action"`
+	InstanceID    string             `json:"instance_id"`
+	Spec          *InstanceSpec      `json:"spec,omitempty"` // create or update operation
+	S3Mount       *S3Mount           `json:"s3_mount,omitempty"`
+	UnmountS3     bool               `json:"unmount_s3,omitempty"`
+	VolumeID      string             `json:"volume_id,omitempty"`
+	VolumeName    string             `json:"volume_name,omitempty"`
+	VolumeLimitMB int64              `json:"volume_limit_mb,omitempty"`
+	VolumeFile    *VolumeFileRequest `json:"volume_file,omitempty"`
+	ServiceName   string             `json:"service_name,omitempty"`
+	ServiceAction string             `json:"service_action,omitempty"`
+	ServiceID     string             `json:"service_id,omitempty"`
+	WAFCategory   string             `json:"waf_category,omitempty"`
+	WAFEnabled    bool               `json:"waf_enabled,omitempty"`
 }
 
 type OpResult struct {
-	OpID  string `json:"op_id"`
-	OK    bool   `json:"ok"`
-	Error string `json:"error,omitempty"`
+	OpID       string            `json:"op_id"`
+	OK         bool              `json:"ok"`
+	Error      string            `json:"error,omitempty"`
+	VolumeFile *VolumeFileResult `json:"volume_file,omitempty"`
 }
 
 type InstanceStatus struct {
@@ -139,18 +188,31 @@ type ServiceStatus struct {
 }
 
 type InstanceMetrics struct {
-	CPUPercent         float64 `json:"cpu_percent"`
-	MemoryCurrentBytes uint64  `json:"memory_current_bytes"`
-	MemoryLimitBytes   uint64  `json:"memory_limit_bytes"`
-	SwapCurrentBytes   uint64  `json:"swap_current_bytes"`
-	SwapLimitBytes     uint64  `json:"swap_limit_bytes"`
+	CPUPercent         float64               `json:"cpu_percent"`
+	MemoryCurrentBytes uint64                `json:"memory_current_bytes"`
+	MemoryLimitBytes   uint64                `json:"memory_limit_bytes"`
+	SwapCurrentBytes   uint64                `json:"swap_current_bytes"`
+	SwapLimitBytes     uint64                `json:"swap_limit_bytes"`
+	DiskUsageBytes     uint64                `json:"disk_usage_bytes"`
+	StorageVolumes     []StorageVolumeMetric `json:"storage_volumes,omitempty"`
+}
+
+type StorageVolumeMetric struct {
+	ID         string `json:"id"`
+	UsageBytes uint64 `json:"usage_bytes"`
 }
 
 type Heartbeat struct {
-	Version   string             `json:"version"`
-	Capacity  scheduler.Capacity `json:"capacity"`
-	Instances []InstanceStatus   `json:"instances"`
-	Results   []OpResult         `json:"results"`
+	Version   string               `json:"version"`
+	Capacity  scheduler.Capacity   `json:"capacity"`
+	Instances []InstanceStatus     `json:"instances"`
+	Volumes   []WorkerVolumeStatus `json:"volumes,omitempty"`
+	Results   []OpResult           `json:"results"`
+}
+
+type WorkerVolumeStatus struct {
+	ID         string `json:"id"`
+	UsageBytes uint64 `json:"usage_bytes"`
 }
 
 type HeartbeatResponse struct {

@@ -116,6 +116,7 @@ func (c *Collector) Collect(committedRAM uint64, allocCPU float64, committedDisk
 	if b, err := os.ReadFile("/sys/block/zram0/mm_stat"); err == nil {
 		fields := strings.Fields(string(b))
 		if len(fields) >= 3 {
+			cp.ZRAMOriginal, _ = strconv.ParseUint(fields[0], 10, 64)
 			cp.ZRAMCompressed, _ = strconv.ParseUint(fields[1], 10, 64)
 			cp.ZRAMUsed, _ = strconv.ParseUint(fields[2], 10, 64)
 		}

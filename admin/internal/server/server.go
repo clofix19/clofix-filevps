@@ -2,15 +2,16 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/clofix/filevps/admin/internal/objectstore"
 	"github.com/clofix/filevps/admin/internal/pki"
@@ -45,6 +47,13 @@ type Server struct {
 	usage           map[string]proto.InstanceMetrics
 	services        map[string][]proto.ServiceStatus
 	serviceInstalls map[string]map[string]string
+	volumeFileMu    sync.Mutex
+	volumeFileWait  map[string]volumeFileWaiter
+}
+
+type volumeFileWaiter struct {
+	workerID string
+	result   chan proto.OpResult
 }
 
 func New(s store.Store, ca *pki.CA, adminToken, uiDir string) *Server {
@@ -52,7 +61,7 @@ func New(s store.Store, ca *pki.CA, adminToken, uiDir string) *Server {
 	if dataDir == "" {
 		dataDir = "/var/lib/clofix-controller"
 	}
-	return &Server{Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}}
+	return &Server{Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}}
 }
 
 func randHex(n int) string {
@@ -83,17 +92,56 @@ func (s *Server) AdminHandler() http.Handler {
 		w.Write(s.CA.CertPEM)
 	})
 	mux.HandleFunc("POST /api/enrollment-tokens", s.auth(s.createToken))
+	mux.HandleFunc("GET /api/iam/me", s.auth(s.iamMe))
+	mux.HandleFunc("GET /api/iam/users", s.auth(s.listIAMUsers))
+	mux.HandleFunc("POST /api/iam/users", s.auth(s.saveIAMUser))
+	mux.HandleFunc("PUT /api/iam/users/{id}", s.auth(s.saveIAMUser))
+	mux.HandleFunc("DELETE /api/iam/users/{id}", s.auth(s.deleteIAMUser))
+	mux.HandleFunc("GET /api/iam/users/{id}/keys", s.auth(s.listIAMUserKeys))
+	mux.HandleFunc("POST /api/iam/users/{id}/keys", s.auth(s.createIAMUserKey))
+	mux.HandleFunc("DELETE /api/iam/users/{id}/keys/{key}", s.auth(s.revokeIAMUserKey))
+	mux.HandleFunc("GET /api/iam/groups", s.auth(s.listIAMGroups))
+	mux.HandleFunc("POST /api/iam/groups", s.auth(s.saveIAMGroup))
+	mux.HandleFunc("PUT /api/iam/groups/{id}", s.auth(s.saveIAMGroup))
+	mux.HandleFunc("DELETE /api/iam/groups/{id}", s.auth(s.deleteIAMGroup))
+	mux.HandleFunc("GET /api/iam/policies", s.auth(s.listIAMPolicies))
+	mux.HandleFunc("POST /api/iam/policies", s.auth(s.saveIAMPolicy))
+	mux.HandleFunc("PUT /api/iam/policies/{id}", s.auth(s.saveIAMPolicy))
+	mux.HandleFunc("DELETE /api/iam/policies/{id}", s.auth(s.deleteIAMPolicy))
 	mux.HandleFunc("GET /api/workers", s.auth(s.listWorkers))
 	mux.HandleFunc("POST /api/workers/{id}/drain", s.auth(s.setStatus("draining")))
 	mux.HandleFunc("POST /api/workers/{id}/activate", s.auth(s.setStatus("active")))
 	mux.HandleFunc("POST /api/workers/{id}/revoke", s.auth(s.setStatus("revoked")))
 	mux.HandleFunc("GET /api/instances", s.auth(s.listInstances))
+	mux.HandleFunc("GET /api/volumes", s.auth(s.listVolumes))
+	mux.HandleFunc("POST /api/volumes", s.auth(s.createVolume))
+	mux.HandleFunc("PUT /api/volumes/{id}", s.auth(s.editVolume))
+	mux.HandleFunc("DELETE /api/volumes/{id}", s.auth(s.deleteVolume))
+	mux.HandleFunc("POST /api/volumes/{id}/attach", s.auth(s.attachVolume))
+	mux.HandleFunc("POST /api/volumes/{id}/detach", s.auth(s.detachVolume))
+	mux.HandleFunc("GET /api/volumes/{id}/files", s.auth(s.listVolumeFiles))
+	mux.HandleFunc("GET /api/volumes/{id}/file", s.auth(s.readVolumeFile))
+	mux.HandleFunc("PUT /api/volumes/{id}/file", s.auth(s.writeVolumeFile))
+	mux.HandleFunc("DELETE /api/volumes/{id}/file", s.auth(s.deleteVolumeFile))
+	mux.HandleFunc("POST /api/volumes/{id}/folder", s.auth(s.createVolumeFolder))
+	mux.HandleFunc("POST /api/instances/{id}/resources", s.auth(s.updateInstanceResources))
 	mux.HandleFunc("GET /api/storage/s3", s.auth(s.getS3Config))
 	mux.HandleFunc("PUT /api/storage/s3", s.auth(s.saveS3Config))
+	mux.HandleFunc("GET /api/storage/connections", s.auth(s.listS3Connections))
+	mux.HandleFunc("POST /api/storage/connections", s.auth(s.createS3Connection))
+	mux.HandleFunc("PUT /api/storage/connections/{id}", s.auth(s.updateS3Connection))
+	mux.HandleFunc("DELETE /api/storage/connections/{id}", s.auth(s.deleteS3Connection))
+	mux.HandleFunc("GET /api/storage/connections/{id}/objects", s.auth(s.listS3Objects))
+	mux.HandleFunc("GET /api/storage/connections/{id}/object", s.auth(s.getS3Object))
+	mux.HandleFunc("PUT /api/storage/connections/{id}/object", s.auth(s.putS3Object))
+	mux.HandleFunc("DELETE /api/storage/connections/{id}/object", s.auth(s.deleteS3Object))
+	mux.HandleFunc("POST /api/storage/connections/{id}/folders", s.auth(s.createS3Folder))
 	mux.HandleFunc("POST /api/instances/{id}/s3-mount", s.auth(s.mountS3))
 	mux.HandleFunc("DELETE /api/instances/{id}/s3-mount", s.auth(s.unmountS3))
 	mux.HandleFunc("POST /api/instances/{id}/ports", s.auth(s.addPortMapping))
 	mux.HandleFunc("POST /api/instances/{id}/protection", s.auth(s.setProtectionMode))
+	mux.HandleFunc("POST /api/instances/{id}/ssh-login", s.auth(s.setSSHLoginBlocked))
+	mux.HandleFunc("POST /api/instances/{id}/delete-protection", s.auth(s.setDeleteProtection))
 	mux.HandleFunc("POST /api/instances/{id}/waf", s.auth(s.setWAFCategory))
 	mux.HandleFunc("DELETE /api/instances/{id}/ports/{hostPort}", s.auth(s.deletePortMapping))
 	mux.HandleFunc("GET /api/instances/{id}/logs", s.auth(s.instanceLogs))
@@ -106,6 +154,7 @@ func (s *Server) AdminHandler() http.Handler {
 	mux.HandleFunc("POST /api/instances/{id}/services/{name}", s.auth(s.serviceControl))
 	mux.HandleFunc("GET /api/instances/{id}/services/{name}/error-log", s.auth(s.serviceErrorLog))
 	mux.HandleFunc("POST /api/instances/{id}/install-service", s.auth(s.installService))
+	mux.HandleFunc("POST /api/instances/{id}/uninstall-service", s.auth(s.uninstallService))
 	mux.HandleFunc("DELETE /api/instances/{id}", s.auth(s.instanceOp(proto.ActionDelete)))
 	if s.UIDir != "" {
 		mux.Handle("/", s.uiHandler())
@@ -220,7 +269,9 @@ func (s *Server) uiHandler() http.Handler {
 
 func uiPage(route string) (page, title, instanceID string, ok bool) {
 	switch route {
-	case "/", "/instances":
+	case "/":
+		return "home", "Overview", "", true
+	case "/instances":
 		return "instances", "FileVPS", "", true
 	case "/create":
 		return "create", "Create FileVPS", "", true
@@ -232,8 +283,12 @@ func uiPage(route string) (page, title, instanceID string, ok bool) {
 		return "security", "CloFix Security", "", true
 	case "/storage/s3":
 		return "storage", "S3 Filesystem", "", true
+	case "/volumes":
+		return "volumes", "Persistent Volumes", "", true
 	case "/settings":
 		return "settings", "Settings", "", true
+	case "/iam":
+		return "iam", "Identity and Access Management", "", true
 	}
 	parts := strings.Split(strings.TrimPrefix(route, "/"), "/")
 	if len(parts) == 2 && parts[0] == "instances" && apiInstanceID.MatchString(parts[1]) {
@@ -287,13 +342,121 @@ func (s *Server) setProtectionMode(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "protection_mode": *in.Enabled, "queued": true, "restart_required": inst.State == proto.StateRunning})
 }
 
+func (s *Server) setSSHLoginBlocked(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&in); err != nil || in.Enabled == nil {
+		fail(w, http.StatusBadRequest, "enabled must be true or false")
+		return
+	}
+	id := r.PathValue("id")
+	if !apiInstanceID.MatchString(id) {
+		fail(w, http.StatusBadRequest, "invalid instance id")
+		return
+	}
+	s.placeMu.Lock()
+	defer s.placeMu.Unlock()
+	inst, err := s.Store.GetInstance(id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "instance not found")
+		return
+	}
+	if inst.State == proto.StateDeleting {
+		fail(w, http.StatusConflict, "cannot change SSH login policy while VPS is deleting")
+		return
+	}
+	wasBlocked := inst.Spec.SSHLoginBlocked != nil && *inst.Spec.SSHLoginBlocked
+	if wasBlocked == *in.Enabled {
+		writeJSON(w, http.StatusOK, map[string]any{"id": id, "ssh_login_blocked": wasBlocked, "unchanged": true})
+		return
+	}
+	previous := inst
+	inst.Spec.SSHLoginBlocked = in.Enabled
+	if err := s.Store.SaveInstance(inst); err != nil {
+		fail(w, http.StatusInternalServerError, "could not save SSH login policy")
+		return
+	}
+	spec := inst.Spec
+	if err := s.Store.QueueOp(inst.WorkerID, proto.Operation{ID: id + "/" + proto.ActionUpdateSSHLogin + "/" + randHex(4), Action: proto.ActionUpdateSSHLogin, InstanceID: id, Spec: &spec}); err != nil {
+		_ = s.Store.SaveInstance(previous)
+		fail(w, http.StatusInternalServerError, "could not queue SSH login policy update")
+		return
+	}
+	s.Store.Audit("admin", "instance.ssh_login", id, fmt.Sprintf("blocked=%t", *in.Enabled))
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "ssh_login_blocked": *in.Enabled, "queued": true, "restart_required": inst.State == proto.StateRunning})
+}
+
+func (s *Server) setDeleteProtection(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&in); err != nil || in.Enabled == nil {
+		fail(w, http.StatusBadRequest, "enabled must be true or false")
+		return
+	}
+	id := r.PathValue("id")
+	if !apiInstanceID.MatchString(id) {
+		fail(w, http.StatusBadRequest, "invalid instance id")
+		return
+	}
+	s.placeMu.Lock()
+	defer s.placeMu.Unlock()
+	inst, err := s.Store.GetInstance(id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "instance not found")
+		return
+	}
+	if inst.State == proto.StateDeleting {
+		fail(w, http.StatusConflict, "cannot change delete protection while VPS is deleting")
+		return
+	}
+	if inst.Spec.DeleteProtection == *in.Enabled {
+		writeJSON(w, http.StatusOK, map[string]any{"id": id, "delete_protection": inst.Spec.DeleteProtection, "unchanged": true})
+		return
+	}
+	previous := inst
+	inst.Spec.DeleteProtection = *in.Enabled
+	if err := s.Store.SaveInstance(inst); err != nil {
+		fail(w, http.StatusInternalServerError, "could not save delete protection")
+		return
+	}
+	spec := inst.Spec
+	if err := s.Store.QueueOp(inst.WorkerID, proto.Operation{ID: id + "/" + proto.ActionUpdateDeleteProtection + "/" + randHex(4), Action: proto.ActionUpdateDeleteProtection, InstanceID: id, Spec: &spec}); err != nil {
+		_ = s.Store.SaveInstance(previous)
+		fail(w, http.StatusInternalServerError, "could not queue delete protection update")
+		return
+	}
+	s.Store.Audit("admin", "instance.delete_protection", id, fmt.Sprintf("enabled=%t", *in.Enabled))
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "delete_protection": *in.Enabled, "queued": true})
+}
+
 func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if s.AdminToken == "" || subtle.ConstantTimeCompare([]byte(got), []byte(s.AdminToken)) != 1 {
+		p, ok := s.authenticate(r)
+		if !ok {
 			fail(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
+		resource := permissionResource(r.URL.Path)
+		action := "manage"
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			action = "read"
+		}
+		required := resource + ":" + action
+		if p.Role == "Read Only" && action == "manage" {
+			fail(w, http.StatusForbidden, "Read Only role cannot change resources")
+			return
+		}
+		if resource == "iam" && action == "manage" && p.Role != "Full Administrator" && !p.Root {
+			fail(w, http.StatusForbidden, "IAM administration requires the Full Administrator role")
+			return
+		}
+		if !hasIAMPermission(p, required) {
+			fail(w, http.StatusForbidden, "permission denied: "+required)
+			return
+		}
+		r = r.WithContext(context.WithValue(r.Context(), iamPrincipalContextKey{}, p))
 		h(w, r)
 	}
 }
@@ -357,6 +520,760 @@ func (s *Server) listInstances(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, views)
 }
 
+func (s *Server) listVolumes(w http.ResponseWriter, r *http.Request) {
+	volumes, err := s.Store.ListVolumes()
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "could not list volumes")
+		return
+	}
+	if volumes == nil {
+		volumes = []store.Volume{}
+	}
+	writeJSON(w, http.StatusOK, volumes)
+}
+
+func (s *Server) createVolume(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name     string `json:"name"`
+		WorkerID string `json:"worker_id"`
+		LimitMB  int64  `json:"limit_mb"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&in); err != nil {
+		fail(w, http.StatusBadRequest, "invalid volume settings")
+		return
+	}
+	in.Name = strings.TrimSpace(in.Name)
+	if len(in.Name) < 1 || len(in.Name) > 80 || !apiInstanceID.MatchString(in.WorkerID) || in.LimitMB < 0 || (in.LimitMB > 0 && in.LimitMB < 64) || in.LimitMB > 1_048_576 {
+		fail(w, http.StatusBadRequest, "volume name and worker are required; a hard limit must be 0 (unlimited) or 64–1,048,576 MB")
+		return
+	}
+	wk, err := s.Store.GetWorker(in.WorkerID)
+	if err != nil || wk.Status != "active" {
+		fail(w, http.StatusConflict, "select an active worker")
+		return
+	}
+	v := store.Volume{ID: "vol-" + randHex(8), Name: in.Name, WorkerID: in.WorkerID, State: "CREATING", LimitMB: in.LimitMB, Created: time.Now()}
+	if err := s.Store.SaveVolume(v); err != nil {
+		fail(w, http.StatusInternalServerError, "could not save volume")
+		return
+	}
+	op := proto.Operation{ID: "volume/" + v.ID + "/create/" + randHex(4), Action: proto.ActionCreateVolume, VolumeID: v.ID, VolumeName: v.Name, VolumeLimitMB: v.LimitMB}
+	if err := s.Store.QueueOp(v.WorkerID, op); err != nil {
+		_ = s.Store.DeleteVolume(v.ID)
+		fail(w, http.StatusInternalServerError, "could not queue volume creation")
+		return
+	}
+	s.Store.Audit("admin", "volume.create", v.ID, v.WorkerID)
+	writeJSON(w, http.StatusAccepted, v)
+}
+
+func (s *Server) editVolume(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var in struct {
+		Name string `json:"name"`
+	}
+	if !apiInstanceID.MatchString(id) {
+		fail(w, http.StatusBadRequest, "invalid volume id")
+		return
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&in); err != nil {
+		fail(w, http.StatusBadRequest, "invalid volume settings")
+		return
+	}
+	in.Name = strings.TrimSpace(in.Name)
+	if len(in.Name) < 1 || len(in.Name) > 80 {
+		fail(w, http.StatusBadRequest, "volume name must be 1–80 characters")
+		return
+	}
+	s.placeMu.Lock()
+	defer s.placeMu.Unlock()
+	v, err := s.Store.GetVolume(id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "volume not found")
+		return
+	}
+	if v.State == "CREATING" || v.State == "ATTACHING" || v.State == "DETACHING" || v.State == "DELETING" {
+		fail(w, http.StatusConflict, "wait for the current volume action to finish")
+		return
+	}
+	v.Name = in.Name
+	if err := s.Store.SaveVolume(v); err != nil {
+		fail(w, http.StatusInternalServerError, "could not update volume")
+		return
+	}
+	s.Store.Audit("admin", "volume.edit", id, in.Name)
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (s *Server) deleteVolume(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !apiInstanceID.MatchString(id) {
+		fail(w, http.StatusBadRequest, "invalid volume id")
+		return
+	}
+	s.placeMu.Lock()
+	defer s.placeMu.Unlock()
+	v, err := s.Store.GetVolume(id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "volume not found")
+		return
+	}
+	if v.InstanceID != "" || v.State == "ATTACHED" || v.State == "ATTACHING" || v.State == "DETACHING" {
+		fail(w, http.StatusConflict, "detach the volume before deleting it")
+		return
+	}
+	if v.State != "READY" && v.State != "FAILED" {
+		fail(w, http.StatusConflict, "volume is not ready to delete")
+		return
+	}
+	previous := v
+	v.State = "DELETING"
+	v.Error = ""
+	if err := s.Store.SaveVolume(v); err != nil {
+		fail(w, http.StatusInternalServerError, "could not update volume")
+		return
+	}
+	op := proto.Operation{ID: "volume/" + id + "/delete/" + randHex(4), Action: proto.ActionDeleteVolume, VolumeID: id}
+	if err := s.Store.QueueOp(v.WorkerID, op); err != nil {
+		_ = s.Store.SaveVolume(previous)
+		fail(w, http.StatusInternalServerError, "could not queue volume deletion")
+		return
+	}
+	s.Store.Audit("admin", "volume.delete", id, "queued; data removal requested")
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "queued": true, "data_deleted": true})
+}
+
+func (s *Server) attachVolume(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var in struct {
+		InstanceID string `json:"instance_id"`
+		GuestPath  string `json:"guest_path"`
+	}
+	if !apiInstanceID.MatchString(id) {
+		fail(w, http.StatusBadRequest, "invalid volume id")
+		return
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&in); err != nil || !apiInstanceID.MatchString(in.InstanceID) || !validS3MountPath(in.GuestPath) {
+		fail(w, http.StatusBadRequest, "existing VPS and a clean guest path outside protected system directories are required")
+		return
+	}
+	s.placeMu.Lock()
+	defer s.placeMu.Unlock()
+	v, err := s.Store.GetVolume(id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "volume not found")
+		return
+	}
+	if v.State != "READY" {
+		fail(w, http.StatusConflict, "volume must be ready and detached before attaching")
+		return
+	}
+	inst, err := s.Store.GetInstance(in.InstanceID)
+	if err != nil {
+		fail(w, http.StatusNotFound, "VPS not found")
+		return
+	}
+	if inst.WorkerID != v.WorkerID {
+		fail(w, http.StatusConflict, "volume and VPS must be on the same worker")
+		return
+	}
+	if inst.State != proto.StateRunning && inst.State != proto.StateStopped {
+		fail(w, http.StatusConflict, "VPS must be running or stopped")
+		return
+	}
+	if storagePathsConflict(in.GuestPath, inst.Spec.S3MountPath) {
+		fail(w, http.StatusConflict, "storage mount paths cannot overlap")
+		return
+	}
+	for _, m := range inst.Spec.StorageMounts {
+		if m.GuestPath != "" && storagePathsConflict(m.GuestPath, in.GuestPath) {
+			fail(w, http.StatusConflict, "storage mount paths cannot overlap")
+			return
+		}
+	}
+	prevInst, prevVol := inst, v
+	inst.Spec.StorageMounts = append(inst.Spec.StorageMounts, proto.StorageMount{ID: v.ID, GuestPath: in.GuestPath})
+	v.State = "ATTACHING"
+	v.InstanceID = inst.ID
+	v.GuestPath = in.GuestPath
+	v.Error = ""
+	if err := s.Store.SaveInstance(inst); err != nil {
+		fail(w, http.StatusInternalServerError, "could not save VPS mount")
+		return
+	}
+	if err := s.Store.SaveVolume(v); err != nil {
+		_ = s.Store.SaveInstance(prevInst)
+		fail(w, http.StatusInternalServerError, "could not save volume attachment")
+		return
+	}
+	op := proto.Operation{ID: inst.ID + "/" + proto.ActionUpdateStorageMounts + "/" + v.ID + "/" + randHex(4), Action: proto.ActionUpdateStorageMounts, InstanceID: inst.ID, Spec: &inst.Spec, VolumeID: v.ID}
+	if err := s.Store.QueueOp(inst.WorkerID, op); err != nil {
+		_ = s.Store.SaveInstance(prevInst)
+		_ = s.Store.SaveVolume(prevVol)
+		fail(w, http.StatusInternalServerError, "could not queue volume attachment")
+		return
+	}
+	s.Store.Audit("admin", "volume.attach", id, inst.ID+":"+in.GuestPath)
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "state": "ATTACHING", "restart_required": inst.State == proto.StateRunning})
+}
+
+func (s *Server) detachVolume(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !apiInstanceID.MatchString(id) {
+		fail(w, http.StatusBadRequest, "invalid volume id")
+		return
+	}
+	s.placeMu.Lock()
+	defer s.placeMu.Unlock()
+	v, err := s.Store.GetVolume(id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "volume not found")
+		return
+	}
+	if v.State != "ATTACHED" || v.InstanceID == "" {
+		fail(w, http.StatusConflict, "volume is not attached")
+		return
+	}
+	inst, err := s.Store.GetInstance(v.InstanceID)
+	if err != nil {
+		fail(w, http.StatusConflict, "attached VPS is unavailable")
+		return
+	}
+	if inst.State != proto.StateRunning && inst.State != proto.StateStopped {
+		fail(w, http.StatusConflict, "VPS must be running or stopped")
+		return
+	}
+	prevInst, prevVol := inst, v
+	mounts := make([]proto.StorageMount, 0, len(inst.Spec.StorageMounts))
+	found := false
+	for _, m := range inst.Spec.StorageMounts {
+		if m.ID == id {
+			found = true
+			continue
+		}
+		mounts = append(mounts, m)
+	}
+	if !found {
+		fail(w, http.StatusConflict, "VPS metadata does not contain this volume mount")
+		return
+	}
+	inst.Spec.StorageMounts = mounts
+	v.State = "DETACHING"
+	if err := s.Store.SaveInstance(inst); err != nil {
+		fail(w, http.StatusInternalServerError, "could not save VPS mount change")
+		return
+	}
+	if err := s.Store.SaveVolume(v); err != nil {
+		_ = s.Store.SaveInstance(prevInst)
+		fail(w, http.StatusInternalServerError, "could not save volume state")
+		return
+	}
+	op := proto.Operation{ID: inst.ID + "/" + proto.ActionUpdateStorageMounts + "/" + id + "/" + randHex(4), Action: proto.ActionUpdateStorageMounts, InstanceID: inst.ID, Spec: &inst.Spec, VolumeID: id}
+	if err := s.Store.QueueOp(inst.WorkerID, op); err != nil {
+		_ = s.Store.SaveInstance(prevInst)
+		_ = s.Store.SaveVolume(prevVol)
+		fail(w, http.StatusInternalServerError, "could not queue volume detach")
+		return
+	}
+	s.Store.Audit("admin", "volume.detach", id, inst.ID)
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "state": "DETACHING", "restart_required": inst.State == proto.StateRunning, "data_retained": true})
+}
+
+func validVolumeRelativePath(name string, allowRoot bool) bool {
+	if name == "" {
+		return allowRoot
+	}
+	if pathpkg.IsAbs(name) || pathpkg.Clean(name) != name || strings.ContainsAny(name, "\\\x00\r\n") || len(name) > 1024 {
+		return false
+	}
+	for _, part := range strings.Split(name, "/") {
+		if part == "" || part == "." || part == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) requestVolumeFile(r *http.Request, volumeID string, request proto.VolumeFileRequest) (proto.VolumeFileResult, int, string) {
+	if !apiInstanceID.MatchString(volumeID) || !validVolumeRelativePath(request.Path, request.Action == "list") {
+		return proto.VolumeFileResult{}, http.StatusBadRequest, "invalid volume path"
+	}
+	volume, err := s.Store.GetVolume(volumeID)
+	if err != nil {
+		return proto.VolumeFileResult{}, http.StatusNotFound, "volume not found"
+	}
+	if volume.State != "READY" && volume.State != "ATTACHED" {
+		return proto.VolumeFileResult{}, http.StatusConflict, "volume must be ready or attached to browse files"
+	}
+	worker, err := s.Store.GetWorker(volume.WorkerID)
+	if err != nil || worker.Status != "active" {
+		return proto.VolumeFileResult{}, http.StatusConflict, "volume worker is not active"
+	}
+	opID := "fileop/" + randHex(12)
+	resultCh := make(chan proto.OpResult, 1)
+	s.volumeFileMu.Lock()
+	s.volumeFileWait[opID] = volumeFileWaiter{workerID: volume.WorkerID, result: resultCh}
+	s.volumeFileMu.Unlock()
+	op := proto.Operation{ID: opID, Action: "volume-file", VolumeID: volumeID, VolumeFile: &request}
+	if err := s.Store.QueueOp(volume.WorkerID, op); err != nil {
+		s.volumeFileMu.Lock()
+		delete(s.volumeFileWait, opID)
+		s.volumeFileMu.Unlock()
+		return proto.VolumeFileResult{}, http.StatusInternalServerError, "could not queue worker file operation"
+	}
+	select {
+	case result := <-resultCh:
+		if !result.OK {
+			return proto.VolumeFileResult{}, http.StatusBadRequest, result.Error
+		}
+		if result.VolumeFile == nil {
+			return proto.VolumeFileResult{}, http.StatusBadGateway, "worker returned no file result"
+		}
+		return *result.VolumeFile, http.StatusOK, ""
+	case <-time.After(30 * time.Second):
+		s.volumeFileMu.Lock()
+		delete(s.volumeFileWait, opID)
+		s.volumeFileMu.Unlock()
+		return proto.VolumeFileResult{}, http.StatusGatewayTimeout, "worker file operation timed out; refresh and try again"
+	case <-r.Context().Done():
+		s.volumeFileMu.Lock()
+		delete(s.volumeFileWait, opID)
+		s.volumeFileMu.Unlock()
+		return proto.VolumeFileResult{}, http.StatusRequestTimeout, "request cancelled"
+	}
+}
+
+func (s *Server) listVolumeFiles(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	result, code, message := s.requestVolumeFile(r, r.PathValue("id"), proto.VolumeFileRequest{VolumeID: r.PathValue("id"), Action: "list", Path: r.URL.Query().Get("path")})
+	if code != http.StatusOK {
+		fail(w, code, message)
+		return
+	}
+	if result.Entries == nil {
+		result.Entries = []proto.VolumeFileEntry{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"path": r.URL.Query().Get("path"), "entries": result.Entries})
+}
+
+func (s *Server) readVolumeFile(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("path")
+	result, code, message := s.requestVolumeFile(r, r.PathValue("id"), proto.VolumeFileRequest{VolumeID: r.PathValue("id"), Action: "read", Path: name})
+	if code != http.StatusOK {
+		fail(w, code, message)
+		return
+	}
+	if r.URL.Query().Get("text") == "1" {
+		if len(result.Content) > 2<<20 {
+			fail(w, http.StatusRequestEntityTooLarge, "file is larger than the 2 MB edit limit; download it instead")
+			return
+		}
+		if !utf8.Valid(result.Content) {
+			fail(w, http.StatusUnsupportedMediaType, "binary files cannot be edited as text")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"content": string(result.Content)})
+		return
+	}
+	contentType := mime.TypeByExtension(filepath.Ext(name))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+strings.ReplaceAll(pathpkg.Base(name), `"`, "")+`"`)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(result.Content)
+}
+
+func (s *Server) writeVolumeFile(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("path")
+	if !validVolumeRelativePath(name, false) {
+		fail(w, http.StatusBadRequest, "invalid volume file path")
+		return
+	}
+	content, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4<<20))
+	if err != nil {
+		fail(w, http.StatusRequestEntityTooLarge, "file upload limit is 4 MB")
+		return
+	}
+	_, code, message := s.requestVolumeFile(r, r.PathValue("id"), proto.VolumeFileRequest{VolumeID: r.PathValue("id"), Action: "write", Path: name, Content: content})
+	if code != http.StatusOK {
+		fail(w, code, message)
+		return
+	}
+	s.Store.Audit("admin", "volume.file.write", r.PathValue("id"), name)
+	writeJSON(w, http.StatusOK, map[string]any{"saved": true, "path": name, "size": len(content)})
+}
+
+func (s *Server) createVolumeFolder(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&input); err != nil || !validVolumeRelativePath(input.Path, false) {
+		fail(w, http.StatusBadRequest, "invalid volume folder path")
+		return
+	}
+	_, code, message := s.requestVolumeFile(r, r.PathValue("id"), proto.VolumeFileRequest{VolumeID: r.PathValue("id"), Action: "mkdir", Path: input.Path})
+	if code != http.StatusOK {
+		fail(w, code, message)
+		return
+	}
+	s.Store.Audit("admin", "volume.folder.create", r.PathValue("id"), input.Path)
+	writeJSON(w, http.StatusCreated, map[string]any{"created": true, "path": input.Path})
+}
+
+func (s *Server) deleteVolumeFile(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("path")
+	if !validVolumeRelativePath(name, false) {
+		fail(w, http.StatusBadRequest, "invalid volume path")
+		return
+	}
+	_, code, message := s.requestVolumeFile(r, r.PathValue("id"), proto.VolumeFileRequest{VolumeID: r.PathValue("id"), Action: "delete", Path: name, Recursive: r.URL.Query().Get("recursive") == "1"})
+	if code != http.StatusOK {
+		fail(w, code, message)
+		return
+	}
+	s.Store.Audit("admin", "volume.file.delete", r.PathValue("id"), name)
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "path": name})
+}
+
+func (s *Server) completeVolumeFileResult(workerID string, result proto.OpResult) {
+	s.volumeFileMu.Lock()
+	waiter, ok := s.volumeFileWait[result.OpID]
+	if ok && waiter.workerID == workerID {
+		delete(s.volumeFileWait, result.OpID)
+	}
+	s.volumeFileMu.Unlock()
+	if ok && waiter.workerID == workerID {
+		select {
+		case waiter.result <- result:
+		default:
+		}
+	}
+}
+
+func (s *Server) updateInstanceResources(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !apiInstanceID.MatchString(id) {
+		fail(w, http.StatusBadRequest, "invalid instance id")
+		return
+	}
+	var in struct {
+		RAMMB  int64   `json:"ram_mb"`
+		CPU    float64 `json:"cpu"`
+		DiskMB int64   `json:"disk_mb"`
+		SwapMB int64   `json:"swap_mb"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&in); err != nil {
+		fail(w, http.StatusBadRequest, "invalid resource settings")
+		return
+	}
+	if in.RAMMB < 128 || in.RAMMB > 1<<20 || in.CPU < .1 || in.CPU > 1024 || in.DiskMB < 128 || in.DiskMB > 1<<30 || in.SwapMB < 0 || in.SwapMB > 1<<20 {
+		fail(w, http.StatusBadRequest, "RAM, CPU, disk allocation, or swap is outside supported limits")
+		return
+	}
+	s.placeMu.Lock()
+	defer s.placeMu.Unlock()
+	inst, err := s.Store.GetInstance(id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "instance not found")
+		return
+	}
+	if inst.State != proto.StateRunning && inst.State != proto.StateStopped {
+		fail(w, http.StatusConflict, "VPS resources can only be edited while running or stopped")
+		return
+	}
+	wk, err := s.Store.GetWorker(inst.WorkerID)
+	if err != nil || wk.Status != "active" {
+		fail(w, http.StatusConflict, "assigned worker is unavailable")
+		return
+	}
+	oldRAM, oldSwap, oldDisk, oldCPU := uint64(inst.Spec.RAMMB)<<20, uint64(proto.SwapLimitMB(inst.Spec))<<20, uint64(inst.Spec.DiskMB)<<20, inst.Spec.CPU
+	if wk.Capacity.RAMCommitted >= oldRAM {
+		wk.Capacity.RAMCommitted -= oldRAM
+	}
+	if wk.Capacity.SwapCommitted >= oldSwap {
+		wk.Capacity.SwapCommitted -= oldSwap
+	}
+	if wk.Capacity.DiskCommitted >= oldDisk {
+		wk.Capacity.DiskCommitted -= oldDisk
+	}
+	if wk.Capacity.CPUAllocated >= oldCPU {
+		wk.Capacity.CPUAllocated -= oldCPU
+	}
+	_, placeErr := scheduler.Place([]scheduler.Candidate{{ID: wk.ID, Active: true, LastHeartbeat: wk.LastHeartbeat, Capacity: wk.Capacity}}, scheduler.Request{RAM: uint64(in.RAMMB) << 20, Swap: uint64(in.SwapMB) << 20, Disk: uint64(in.DiskMB) << 20, CPU: in.CPU}, s.Sched, time.Now())
+	if placeErr != nil {
+		fail(w, http.StatusConflict, "worker cannot fit the requested resource limits: "+placeErr.Error())
+		return
+	}
+	previous := inst
+	wasRunning := inst.State == proto.StateRunning
+	inst.Spec.RAMMB, inst.Spec.CPU, inst.Spec.DiskMB = in.RAMMB, in.CPU, in.DiskMB
+	inst.Spec.SwapMB = &in.SwapMB
+	if wasRunning {
+		inst.State = proto.StateRestarting
+	}
+	if err := s.Store.SaveInstance(inst); err != nil {
+		fail(w, http.StatusInternalServerError, "could not save VPS resources")
+		return
+	}
+	spec := inst.Spec
+	op := proto.Operation{ID: id + "/" + proto.ActionUpdateResources + "/" + randHex(4), Action: proto.ActionUpdateResources, InstanceID: id, Spec: &spec}
+	if err := s.Store.QueueOp(inst.WorkerID, op); err != nil {
+		_ = s.Store.SaveInstance(previous)
+		fail(w, http.StatusInternalServerError, "could not queue VPS resource update")
+		return
+	}
+	s.Store.Audit("admin", "instance.resources.update", id, "queued")
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "queued": true, "restart_required": wasRunning, "disk_quota_enforced": false})
+}
+
+func (s *Server) listS3Connections(w http.ResponseWriter, r *http.Request) {
+	items, err := s.S3.PublicConnections()
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "could not read S3 connections")
+		return
+	}
+	if items == nil {
+		items = []objectstore.PublicConfig{}
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) createS3Connection(w http.ResponseWriter, r *http.Request) {
+	var c objectstore.Config
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<10)).Decode(&c); err != nil {
+		fail(w, http.StatusBadRequest, "invalid S3 connection")
+		return
+	}
+	c.ID = "s3-" + randHex(8)
+	c.Name = strings.TrimSpace(c.Name)
+	if err := s.S3.SaveConnection(c); err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.Store.Audit("admin", "storage.s3.create", c.ID, c.Name)
+	writeJSON(w, http.StatusCreated, map[string]any{"connection": objectstore.PublicConfig{ID: c.ID, Name: c.Name, Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, Configured: true}})
+}
+
+func (s *Server) updateS3Connection(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !apiInstanceID.MatchString(id) {
+		fail(w, http.StatusBadRequest, "invalid connection id")
+		return
+	}
+	old, err := s.S3.GetConnection(id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "S3 connection not found")
+		return
+	}
+	var c objectstore.Config
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<10)).Decode(&c); err != nil {
+		fail(w, http.StatusBadRequest, "invalid S3 connection")
+		return
+	}
+	c.ID = id
+	if c.AccessKey == "" {
+		c.AccessKey = old.AccessKey
+	}
+	if c.SecretKey == "" {
+		c.SecretKey = old.SecretKey
+	}
+	if strings.TrimSpace(c.Name) == "" {
+		c.Name = old.Name
+	}
+	if err := s.S3.SaveConnection(c); err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.Store.Audit("admin", "storage.s3.edit", id, c.Name)
+	writeJSON(w, http.StatusOK, map[string]any{"connection": objectstore.PublicConfig{ID: c.ID, Name: c.Name, Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, Configured: true}})
+}
+
+func (s *Server) deleteS3Connection(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !apiInstanceID.MatchString(id) {
+		fail(w, http.StatusBadRequest, "invalid connection id")
+		return
+	}
+	instances, _ := s.Store.ListInstances()
+	for _, i := range instances {
+		if i.Spec.S3MountPath != "" && (i.Spec.S3ConnectionID == id || (i.Spec.S3ConnectionID == "" && id == "s3-default")) {
+			fail(w, http.StatusConflict, "unmount this connection from all VPSs before deleting it")
+			return
+		}
+	}
+	if err := s.S3.DeleteConnection(id); err != nil {
+		if os.IsNotExist(err) {
+			fail(w, http.StatusNotFound, "S3 connection not found")
+		} else {
+			fail(w, http.StatusInternalServerError, "could not delete S3 connection")
+		}
+		return
+	}
+	s.Store.Audit("admin", "storage.s3.delete", id, "ok")
+	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
+}
+
+func (s *Server) s3Connection(w http.ResponseWriter, r *http.Request) objectstore.Config {
+	id := r.PathValue("id")
+	if !apiInstanceID.MatchString(id) {
+		fail(w, http.StatusBadRequest, "invalid connection id")
+		return objectstore.Config{}
+	}
+	c, err := s.S3.GetConnection(id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "S3 connection not found")
+	}
+	return c
+}
+
+func validS3ObjectKey(key string, allowEmpty bool) bool {
+	if key == "" {
+		return allowEmpty
+	}
+	if strings.HasPrefix(key, "/") || strings.ContainsAny(key, "\\\x00\r\n") || len(key) > 1024 {
+		return false
+	}
+	for _, part := range strings.Split(strings.TrimSuffix(key, "/"), "/") {
+		if part == "" || part == "." || part == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) listS3Objects(w http.ResponseWriter, r *http.Request) {
+	c := s.s3Connection(w, r)
+	if c.ID == "" {
+		return
+	}
+	prefix, cursor := r.URL.Query().Get("prefix"), r.URL.Query().Get("cursor")
+	if !validS3ObjectKey(prefix, true) {
+		fail(w, http.StatusBadRequest, "invalid bucket prefix")
+		return
+	}
+	listing, err := objectstore.List(c, prefix, cursor)
+	if err != nil {
+		fail(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, listing)
+}
+
+func (s *Server) getS3Object(w http.ResponseWriter, r *http.Request) {
+	c := s.s3Connection(w, r)
+	if c.ID == "" {
+		return
+	}
+	key := r.URL.Query().Get("key")
+	if !validS3ObjectKey(key, false) {
+		fail(w, http.StatusBadRequest, "invalid object key")
+		return
+	}
+	if r.URL.Query().Get("text") == "1" {
+		b, contentType, err := objectstore.Get(c, key)
+		if err != nil {
+			fail(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		if !utf8.Valid(b) || !(strings.HasPrefix(contentType, "text/") || strings.Contains(contentType, "json") || strings.Contains(contentType, "javascript") || strings.Contains(contentType, "xml")) {
+			fail(w, http.StatusUnsupportedMediaType, "object is not editable text")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"content": string(b), "content_type": contentType})
+		return
+	}
+	resp, err := objectstore.Open(c, key)
+	if err != nil {
+		fail(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+strings.ReplaceAll(pathpkg.Base(key), `"`, "")+`"`)
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, resp.Body)
+}
+
+func (s *Server) putS3Object(w http.ResponseWriter, r *http.Request) {
+	c := s.s3Connection(w, r)
+	if c.ID == "" {
+		return
+	}
+	key := r.URL.Query().Get("key")
+	if !validS3ObjectKey(key, false) {
+		fail(w, http.StatusBadRequest, "invalid object key")
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 128<<20))
+	if err != nil {
+		fail(w, http.StatusRequestEntityTooLarge, "file exceeds the 128 MB upload limit")
+		return
+	}
+	contentType := r.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = mime.TypeByExtension(filepath.Ext(key))
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	if err := objectstore.Put(c, key, contentType, body); err != nil {
+		fail(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.Store.Audit("admin", "storage.s3.object.put", c.ID, key)
+	writeJSON(w, http.StatusOK, map[string]any{"saved": true, "key": key, "size": len(body)})
+}
+
+func (s *Server) createS3Folder(w http.ResponseWriter, r *http.Request) {
+	c := s.s3Connection(w, r)
+	if c.ID == "" {
+		return
+	}
+	var in struct {
+		Key string `json:"key"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&in); err != nil || !validS3ObjectKey(in.Key, false) {
+		fail(w, http.StatusBadRequest, "invalid folder name")
+		return
+	}
+	if !strings.HasSuffix(in.Key, "/") {
+		in.Key += "/"
+	}
+	if err := objectstore.Put(c, in.Key, "application/x-directory", nil); err != nil {
+		fail(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.Store.Audit("admin", "storage.s3.folder.create", c.ID, in.Key)
+	writeJSON(w, http.StatusCreated, map[string]any{"created": true, "key": in.Key})
+}
+
+func (s *Server) deleteS3Object(w http.ResponseWriter, r *http.Request) {
+	c := s.s3Connection(w, r)
+	if c.ID == "" {
+		return
+	}
+	key := r.URL.Query().Get("key")
+	if !validS3ObjectKey(key, false) {
+		fail(w, http.StatusBadRequest, "invalid object key")
+		return
+	}
+	folder := strings.HasSuffix(key, "/")
+	if err := objectstore.Delete(c, key, folder); err != nil {
+		fail(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.Store.Audit("admin", "storage.s3.object.delete", c.ID, key)
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "key": key})
+}
+
 func (s *Server) getS3Config(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.S3.Public())
 }
@@ -376,15 +1293,27 @@ func (s *Server) saveS3Config(w http.ResponseWriter, r *http.Request) {
 }
 
 func validS3MountPath(p string) bool {
-	if !strings.HasPrefix(p, "/mnt/") || pathpkg.Clean(p) != p || strings.ContainsAny(p, "\\\x00\r\n") {
+	if !strings.HasPrefix(p, "/") || p == "/" || pathpkg.Clean(p) != p || strings.ContainsAny(p, "\\\x00\r\n") || len(p) > 256 {
 		return false
 	}
-	for _, part := range strings.Split(strings.TrimPrefix(p, "/mnt/"), "/") {
+	for _, part := range strings.Split(strings.TrimPrefix(p, "/"), "/") {
 		if part == "" || part == "." || part == ".." {
 			return false
 		}
 	}
-	return len(p) <= 256
+	for _, root := range []string{"/proc", "/sys", "/dev", "/run", "/etc", "/usr", "/bin", "/sbin", "/lib", "/lib64", "/boot", "/root", "/var/lib", "/var/log", "/var/cache", "/var/run"} {
+		if p == root || strings.HasPrefix(p, root+"/") {
+			return false
+		}
+	}
+	return true
+}
+
+func storagePathsConflict(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	return a == b || strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
 }
 
 func (s *Server) mountS3(w http.ResponseWriter, r *http.Request) {
@@ -394,13 +1323,14 @@ func (s *Server) mountS3(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		GuestPath string `json:"guest_path"`
+		GuestPath    string `json:"guest_path"`
+		ConnectionID string `json:"connection_id"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048)).Decode(&in); err != nil || !validS3MountPath(in.GuestPath) {
-		fail(w, http.StatusBadRequest, "guest_path must be a clean path below /mnt")
+		fail(w, http.StatusBadRequest, "guest_path must be a clean absolute guest path outside protected system directories")
 		return
 	}
-	c, err := s.S3.Load()
+	c, err := s.S3.GetConnection(in.ConnectionID)
 	if err != nil {
 		fail(w, http.StatusConflict, "configure S3 storage first")
 		return
@@ -420,14 +1350,21 @@ func (s *Server) mountS3(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusConflict, "unmount the current S3 path before changing it")
 		return
 	}
+	for _, mount := range inst.Spec.StorageMounts {
+		if mount.GuestPath != "" && storagePathsConflict(mount.GuestPath, in.GuestPath) {
+			fail(w, http.StatusConflict, "S3 and local storage mount paths cannot overlap")
+			return
+		}
+	}
 	previous := inst
 	inst.Spec.S3MountPath = in.GuestPath
+	inst.Spec.S3ConnectionID = c.ID
 	if err := s.Store.SaveInstance(inst); err != nil {
 		fail(w, http.StatusInternalServerError, "could not save S3 mount setting")
 		return
 	}
 	spec := inst.Spec
-	mount := &proto.S3Mount{Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, AccessKey: c.AccessKey, SecretKey: c.SecretKey, GuestPath: in.GuestPath}
+	mount := &proto.S3Mount{ConnectionID: c.ID, Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, AccessKey: c.AccessKey, SecretKey: c.SecretKey, GuestPath: in.GuestPath}
 	op := proto.Operation{ID: id + "/" + proto.ActionUpdateS3Mount + "/" + randHex(4), Action: proto.ActionUpdateS3Mount, InstanceID: id, Spec: &spec, S3Mount: mount}
 	if err := s.Store.QueueOp(inst.WorkerID, op); err != nil {
 		_ = s.Store.SaveInstance(previous)
@@ -457,6 +1394,7 @@ func (s *Server) unmountS3(w http.ResponseWriter, r *http.Request) {
 	}
 	previous := inst
 	inst.Spec.S3MountPath = ""
+	inst.Spec.S3ConnectionID = ""
 	if err := s.Store.SaveInstance(inst); err != nil {
 		fail(w, http.StatusInternalServerError, "could not save S3 mount setting")
 		return
@@ -674,12 +1612,79 @@ func (s *Server) installService(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusConflict, "disable Protection Mode in VPS Details before installing packages")
 		return
 	}
+	s.usageMu.RLock()
+	state := s.serviceInstalls[id][in.ServiceID]
+	s.usageMu.RUnlock()
+	if state == "INSTALLING" || state == "UNINSTALLING" || state == "UNINSTALL_FAILED" {
+		fail(w, http.StatusConflict, "wait for the current service change to finish")
+		return
+	}
+	if state == "INSTALLED" {
+		fail(w, http.StatusConflict, "service is already installed")
+		return
+	}
 	op := proto.Operation{ID: id + "/" + proto.ActionInstallService + "/" + randHex(4), Action: proto.ActionInstallService, InstanceID: id, ServiceID: in.ServiceID}
 	if err := s.Store.QueueOp(inst.WorkerID, op); err != nil {
 		fail(w, http.StatusInternalServerError, "could not queue service installation")
 		return
 	}
+	s.usageMu.Lock()
+	if s.serviceInstalls[id] == nil {
+		s.serviceInstalls[id] = map[string]string{}
+	}
+	s.serviceInstalls[id][in.ServiceID] = "INSTALLING"
+	s.usageMu.Unlock()
 	s.Store.Audit("admin", "instance.service.install", id, in.ServiceID)
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "service_id": in.ServiceID, "queued": true})
+}
+
+func (s *Server) uninstallService(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !apiInstanceID.MatchString(id) {
+		fail(w, http.StatusBadRequest, "invalid VPS ID")
+		return
+	}
+	var in struct {
+		ServiceID string `json:"service_id"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&in); err != nil || !serviceCatalog[in.ServiceID] || in.ServiceID == "python" {
+		fail(w, http.StatusBadRequest, "unknown service or service cannot be safely uninstalled from CloFix")
+		return
+	}
+	s.placeMu.Lock()
+	defer s.placeMu.Unlock()
+	inst, err := s.Store.GetInstance(id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "VPS not found")
+		return
+	}
+	if inst.State != proto.StateRunning {
+		fail(w, http.StatusConflict, "VPS must be running to uninstall a service")
+		return
+	}
+	if inst.Spec.ProtectionMode == nil || *inst.Spec.ProtectionMode {
+		fail(w, http.StatusConflict, "disable Protection Mode in VPS Details before uninstalling packages")
+		return
+	}
+	s.usageMu.RLock()
+	state := s.serviceInstalls[id][in.ServiceID]
+	s.usageMu.RUnlock()
+	if state != "INSTALLED" && state != "FAILED" && state != "UNINSTALL_FAILED" {
+		fail(w, http.StatusConflict, "service is not installed or is already changing state")
+		return
+	}
+	op := proto.Operation{ID: id + "/" + proto.ActionUninstallService + "/" + randHex(4), Action: proto.ActionUninstallService, InstanceID: id, ServiceID: in.ServiceID}
+	if err := s.Store.QueueOp(inst.WorkerID, op); err != nil {
+		fail(w, http.StatusInternalServerError, "could not queue service uninstall")
+		return
+	}
+	s.usageMu.Lock()
+	if s.serviceInstalls[id] == nil {
+		s.serviceInstalls[id] = map[string]string{}
+	}
+	s.serviceInstalls[id][in.ServiceID] = "UNINSTALLING"
+	s.usageMu.Unlock()
+	s.Store.Audit("admin", "instance.service.uninstall", id, in.ServiceID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "service_id": in.ServiceID, "queued": true})
 }
 
@@ -919,6 +1924,10 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) instanceOp(action string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if action == proto.ActionDelete {
+			s.placeMu.Lock()
+			defer s.placeMu.Unlock()
+		}
 		id := r.PathValue("id")
 		inst, err := s.Store.GetInstance(id)
 		if err != nil {
@@ -935,6 +1944,17 @@ func (s *Server) instanceOp(action string) http.HandlerFunc {
 		}
 		previousState := inst.State
 		if action == proto.ActionDelete {
+			if inst.Spec.DeleteProtection {
+				fail(w, http.StatusConflict, "VPS Delete Protection is enabled; disable it in VPS Details first")
+				return
+			}
+			volumes, _ := s.Store.ListVolumes()
+			for _, volume := range volumes {
+				if volume.InstanceID == inst.ID {
+					fail(w, http.StatusConflict, "detach persistent volumes before deleting this VPS")
+					return
+				}
+			}
 			inst.State = proto.StateDeleting
 		} else if action == proto.ActionStart {
 			inst.State = proto.StateStarting
@@ -1043,6 +2063,78 @@ func (s *Server) rateLimited(ip string) bool {
 	return len(keep) >= 5
 }
 
+func (s *Server) completeVolumeOperation(workerID, volumeID, action string, result proto.OpResult) {
+	v, err := s.Store.GetVolume(volumeID)
+	if err != nil || v.WorkerID != workerID {
+		return
+	}
+	if action == "create" {
+		if result.OK {
+			v.State, v.Error = "READY", ""
+		} else {
+			v.State, v.Error = "FAILED", result.Error
+		}
+		_ = s.Store.SaveVolume(v)
+		s.Store.Audit(workerID, "volume.create.result", volumeID, map[bool]string{true: "ready", false: result.Error}[result.OK])
+	} else if action == "delete" {
+		if result.OK {
+			_ = s.Store.DeleteVolume(volumeID)
+		} else {
+			v.State, v.Error = "READY", result.Error
+			_ = s.Store.SaveVolume(v)
+		}
+		s.Store.Audit(workerID, "volume.delete.result", volumeID, map[bool]string{true: "deleted", false: result.Error}[result.OK])
+	}
+}
+
+func (s *Server) completeVolumeAttachment(workerID, instanceID, volumeID string, result proto.OpResult) {
+	v, err := s.Store.GetVolume(volumeID)
+	if err != nil || v.WorkerID != workerID {
+		return
+	}
+	inst, err := s.Store.GetInstance(instanceID)
+	if err != nil || inst.WorkerID != workerID {
+		return
+	}
+	if result.OK {
+		if v.State == "ATTACHING" {
+			v.State = "ATTACHED"
+		} else if v.State == "DETACHING" {
+			v.State, v.InstanceID, v.GuestPath = "READY", "", ""
+		}
+		v.Error = ""
+	} else {
+		v.Error = result.Error
+		if v.State == "ATTACHING" {
+			v.State, v.InstanceID, v.GuestPath = "READY", "", ""
+			mounts := make([]proto.StorageMount, 0, len(inst.Spec.StorageMounts))
+			for _, m := range inst.Spec.StorageMounts {
+				if m.ID != volumeID {
+					mounts = append(mounts, m)
+				}
+			}
+			inst.Spec.StorageMounts = mounts
+			_ = s.Store.SaveInstance(inst)
+			_ = s.Store.QueueOp(workerID, proto.Operation{ID: instanceID + "/" + proto.ActionUpdateStorageMounts + "/rollback/" + randHex(4), Action: proto.ActionUpdateStorageMounts, InstanceID: instanceID, Spec: &inst.Spec, VolumeID: volumeID})
+		} else if v.State == "DETACHING" {
+			v.State = "ATTACHED"
+			found := false
+			for _, m := range inst.Spec.StorageMounts {
+				if m.ID == volumeID {
+					found = true
+				}
+			}
+			if !found {
+				inst.Spec.StorageMounts = append(inst.Spec.StorageMounts, proto.StorageMount{ID: volumeID, GuestPath: v.GuestPath})
+				_ = s.Store.SaveInstance(inst)
+			}
+			_ = s.Store.QueueOp(workerID, proto.Operation{ID: instanceID + "/" + proto.ActionUpdateStorageMounts + "/rollback/" + randHex(4), Action: proto.ActionUpdateStorageMounts, InstanceID: instanceID, Spec: &inst.Spec, VolumeID: volumeID})
+		}
+	}
+	_ = s.Store.SaveVolume(v)
+	s.Store.Audit(workerID, "volume.mount.result", volumeID, map[bool]string{true: "ok", false: result.Error}[result.OK])
+}
+
 func (s *Server) noteFail(ip string) {
 	s.failMu.Lock()
 	s.failures[ip] = append(s.failures[ip], time.Now())
@@ -1089,7 +2181,7 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var hb proto.Heartbeat
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20)).Decode(&hb); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 10<<20)).Decode(&hb); err != nil {
 		fail(w, 400, "invalid json")
 		return
 	}
@@ -1098,6 +2190,17 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 		wk.Status = "active" // TODO: gate on policy/health checks and optional admin approval
 	}
 	s.Store.UpsertWorker(wk)
+	for _, reported := range hb.Volumes {
+		v, err := s.Store.GetVolume(reported.ID)
+		if err != nil || v.WorkerID != id || v.State == "DELETING" {
+			continue
+		}
+		v.UsageBytes = reported.UsageBytes
+		if v.State == "CREATING" {
+			v.State = "READY"
+		}
+		_ = s.Store.SaveVolume(v)
+	}
 
 	for _, st := range hb.Instances {
 		if inst, err := s.Store.GetInstance(st.ID); err == nil && inst.WorkerID == id && inst.State != proto.StateDeleting {
@@ -1106,12 +2209,37 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 			s.usageMu.Lock()
 			s.usage[st.ID] = st.Metrics
 			s.services[st.ID] = st.Services
-			s.serviceInstalls[st.ID] = st.ServiceInstalls
+			reported := st.ServiceInstalls
+			if reported == nil {
+				reported = map[string]string{}
+			}
+			for serviceID, pending := range s.serviceInstalls[st.ID] {
+				reportedState := reported[serviceID]
+				if pending == "INSTALLING" && reportedState != "INSTALLING" && reportedState != "INSTALLED" && reportedState != "FAILED" {
+					reported[serviceID] = pending
+				}
+				if pending == "UNINSTALLING" && reportedState == "INSTALLED" {
+					reported[serviceID] = pending
+				}
+			}
+			s.serviceInstalls[st.ID] = reported
 			s.usageMu.Unlock()
 		}
 	}
 	for _, res := range hb.Results {
-		parts := strings.Split(res.OpID, "/") // <instance>/<action>/<rand>
+		if strings.HasPrefix(res.OpID, "fileop/") {
+			s.completeVolumeFileResult(id, res)
+			continue
+		}
+		parts := strings.Split(res.OpID, "/") // instance or volume operation ID
+		if len(parts) == 4 && parts[0] == "volume" {
+			s.completeVolumeOperation(id, parts[1], parts[2], res)
+			continue
+		}
+		if len(parts) == 4 && parts[1] == proto.ActionUpdateStorageMounts {
+			s.completeVolumeAttachment(id, parts[0], parts[2], res)
+			continue
+		}
 		if len(parts) != 3 {
 			continue
 		}
@@ -1137,6 +2265,11 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 				inst.Error = ""
 				_ = s.Store.SaveInstance(inst)
 			}
+		case res.OK && parts[1] == proto.ActionUninstallService:
+			if strings.HasPrefix(inst.Error, "service uninstall failed:") {
+				inst.Error = ""
+				_ = s.Store.SaveInstance(inst)
+			}
 		case res.OK && strings.HasPrefix(parts[1], proto.ActionUpdateWAF+"-"):
 			if strings.HasPrefix(inst.Error, "WAF update failed:") {
 				inst.Error = ""
@@ -1147,6 +2280,8 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 				inst.Error = "service action failed: " + res.Error
 			} else if parts[1] == proto.ActionInstallService {
 				inst.Error = "service installation failed: " + res.Error
+			} else if parts[1] == proto.ActionUninstallService {
+				inst.Error = "service uninstall failed: " + res.Error
 			} else if parts[1] == proto.ActionUpdatePorts {
 				inst.Error = "port mapping update failed: " + res.Error
 			} else if strings.HasPrefix(parts[1], proto.ActionUpdateWAF+"-") {

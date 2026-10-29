@@ -13,9 +13,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 type Config struct {
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name,omitempty"`
 	Endpoint  string `json:"endpoint"`
 	Bucket    string `json:"bucket"`
 	Region    string `json:"region,omitempty"`
@@ -25,6 +28,8 @@ type Config struct {
 }
 
 type PublicConfig struct {
+	ID         string `json:"id,omitempty"`
+	Name       string `json:"name,omitempty"`
 	Endpoint   string `json:"endpoint"`
 	Bucket     string `json:"bucket"`
 	Region     string `json:"region,omitempty"`
@@ -32,7 +37,10 @@ type PublicConfig struct {
 	Configured bool   `json:"configured"`
 }
 
-type Store struct{ dir string }
+type Store struct {
+	dir string
+	mu  sync.Mutex
+}
 
 func New(dir string) *Store { return &Store{dir: dir} }
 
@@ -83,8 +91,13 @@ func valid(c Config) error {
 	if c.SecretKey == "" || len(c.SecretKey) > 1024 || strings.ContainsAny(c.SecretKey, "\x00\r\n") {
 		return errors.New("invalid secret key")
 	}
-	if len(c.Prefix) > 1024 || strings.ContainsAny(c.Prefix, "\x00\r\n") {
+	if len(c.Prefix) > 1024 || strings.ContainsAny(c.Prefix, "\\\x00\r\n") {
 		return errors.New("invalid S3 prefix")
+	}
+	for _, part := range strings.Split(strings.Trim(c.Prefix, "/"), "/") {
+		if part == "." || part == ".." {
+			return errors.New("S3 prefix cannot contain dot path segments")
+		}
 	}
 	return nil
 }
@@ -167,4 +180,191 @@ func (s *Store) Public() PublicConfig {
 		return PublicConfig{}
 	}
 	return PublicConfig{Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, Configured: true}
+}
+
+func public(c Config) PublicConfig {
+	return PublicConfig{ID: c.ID, Name: c.Name, Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, Configured: true}
+}
+
+func (s *Store) ListConnections() ([]Config, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.listConnections()
+}
+
+func (s *Store) listConnections() ([]Config, error) {
+	path := filepath.Join(s.dir, "s3-connections.enc")
+	b, err := os.ReadFile(path)
+	if err == nil {
+		plain, e := s.decrypt(b, "CFS4", []byte("clofix-s3-connections-v1"))
+		if e != nil {
+			return nil, e
+		}
+		var configs []Config
+		if e = json.Unmarshal(plain, &configs); e != nil {
+			return nil, e
+		}
+		return configs, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	legacy, e := s.Load()
+	if e != nil {
+		return []Config{}, nil
+	}
+	legacy.ID, legacy.Name = "s3-default", "Default S3 connection"
+	return []Config{legacy}, nil
+}
+
+func (s *Store) GetConnection(id string) (Config, error) {
+	items, err := s.ListConnections()
+	if err != nil {
+		return Config{}, err
+	}
+	for _, c := range items {
+		if c.ID == id {
+			return c, nil
+		}
+	}
+	return Config{}, os.ErrNotExist
+}
+
+func (s *Store) SaveConnection(c Config) error {
+	if err := valid(c); err != nil {
+		return err
+	}
+	if c.ID == "" || len(c.ID) > 64 {
+		return errors.New("invalid S3 connection id")
+	}
+	if strings.TrimSpace(c.Name) == "" || len(c.Name) > 80 {
+		return errors.New("connection name must be 1–80 characters")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	items, err := s.listConnections()
+	if err != nil {
+		return err
+	}
+	found := false
+	for i := range items {
+		if items[i].ID == c.ID {
+			items[i] = c
+			found = true
+			break
+		}
+	}
+	if !found {
+		items = append(items, c)
+	}
+	plain, err := json.Marshal(items)
+	if err != nil {
+		return err
+	}
+	body, err := s.encrypt(plain, "CFS4", []byte("clofix-s3-connections-v1"))
+	if err != nil {
+		return err
+	}
+	return s.writeAtomic("s3-connections.enc", body)
+}
+
+func (s *Store) DeleteConnection(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	items, err := s.listConnections()
+	if err != nil {
+		return err
+	}
+	out := make([]Config, 0, len(items))
+	found := false
+	for _, c := range items {
+		if c.ID == id {
+			found = true
+			continue
+		}
+		out = append(out, c)
+	}
+	if !found {
+		return os.ErrNotExist
+	}
+	plain, err := json.Marshal(out)
+	if err != nil {
+		return err
+	}
+	body, err := s.encrypt(plain, "CFS4", []byte("clofix-s3-connections-v1"))
+	if err != nil {
+		return err
+	}
+	return s.writeAtomic("s3-connections.enc", body)
+}
+
+func (s *Store) PublicConnections() ([]PublicConfig, error) {
+	configs, err := s.ListConnections()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]PublicConfig, 0, len(configs))
+	for _, c := range configs {
+		out = append(out, public(c))
+	}
+	return out, nil
+}
+
+func (s *Store) encrypt(plain []byte, magic string, aad []byte) ([]byte, error) {
+	key, err := s.key()
+	if err != nil {
+		return nil, err
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, err
+	}
+	body := append([]byte(magic), nonce...)
+	return aead.Seal(body, nonce, plain, aad), nil
+}
+
+func (s *Store) decrypt(body []byte, magic string, aad []byte) ([]byte, error) {
+	if len(body) < 4 || string(body[:4]) != magic {
+		return nil, errors.New("invalid encrypted S3 connection store")
+	}
+	key, err := s.key()
+	if err != nil {
+		return nil, err
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	if len(body) < 4+aead.NonceSize() {
+		return nil, errors.New("truncated encrypted S3 connection store")
+	}
+	nonce := body[4 : 4+aead.NonceSize()]
+	return aead.Open(nil, nonce, body[4+aead.NonceSize():], aad)
+}
+
+func (s *Store) writeAtomic(name string, b []byte) error {
+	if err := os.MkdirAll(s.dir, 0o700); err != nil {
+		return err
+	}
+	tmp := filepath.Join(s.dir, name+".tmp")
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, filepath.Join(s.dir, name)); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }

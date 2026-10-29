@@ -26,6 +26,7 @@ type Capacity struct {
 	DiskCommitted uint64  `json:"disk_committed"`
 	// ZRAMLogical is informational only. It is NEVER counted as physical RAM.
 	ZRAMLogical    uint64  `json:"zram_logical"`
+	ZRAMOriginal   uint64  `json:"zram_original"` // uncompressed data stored on the zram device
 	ZRAMUsed       uint64  `json:"zram_used"`
 	ZRAMCompressed uint64  `json:"zram_compressed"`
 	ZRAMActive     bool    `json:"zram_active"`

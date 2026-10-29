@@ -1,7 +1,14 @@
 {{define "content"}}
 <section class="page active" id="page-services">
-      <div class="section-head"><div><p class="eyebrow">VPS software</p><h2>Service catalog</h2><p>Install common web servers, runtimes, databases, and CMS packages into a running VPS.</p></div></div>
-      <div class="panel"><div class="form-field"><label for="service-vps">Target VPS</label><select id="service-vps"><option value="">Select a VPS</option></select></div><div class="message" id="catalog-message"></div><p class="muted">Installs use Ubuntu APT repositories inside the VPS. Protection Mode must be disabled for that VPS in VPS Details. Package installation uses guest network access and may take several minutes.</p></div>
+      <div class="section-head"><div><p class="eyebrow">VPS software</p><h2>Service catalog</h2><p>Install, track, and uninstall catalog services in your VPSs.</p></div></div>
+      <div class="panel"><p class="muted">Service changes require a running VPS with Protection Mode disabled. Package installation or removal may take several minutes. Database files are retained; uninstalling Joomla removes its site files.</p><div class="message" id="catalog-message" role="status" aria-live="polite"></div></div>
       <div class="cards" id="service-catalog"></div>
     </section>
+    <dialog class="terminal-dialog service-install-dialog" id="service-install-dialog" aria-labelledby="service-install-title">
+      <div class="section-head"><div><p class="eyebrow">Service installation</p><h2 id="service-install-title">Install service</h2><p id="service-install-description" class="muted"></p></div><button type="button" class="secondary" id="service-install-close" aria-label="Close install dialog">Close</button></div>
+      <div class="form-field"><label for="service-install-vps">Select VPS</label><select id="service-install-vps"><option value="">Choose a VPS</option></select></div>
+      <p class="muted" id="service-install-note">Choose a running VPS with Protection Mode disabled.</p>
+      <div class="service-install-status" id="service-install-status" role="status" aria-live="polite">Select a running VPS with Protection Mode disabled.</div>
+      <div class="inline-fields"><button type="button" class="primary" id="service-install-run">Install</button><button type="button" class="secondary" id="service-install-done" hidden>Close</button></div>
+    </dialog>
 {{end}}

@@ -6,44 +6,63 @@
   <meta name="theme-color" content="#0a0f16">
   <title>CloFix · {{.Title}}</title>
   <link rel="icon" type="image/svg+xml" href="/clofix-mark.svg">
-  <link rel="stylesheet" href="/assets/app.css?v=20261029-9">
+  <link rel="stylesheet" href="/assets/app.css?v=20261029-22">
 </head>
 <body data-page="{{.Page}}" data-instance-id="{{.InstanceID}}">
   <div class="shell">
     <aside class="sidebar">
-      <a class="brand" href="/instances" aria-label="CloFix FileVPS home">
+      <button class="secondary sidebar-close" id="sidebar-close" type="button" aria-label="Close navigation menu">✕</button>
+      <a class="brand" href="/" aria-label="CloFix FileVPS home">
         <img class="brand-logo" src="/clofix-logo.png" alt="CloFix">
         <span class="brand-sub">FileVPS Control</span>
       </a>
-      <div>
-        <div class="nav-label">WORKSPACE</div>
-        <nav class="nav" aria-label="Main navigation">
-          <a class="{{if or (eq .Page "instances") (eq .Page "details")}}active{{end}}" href="/instances"><span class="nav-icon">▦</span><span>FileVPS</span></a>
-          <a class="{{if eq .Page "create"}}active{{end}}" href="/create"><span class="nav-icon">＋</span><span>Create FileVPS</span></a>
-          <a class="{{if eq .Page "services"}}active{{end}}" href="/services"><span class="nav-icon">▣</span><span>Services</span></a>
-          <a class="{{if eq .Page "security"}}active{{end}}" href="/security"><span class="nav-icon">⬡</span><span>CloFix Security</span></a>
-          <a class="{{if eq .Page "workers"}}active{{end}}" href="/workers"><span class="nav-icon">▤</span><span>Workers</span></a>
-          <a class="{{if eq .Page "storage"}}active{{end}}" href="/storage/s3"><span class="nav-icon">▧</span><span>S3 Filesystem</span></a>
-          <a class="{{if eq .Page "settings"}}active{{end}}" href="/settings"><span class="nav-icon">⚙</span><span>Settings</span></a>
-        </nav>
-      </div>
+      <nav class="nav" aria-label="Main navigation">
+        <section class="nav-group" aria-label="Dashboard">
+          <div class="nav-label">DASHBOARD</div>
+          <a class="{{if eq .Page "home"}}active{{end}}" href="/"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-6v-7h-4v7H4a1 1 0 0 1-1-1z"/></svg></span><span>Overview</span></a>
+        </section>
+        <section class="nav-group" aria-label="VPS management">
+          <div class="nav-label">VPS MANAGEMENT</div>
+          <a class="{{if or (eq .Page "instances") (eq .Page "details")}}active{{end}}" href="/instances"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 8h8M8 12h8M8 16h4"/></svg></span><span>FileVPS</span><span class="nav-count" id="nav-vps-count">—</span></a>
+          <a class="{{if eq .Page "create"}}active{{end}}" href="/create"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></span><span>Create FileVPS</span></a>
+          <a class="{{if eq .Page "services"}}active{{end}}" href="/services"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6"/></svg></span><span>Services</span></a>
+        </section>
+        <section class="nav-group" aria-label="Security">
+          <div class="nav-label">SECURITY</div>
+          <a class="{{if eq .Page "security"}}active{{end}}" href="/security"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 20 6v5c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V6z"/><path d="m9 12 2 2 4-4"/></svg></span><span>CloFix Security</span><span class="nav-count" id="nav-security-count">—</span></a>
+        </section>
+        <section class="nav-group" aria-label="Infrastructure">
+          <div class="nav-label">INFRASTRUCTURE</div>
+          <a class="{{if eq .Page "workers"}}active{{end}}" href="/workers"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/></svg></span><span>Workers</span><span class="nav-count" id="nav-worker-count">—</span></a>
+          <a class="{{if eq .Page "volumes"}}active{{end}}" href="/volumes"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5zM3 12l9 5 9-5M3 16l9 5 9-5"/></svg></span><span>Volumes</span></a>
+          <a class="{{if eq .Page "storage"}}active{{end}}" href="/storage/s3"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg></span><span>S3 Filesystem</span></a>
+        </section>
+        <section class="nav-group" aria-label="System">
+          <div class="nav-label">SYSTEM</div>
+          <a class="{{if eq .Page "iam"}}active{{end}}" href="/iam"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 19c.6-3 2.4-4.5 5.5-4.5s4.9 1.5 5.5 4.5M16 6.5a3 3 0 0 1 0 5.8M17 15c2 .5 3.1 1.8 3.5 4"/></svg></span><span>IAM</span></a>
+          <a class="{{if eq .Page "settings"}}active{{end}}" href="/settings"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.7-.6a8 8 0 0 1-1.8 1l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.8-1l-1.7.6-1.4-2.4 1.4-1.1a7 7 0 0 1 0-2l-1.4-1.1 1.4-2.4 1.7.6a8 8 0 0 1 1.8-1l.3-1.8h2.8l.3 1.8a8 8 0 0 1 1.8 1l1.7-.6 1.4 2.4-1.4 1.1a7 7 0 0 1 0 2z" transform="translate(-1 -1) scale(.92)"/></svg></span><span>Settings</span></a>
+        </section>
+      </nav>
       <div class="side-bottom"><span class="live-dot"></span>Control plane connected<br><span id="refresh-time">Refreshing status…</span><br><span style="color:#71849a">CloFix FileVPS</span></div>
     </aside>
     <main class="main">
       <header class="topbar">
+        <button class="secondary menu-toggle" id="sidebar-toggle" type="button" aria-label="Open navigation menu" aria-expanded="false">☰</button>
         <div><p class="eyebrow">CloFix / Infrastructure</p><h1 id="page-title">{{.Title}}</h1></div>
         <div class="top-actions"><span id="msg" class="top-status" role="status" aria-live="polite"></span>
-          <details class="token-box"><summary>Admin access</summary><div class="token-content"><strong>Admin token</strong><p class="muted">Use the token configured for your local Compose stack.</p><input id="tok" type="password" placeholder="Admin token" autocomplete="current-password"><button class="primary" id="save" type="button">Save token</button></div></details>
+          <details class="token-box user-menu"><summary aria-label="Open user menu">Admin token ▾</summary><div class="token-content"><strong>Account</strong><dl class="account-facts"><dt>Username</dt><dd>Unavailable from current API</dd><dt>Role</dt><dd>Unavailable from current API</dd><dt>MFA</dt><dd>Not reported by token authentication</dd></dl><p class="muted">Current login uses the local admin token.</p><label for="tok">Admin token</label><input id="tok" type="password" placeholder="Admin token" autocomplete="current-password"><button class="primary" id="save" type="button">Save token</button><button class="secondary" id="logout" type="button">Log out</button></div></details>
         </div>
       </header>
       <div class="auth-banner" id="auth-banner" hidden><div><strong>Connect to your control plane</strong><p>Enter the admin token to load workers, VPSs, and security settings.</p></div><button class="secondary" id="auth-banner-open" type="button">Enter admin token</button></div>
+      <div class="sync-warning" id="stale-warning" role="status" aria-live="polite" hidden></div>
       {{template "content" .}}
     </main>
+    <button class="sidebar-backdrop" id="sidebar-backdrop" type="button" aria-label="Close navigation menu" tabindex="-1"></button>
   </div>
   <dialog class="terminal-dialog" id="terminal-dialog"><div class="section-head"><div><p class="eyebrow">SSH Terminal</p><h2 id="terminal-title">Connect to VPS</h2></div><button type="button" class="secondary" id="terminal-close">Close</button></div><p class="muted">Open the Terminal app on your Mac and run this command. SSH will use your default private key. If your key is stored elsewhere, add <code>-i /path/to/private-key</code> after <code>ssh</code>.</p><code class="terminal-command" id="terminal-command"></code><div class="inline-fields"><button type="button" class="primary" id="terminal-copy">Copy SSH command</button><span class="message" id="terminal-message"></span></div><p class="muted">On the first connection, review the host fingerprint and type <code>yes</code> to continue. The VPS must be running and reachable at this Mac's localhost SSH port.</p></dialog>
   <dialog class="terminal-dialog" id="service-log-dialog"><div class="section-head"><div><p class="eyebrow">Live service log</p><h2 id="service-log-title">Service logs</h2></div><button type="button" class="secondary" id="service-log-close">Close</button></div><p class="muted">Log tail refreshed from the VPS worker heartbeat.</p><pre id="service-log-output" class="log-view"></pre></dialog>
   <dialog class="terminal-dialog" id="service-error-dialog"><div class="section-head"><div><p class="eyebrow">Application services</p><h2 id="service-error-title">Service error log</h2></div><button type="button" class="secondary" id="service-error-close">Close</button></div><p class="muted">Filtered <code>error.log</code> tail refreshed from the VPS worker heartbeat.</p><pre id="service-error-output" class="log-view"></pre></dialog>
   <dialog class="terminal-dialog" id="waf-log-dialog"><div class="section-head"><div><p class="eyebrow">CloFix Security · Nginx</p><h2>WAF error log</h2></div><button type="button" class="secondary" id="waf-log-close">Close</button></div><p class="muted">Recent Nginx error entries, including ModSecurity messages. Refreshed from the worker heartbeat.</p><pre id="waf-log-output" class="log-view"></pre></dialog>
-  <script src="/assets/app.js?v=20261029-9" defer></script>
+  <script src="/assets/app.js?v=20261029-34" defer></script>
 </body>
 </html>{{end}}

@@ -26,11 +26,16 @@ func (e *Engine) s3ConfigPath(id string) string {
 func (e *Engine) s3HostMountPath(id string) string { return filepath.Join(e.idir(id), "s3fs-mount") }
 
 func validGuestMountPath(p string) bool {
-	if !strings.HasPrefix(p, "/mnt/") || filepath.Clean(p) != p || strings.ContainsAny(p, "\\\x00\r\n") {
+	if !filepath.IsAbs(p) || p == "/" || filepath.Clean(p) != p || strings.ContainsAny(p, "\\\x00\r\n") || len(p) > 256 {
 		return false
 	}
-	for _, part := range strings.Split(strings.TrimPrefix(p, "/mnt/"), "/") {
+	for _, part := range strings.Split(strings.TrimPrefix(p, "/"), "/") {
 		if part == "" || part == "." || part == ".." {
+			return false
+		}
+	}
+	for _, root := range []string{"/proc", "/sys", "/dev", "/run", "/etc", "/usr", "/bin", "/sbin", "/lib", "/lib64", "/boot", "/root", "/var/lib", "/var/log", "/var/cache", "/var/run"} {
+		if p == root || strings.HasPrefix(p, root+"/") {
 			return false
 		}
 	}
@@ -56,13 +61,16 @@ func (e *Engine) UpdateS3Mount(id string, mount *proto.S3Mount) error {
 		}
 	}
 	oldPath := m.S3MountPath
+	oldConnectionID := m.Spec.S3ConnectionID
 	oldSecret, _ := os.ReadFile(e.s3ConfigPath(id))
 	if mount == nil {
 		m.S3MountPath = ""
 		m.Spec.S3MountPath = ""
+		m.Spec.S3ConnectionID = ""
 		if err := os.Remove(e.s3ConfigPath(id)); err != nil && !os.IsNotExist(err) {
 			m.S3MountPath = oldPath
 			m.Spec.S3MountPath = oldPath
+			m.Spec.S3ConnectionID = oldConnectionID
 			return err
 		}
 	} else {
@@ -76,10 +84,12 @@ func (e *Engine) UpdateS3Mount(id string, mount *proto.S3Mount) error {
 		_ = os.Chmod(e.s3ConfigPath(id), 0o600)
 		m.S3MountPath = mount.GuestPath
 		m.Spec.S3MountPath = mount.GuestPath
+		m.Spec.S3ConnectionID = mount.ConnectionID
 	}
 	if err := e.save(m); err != nil {
 		m.S3MountPath = oldPath
 		m.Spec.S3MountPath = oldPath
+		m.Spec.S3ConnectionID = oldConnectionID
 		if len(oldSecret) > 0 {
 			_ = os.WriteFile(e.s3ConfigPath(id), oldSecret, 0o600)
 		} else {
