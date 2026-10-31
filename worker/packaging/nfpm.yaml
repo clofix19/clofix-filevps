@@ -10,6 +10,9 @@ contents:
   - src: ./dist/clofix-worker-linux-${GOARCH}
     dst: /usr/bin/clofix-worker
     file_info: { mode: 0755 }
+  - src: ./dist/weed
+    dst: /usr/bin/weed
+    file_info: { mode: 0755 }
   - src: ./packaging/systemd/clofix-worker.service
     dst: /lib/systemd/system/clofix-worker.service
   - src: ./packaging/config/worker.json

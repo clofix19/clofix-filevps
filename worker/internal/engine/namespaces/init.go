@@ -4,11 +4,13 @@
 package namespaces
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 )
@@ -16,16 +18,22 @@ import (
 // RunInit args: <rootfs> <hostname> [--protection-mode] -- <init command...>.
 // It does not return on success.
 func RunInit(args []string) error {
+	// Keep namespace setup and seccomp on the same OS thread through exec.
+	runtime.LockOSThread()
 	if len(args) < 4 {
 		return errors.New("usage: fx-init <rootfs> <hostname> [--protection-mode] -- <cmd...>")
 	}
 	root, hostname := args[0], args[1]
 	argStart := 2
 	protected := false
+	unprivileged := false
 	type bindMount struct{ source, target string }
 	var binds []bindMount
 	for argStart < len(args) && args[argStart] != "--" {
 		switch args[argStart] {
+		case "--unprivileged":
+			unprivileged = true
+			argStart++
 		case "--protection-mode":
 			protected = true
 			argStart++
@@ -107,9 +115,37 @@ func RunInit(args []string) error {
 		return fmt.Errorf("unmount old root: %w", err)
 	}
 	os.Remove("/.oldroot")
+	var appEnv map[string]string
+	if unprivileged {
+		data, err := os.ReadFile("/app/.clofix-env.json")
+		if err != nil {
+			return err
+		}
+		if err = json.Unmarshal(data, &appEnv); err != nil {
+			return err
+		}
+		if err := os.Remove("/app/.clofix-env.json"); err != nil {
+			return err
+		}
+	}
+
 	if protected {
-		if err := syscall.Mount("", "/", "", syscall.MS_BIND|syscall.MS_REMOUNT|syscall.MS_RDONLY, ""); err != nil {
+		if err := syscall.Mount("", "/", "", syscall.MS_BIND|syscall.MS_REMOUNT|syscall.MS_RDONLY|syscall.MS_NOSUID|syscall.MS_NODEV, ""); err != nil {
 			return fmt.Errorf("remount guest root read-only: %w", err)
+		}
+	}
+	if unprivileged {
+		if err := syscall.Setgroups([]int{}); err != nil {
+			return err
+		}
+		if err := syscall.Setgid(65534); err != nil {
+			return err
+		}
+		if err := syscall.Setuid(65534); err != nil {
+			return err
+		}
+		if err := os.Chdir("/tmp"); err != nil {
+			return err
 		}
 	}
 	if err := installSeccomp(); err != nil {
@@ -117,6 +153,22 @@ func RunInit(args []string) error {
 	}
 
 	env := []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "HOME=/root", "TERM=xterm", "container=clofix-fx"}
+	if unprivileged {
+		env[1] = "HOME=/tmp"
+		for k, v := range appEnv {
+			replaced := false
+			for i, value := range env {
+				if strings.HasPrefix(value, k+"=") {
+					env[i] = k + "=" + v
+					replaced = true
+					break
+				}
+			}
+			if !replaced {
+				env = append(env, k+"="+v)
+			}
+		}
+	}
 	if len(argv) == 0 || argv[0] == "" {
 		argv = []string{"/sbin/init"}
 		if _, err := os.Stat("/sbin/init"); err != nil {

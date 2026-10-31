@@ -43,6 +43,12 @@ func (c *s3Client) bucketURL() (*url.URL, error) {
 		return nil, err
 	}
 	u.Path = path.Join(u.Path, c.cfg.Bucket)
+	if !strings.HasPrefix(u.Path, "/") {
+		u.Path = "/" + u.Path
+	}
+	if u.Path == "" {
+		u.Path = "/"
+	}
 	u.RawPath = ""
 	return u, nil
 }
@@ -70,6 +76,10 @@ func canonicalQuery(v url.Values) string {
 }
 
 func (c *s3Client) request(method, key string, q url.Values, body []byte, headers map[string]string) (*http.Response, error) {
+	return c.requestReader(method, key, q, bytes.NewReader(body), int64(len(body)), hexHash(body), headers)
+}
+
+func (c *s3Client) requestReader(method, key string, q url.Values, body io.Reader, size int64, payloadHash string, headers map[string]string) (*http.Response, error) {
 	u, err := c.bucketURL()
 	if err != nil {
 		return nil, err
@@ -78,7 +88,6 @@ func (c *s3Client) request(method, key string, q url.Values, body []byte, header
 		u.Path = strings.TrimSuffix(u.Path, "/") + "/" + strings.TrimPrefix(key, "/")
 	}
 	u.RawQuery = canonicalQuery(q)
-	payloadHash := hexHash(body)
 	now := time.Now().UTC()
 	stamp := now.Format("20060102T150405Z")
 	day := now.Format("20060102")
@@ -113,7 +122,7 @@ func (c *s3Client) request(method, key string, q url.Values, body []byte, header
 	kService := hmacSum(kRegion, "s3")
 	kSigning := hmacSum(kService, "aws4_request")
 	signature := hex.EncodeToString(hmacSum(kSigning, toSign))
-	req, err := http.NewRequest(method, u.String(), bytes.NewReader(body))
+	req, err := http.NewRequest(method, u.String(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -121,6 +130,9 @@ func (c *s3Client) request(method, key string, q url.Values, body []byte, header
 		if k != "host" {
 			req.Header.Set(k, v)
 		}
+	}
+	if size >= 0 {
+		req.ContentLength = size
 	}
 	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential="+c.cfg.AccessKey+"/"+scope+", SignedHeaders="+signed+", Signature="+signature)
 	return c.http.Do(req)
@@ -160,6 +172,9 @@ func (c *s3Client) List(prefix, cursor string) (Listing, error) {
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if resp.StatusCode == http.StatusNotFound && bytes.Contains(b, []byte("<Code>NoSuchBucket</Code>")) {
+			return Listing{Prefix: prefix, Entries: []Entry{}}, nil
+		}
 		return Listing{}, fmt.Errorf("S3 list failed HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 	}
 	var data struct {
@@ -246,6 +261,25 @@ func (c *s3Client) Put(key, contentType string, b []byte) error {
 	}
 	return c.check(resp)
 }
+
+func (c *s3Client) PutReader(key, contentType string, body io.Reader, size int64, sha256Hex string) error {
+	if size < 0 || len(sha256Hex) != 64 {
+		return errors.New("S3 streaming upload requires size and SHA-256")
+	}
+	root := strings.Trim(c.cfg.Prefix, "/")
+	if root != "" {
+		root += "/"
+	}
+	headers := map[string]string{}
+	if contentType != "" {
+		headers["content-type"] = contentType
+	}
+	resp, err := c.requestReader(http.MethodPut, root+strings.TrimLeft(key, "/"), nil, body, size, sha256Hex, headers)
+	if err != nil {
+		return err
+	}
+	return c.check(resp)
+}
 func (c *s3Client) Delete(key string) error {
 	root := strings.Trim(c.cfg.Prefix, "/")
 	if root != "" {
@@ -314,6 +348,9 @@ func Get(c Config, key string) ([]byte, string, error)      { return client(c).G
 func Open(c Config, key string) (*http.Response, error)     { return client(c).Open(key) }
 func Put(c Config, key, contentType string, b []byte) error {
 	return client(c).Put(key, contentType, b)
+}
+func PutReader(c Config, key, contentType string, body io.Reader, size int64, sha256Hex string) error {
+	return client(c).PutReader(key, contentType, body, size, sha256Hex)
 }
 func Delete(c Config, key string, folder bool) error {
 	cl := client(c)

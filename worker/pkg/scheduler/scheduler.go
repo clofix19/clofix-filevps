@@ -11,19 +11,30 @@ import (
 
 // Capacity is a worker's dynamic capacity snapshot. Bytes unless noted.
 type Capacity struct {
-	RAMTotal      uint64  `json:"ram_total"`
-	HostReserve   uint64  `json:"host_reserve"`
-	RAMCommitted  uint64  `json:"ram_committed"` // sum of instance memory.max limits
-	MemAvailable  uint64  `json:"mem_available"` // kernel MemAvailable
-	SwapTotal     uint64  `json:"swap_total"`
-	SwapFree      uint64  `json:"swap_free"`
-	SwapCommitted uint64  `json:"swap_committed"`
-	CPUCores      float64 `json:"cpu_cores"`
-	CPUAllocated  float64 `json:"cpu_allocated"`
-	CPUUtil       float64 `json:"cpu_util"` // 0..1
-	DiskTotal     uint64  `json:"disk_total"`
-	DiskFree      uint64  `json:"disk_free"`
-	DiskCommitted uint64  `json:"disk_committed"`
+	DatabaseEngines    map[string]string `json:"database_engines,omitempty"`
+	DatabaseProjects   []string          `json:"database_projects,omitempty"`
+	DatabasePublicHost string            `json:"database_public_host,omitempty"`
+	ManagedPublicHost  string            `json:"managed_public_host,omitempty"`
+	ManagedTemplates   []string          `json:"managed_templates,omitempty"`
+	ServerlessRuntimes []string          `json:"serverless_runtimes,omitempty"`
+	Serverless         bool              `json:"serverless"`
+	GPUs               []GPUDevice       `json:"gpus,omitempty"`
+	RAMTotal           uint64            `json:"ram_total"`
+	HostReserve        uint64            `json:"host_reserve"`
+	RAMCommitted       uint64            `json:"ram_committed"` // sum of instance memory.max limits
+	MemAvailable       uint64            `json:"mem_available"` // kernel MemAvailable
+	SwapTotal          uint64            `json:"swap_total"`
+	SwapFree           uint64            `json:"swap_free"`
+	SwapCommitted      uint64            `json:"swap_committed"`
+	CPUCores           float64           `json:"cpu_cores"`
+	CPUAllocated       float64           `json:"cpu_allocated"`
+	CPUUtil            float64           `json:"cpu_util"` // 0..1
+	DiskTotal          uint64            `json:"disk_total"`
+	DiskFree           uint64            `json:"disk_free"`
+	DiskCommitted      uint64            `json:"disk_committed"`
+	S3Node             bool              `json:"s3_node"`
+	S3DiskTotal        uint64            `json:"s3_disk_total"`
+	S3DiskFree         uint64            `json:"s3_disk_free"`
 	// ZRAMLogical is informational only. It is NEVER counted as physical RAM.
 	ZRAMLogical    uint64  `json:"zram_logical"`
 	ZRAMOriginal   uint64  `json:"zram_original"` // uncompressed data stored on the zram device
@@ -33,6 +44,17 @@ type Capacity struct {
 	PSIMemSome10   float64 `json:"psi_mem_some10"` // percent 0..100
 	PSICPUSome10   float64 `json:"psi_cpu_some10"`
 	PSIIOSome10    float64 `json:"psi_io_some10"`
+}
+
+// GPUDevice is inventory only. Placement and guest assignment are not implemented.
+type GPUDevice struct {
+	Index          int    `json:"index"`
+	UUID           string `json:"uuid"`
+	Name           string `json:"name"`
+	MemoryTotal    uint64 `json:"memory_total_bytes"`
+	MemoryUsed     uint64 `json:"memory_used_bytes"`
+	MemoryFree     uint64 `json:"memory_free_bytes"`
+	UtilizationPct uint64 `json:"utilization_percent"`
 }
 
 type Candidate struct {

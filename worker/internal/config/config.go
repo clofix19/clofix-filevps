@@ -11,13 +11,16 @@ import (
 )
 
 type Config struct {
-	ControllerURL    string `json:"controller_url"`
-	WorkerID         string `json:"worker_id"`
-	HostReserveMB    int64  `json:"host_reserve_mb"`
-	ZRAMMB           int64  `json:"zram_mb"` // 0 = disabled
-	HeartbeatSeconds int    `json:"heartbeat_seconds"`
-	UIDBase          uint32 `json:"uid_base"` // host uid/gid base mapped to container root
-	UserNS           bool   `json:"user_ns"`
+	ControllerURL      string `json:"controller_url"`
+	WorkerID           string `json:"worker_id"`
+	HostReserveMB      int64  `json:"host_reserve_mb"`
+	ZRAMMB             int64  `json:"zram_mb"` // 0 = disabled
+	HeartbeatSeconds   int    `json:"heartbeat_seconds"`
+	UIDBase            uint32 `json:"uid_base"` // host uid/gid base mapped to container root
+	UserNS             bool   `json:"user_ns"`
+	S3MasterAddress    string `json:"s3_master_address,omitempty"`
+	S3AdvertiseAddress string `json:"s3_advertise_address,omitempty"`
+	S3DataDir          string `json:"s3_data_dir,omitempty"`
 }
 
 func Default() Config {
@@ -61,6 +64,12 @@ func Load() (Config, error) {
 			return c, fmt.Errorf("CLOFIX_ZRAM_MB must be a non-negative integer")
 		}
 		c.ZRAMMB = v
+	}
+	if v := os.Getenv("CLOFIX_S3_ADVERTISE_ADDRESS"); v != "" {
+		c.S3AdvertiseAddress = v
+	}
+	if v := os.Getenv("CLOFIX_S3_DATA_DIR"); v != "" {
+		c.S3DataDir = v
 	}
 	return c, nil
 }

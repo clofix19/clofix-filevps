@@ -115,5 +115,9 @@ func Enroll(controllerURL, caFile, token string, cfg config.Config) (config.Conf
 		}
 	}
 	cfg.ControllerURL, cfg.WorkerID = strings.TrimRight(controllerURL, "/"), er.WorkerID
+	cfg.S3MasterAddress = er.S3MasterAddress
+	if cfg.S3DataDir == "" {
+		cfg.S3DataDir = filepath.Join(config.StateDir(), "s3-volume")
+	}
 	return cfg, cfg.Save()
 }

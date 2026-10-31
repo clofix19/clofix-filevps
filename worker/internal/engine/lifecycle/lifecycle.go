@@ -119,7 +119,7 @@ const legacyDefaultGuestInit = "mkdir -p /run/sshd && ssh-keygen -A && exec /usr
 func defaultGuestInit() []string {
 	boot := "mkdir -p /run/sshd /run/nginx /run/modsecurity /var/log/nginx /var/cache/nginx; chown www-data:www-data /run/modsecurity 2>/dev/null || true; " +
 		"ssh-keygen -A; " +
-		"for svc in nginx apache2 mysql mariadb postgresql redis-server; do if [ -x /etc/init.d/$svc ]; then service $svc start || true; fi; done; " +
+		"for svc in nginx apache2 mysql mariadb postgresql redis-server haproxy memcached supervisor tomcat10 wildfly; do if [ -x /etc/init.d/$svc ]; then service $svc start || true; fi; done; " +
 		"for f in /etc/init.d/php*-fpm; do [ -x $f ] && service ${f##*/} start || true; done; " +
 		"exec /usr/sbin/sshd -D -e"
 	return []string{"/bin/sh", "-c", boot}
@@ -274,6 +274,14 @@ func (e *Engine) Create(id string, spec proto.InstanceSpec) error {
 		swapMB := proto.DefaultSwapMB
 		spec.SwapMB = &swapMB
 	}
+	if spec.BackupID != "" {
+		var manifest backupManifest
+		b, err := os.ReadFile(filepath.Join(e.backupDir(spec.BackupID), "backup.json"))
+		if err != nil || json.Unmarshal(b, &manifest) != nil || manifest.Info.State != "READY" {
+			return errors.New("backup is missing or not ready on this worker")
+		}
+		spec.Image = manifest.Image
+	}
 	if spec.RAMMB <= 0 || spec.CPU <= 0 || *spec.SwapMB < 0 {
 		return errors.New("spec requires positive ram_mb and cpu and non-negative swap_mb")
 	}
@@ -306,6 +314,16 @@ func (e *Engine) Create(id string, spec proto.InstanceSpec) error {
 	}
 	if err := os.Chmod(upper, 0o755); err != nil {
 		return fmt.Errorf("set upper layer permissions: %w", err)
+	}
+	if spec.BackupID != "" {
+		backupID := spec.BackupID
+		if err := e.restoreBackup(id, backupID); err != nil {
+			return fmt.Errorf("restore backup files: %w", err)
+		}
+		spec.BackupID = ""
+		// Backups contain only the writable root layer; host mounts and port assignments
+		// are deliberately not copied into the new guest.
+		spec.StorageMounts, spec.S3MountPath, spec.S3ConnectionID = nil, "", ""
 	}
 	if err := e.configureSSHFiles(id, spec); err != nil {
 		return err
@@ -698,6 +716,10 @@ func (e *Engine) Apply(op proto.Operation) error {
 		return e.CreateVolume(op.VolumeID, op.VolumeLimitMB)
 	case proto.ActionDeleteVolume:
 		return e.DeleteVolume(op.VolumeID)
+	case proto.ActionCreateBackup:
+		return e.CreateBackup(op.InstanceID, op.BackupID, op.WorkerID)
+	case proto.ActionDeleteBackup:
+		return e.DeleteBackup(op.BackupID)
 	case proto.ActionUpdateProtection:
 		if op.Spec == nil || op.Spec.ProtectionMode == nil {
 			return errors.New("protection update requires protection_mode")
@@ -1161,6 +1183,21 @@ func directoryBytes(root string) uint64 {
 // InstallService accepts catalog IDs only; package names and shell commands are never supplied by the API.
 func (e *Engine) InstallService(id, serviceID string) error {
 	packages, ok := map[string][]string{
+		"tomcat":      {"tomcat10", "default-jre-headless"},
+		"wildfly":     {"openjdk-21-jre-headless", "curl", "ca-certificates", "tar"},
+		"haproxy":     {"haproxy"},
+		"memcached":   {"memcached"},
+		"supervisor":  {"supervisor"},
+		"git":         {"git"},
+		"composer":    {"composer"},
+		"golang":      {"golang-go"},
+		"java":        {"default-jdk"},
+		"ruby":        {"ruby-full"},
+		"build-tools": {"build-essential", "pkg-config"},
+		"sqlite":      {"sqlite3"},
+		"certbot":     {"certbot"},
+		"rsync":       {"rsync"},
+
 		"nginx": {"nginx"}, "apache": {"apache2"}, "mysql": {"mysql-server"},
 		"mariadb": {"mariadb-server"}, "postgresql": {"postgresql"}, "redis": {"redis-server"},
 		"php":    {"php-fpm", "php-cli", "php-mysql", "php-xml", "php-mbstring", "php-curl", "php-zip", "php-gd"},
@@ -1203,6 +1240,14 @@ func (e *Engine) InstallService(id, serviceID string) error {
 		e.mu.Unlock()
 		return fmt.Errorf("package installation failed: %w", err)
 	}
+	if setup := javaServiceSetup(serviceID); setup != "" {
+		if err = e.guestShell(id, m.Pid, setup); err != nil {
+			e.mu.Lock()
+			setInstallState(m, serviceID, "FAILED")
+			e.mu.Unlock()
+			return fmt.Errorf("%s setup failed: %w", serviceID, err)
+		}
+	}
 	if serviceID == "joomla" {
 		// Fixed upstream release and official checksum; no request data is interpolated into the guest shell.
 		if err = e.guestShell(id, m.Pid, "set -eu; cd /tmp; curl -fL --retry 3 -o clofix-joomla.tar.gz 'https://downloads.joomla.org/cms/joomla6/6-2-0/Joomla_6-2-0-Stable-Full_Package.tar.gz?format=gz'; echo '078706721f94dd814a1175207145aeb4380c00ff  clofix-joomla.tar.gz' | sha1sum -c -; mkdir -p /var/www/html/joomla; tar -xzf clofix-joomla.tar.gz -C /var/www/html/joomla; chown -R www-data:www-data /var/www/html/joomla; rm -f clofix-joomla.tar.gz"); err != nil {
@@ -1233,6 +1278,20 @@ func (e *Engine) UninstallService(id, serviceID string) error {
 		return e.UninstallWAF(id, serviceID)
 	}
 	packages, ok := map[string][]string{
+		"tomcat": {"tomcat10"}, "wildfly": {},
+		"haproxy":     {"haproxy"},
+		"memcached":   {"memcached"},
+		"supervisor":  {"supervisor"},
+		"git":         {"git"},
+		"composer":    {"composer"},
+		"golang":      {"golang-go"},
+		"java":        {"default-jdk"},
+		"ruby":        {"ruby-full"},
+		"build-tools": {"build-essential", "pkg-config"},
+		"sqlite":      {"sqlite3"},
+		"certbot":     {"certbot"},
+		"rsync":       {"rsync"},
+
 		"nginx": {"nginx"}, "apache": {"apache2"}, "mysql": {"mysql-server"},
 		"mariadb": {"mariadb-server"}, "postgresql": {"postgresql"}, "redis": {"redis-server"},
 		"php":    {"php-fpm", "php-cli", "php-mysql", "php-xml", "php-mbstring", "php-curl", "php-zip", "php-gd"},
@@ -1274,6 +1333,14 @@ func (e *Engine) UninstallService(id, serviceID string) error {
 			return fmt.Errorf("uninstall %s before removing its shared %s dependency", dependent, serviceID)
 		}
 	}
+	if serviceID == "java" {
+		for _, dependent := range []string{"tomcat", "wildfly"} {
+			if m.ServiceInstalls[dependent] != "" && m.ServiceInstalls[dependent] != "UNINSTALLED" {
+				e.mu.Unlock()
+				return fmt.Errorf("uninstall %s before removing Java", dependent)
+			}
+		}
+	}
 	setInstallState(m, serviceID, "UNINSTALLING")
 	_ = e.save(m)
 	e.mu.Unlock()
@@ -1289,6 +1356,24 @@ func (e *Engine) UninstallService(id, serviceID string) error {
 		setInstallState(m, serviceID, "UNINSTALLED")
 		e.mu.Unlock()
 		return nil
+	}
+	if serviceID == "wildfly" || serviceID == "tomcat" {
+		cleanup := "set -eu; if [ -x /etc/init.d/tomcat10 ]; then service tomcat10 stop; fi; update-rc.d -f tomcat10 remove; rm -f /etc/init.d/tomcat10"
+		if serviceID == "wildfly" {
+			cleanup = "set -eu; if [ -x /etc/init.d/wildfly ]; then service wildfly stop; fi; update-rc.d -f wildfly remove; rm -f /etc/init.d/wildfly /opt/wildfly; rm -rf -- /opt/clofix-wildfly-42.0.0.Final"
+		}
+		if err := e.guestShell(id, m.Pid, cleanup); err != nil {
+			e.mu.Lock()
+			setInstallState(m, serviceID, "UNINSTALL_FAILED")
+			e.mu.Unlock()
+			return err
+		}
+		if serviceID == "wildfly" {
+			e.mu.Lock()
+			setInstallState(m, serviceID, "UNINSTALLED")
+			e.mu.Unlock()
+			return nil
+		}
 	}
 	if err := e.guestPackageCommand(id, m.Pid, append([]string{"remove", "--no-install-recommends"}, packages...)); err != nil {
 		e.mu.Lock()
@@ -1385,7 +1470,8 @@ func (e *Engine) configureNginxWAF(id string, pid int, policy map[string]bool) e
 		"if grep -q '^[[:space:]]*SecRuleEngine' /etc/nginx/modsecurity.conf; then sed -i 's/^[[:space:]]*SecRuleEngine.*/SecRuleEngine On/' /etc/nginx/modsecurity.conf; else printf '%s\\n' 'SecRuleEngine On' >> /etc/nginx/modsecurity.conf; fi; " +
 		"if grep -q '^[[:space:]]*SecRequestBodyAccess' /etc/nginx/modsecurity.conf; then sed -i 's/^[[:space:]]*SecRequestBodyAccess.*/SecRequestBodyAccess On/' /etc/nginx/modsecurity.conf; else printf '%s\\n' 'SecRequestBodyAccess On' >> /etc/nginx/modsecurity.conf; fi; " +
 		"if grep -q '^[[:space:]]*SecResponseBodyAccess' /etc/nginx/modsecurity.conf; then sed -i 's/^[[:space:]]*SecResponseBodyAccess.*/SecResponseBodyAccess On/' /etc/nginx/modsecurity.conf; else printf '%s\\n' 'SecResponseBodyAccess On' >> /etc/nginx/modsecurity.conf; fi; " +
-		"if grep -q '^[[:space:]]*SecResponseBodyMimeType' /etc/nginx/modsecurity.conf; then sed -i 's/^[[:space:]]*SecResponseBodyMimeType.*/SecResponseBodyMimeType text/plain text/html text/xml application/json/' /etc/nginx/modsecurity.conf; else printf '%s\\n' 'SecResponseBodyMimeType text/plain text/html text/xml application/json' >> /etc/nginx/modsecurity.conf; fi; " +
+		// Use a non-slash delimiter because MIME values contain application/json.
+		"if grep -q '^[[:space:]]*SecResponseBodyMimeType' /etc/nginx/modsecurity.conf; then sed -i 's|^[[:space:]]*SecResponseBodyMimeType.*|SecResponseBodyMimeType text/plain text/html text/xml application/json|' /etc/nginx/modsecurity.conf; else printf '%s\\n' 'SecResponseBodyMimeType text/plain text/html text/xml application/json' >> /etc/nginx/modsecurity.conf; fi; " +
 		"if grep -q '^[[:space:]]*SecDataDir' /etc/nginx/modsecurity.conf; then sed -i 's|^[[:space:]]*SecDataDir.*|SecDataDir /run/modsecurity|' /etc/nginx/modsecurity.conf; else printf '%s\\n' 'SecDataDir /run/modsecurity' >> /etc/nginx/modsecurity.conf; fi; " +
 		"mkdir -p /run/modsecurity; chown www-data:www-data /run/modsecurity; " +
 		"printf %s " + guestSingleQuote(includes) + " > /etc/nginx/modsecurity_includes.conf; " +
@@ -1556,6 +1642,16 @@ func (e *Engine) applicationServices(id string, pid int, running bool) []proto.S
 		for name, stats := range usage {
 			for _, candidate := range serviceProcessNames(name) {
 				if comm == candidate {
+					if name == "wildfly" || name == "tomcat10" {
+						cmdline, _ := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", processPID))
+						marker := "org.apache.catalina.startup.Bootstrap"
+						if name == "wildfly" {
+							marker = "jboss-modules.jar"
+						}
+						if !strings.Contains(string(cmdline), marker) {
+							continue
+						}
+					}
 					stats.pids++
 					stats.ticks += ticks
 					stats.memory += memory
@@ -1702,6 +1798,12 @@ func (e *Engine) serviceLogs(pid int, service string, maxBytes int) string {
 		filepath.Join(root, service, "application.log"),
 		filepath.Join(root, service+".log"),
 	}
+	if service == "tomcat10" {
+		paths = append([]string{filepath.Join(root, "tomcat10", "clofix-console.log")}, paths...)
+	}
+	if service == "wildfly" {
+		paths = append([]string{filepath.Join(root, "..", "lib", "wildfly", "standalone", "log", "server.log"), filepath.Join(root, "..", "lib", "wildfly", "standalone", "log", "clofix-console.log")}, paths...)
+	}
 	var out strings.Builder
 	for _, path := range paths {
 		info, err := os.Lstat(path)
@@ -1818,7 +1920,7 @@ func serviceProcessNames(service string) []string {
 	aliases := map[string][]string{
 		"apache2": {"apache2"}, "mariadb": {"mariadbd", "mysqld"}, "mysql": {"mysqld"},
 		"postgresql": {"postgres"}, "redis": {"redis-server"}, "redis-server": {"redis-server"},
-		"docker": {"dockerd"}, "php-fpm": {"php-fpm", "php-fpm8.3"},
+		"wildfly": {"java"}, "tomcat10": {"java"}, "supervisor": {"supervisord"}, "docker": {"dockerd"}, "php-fpm": {"php-fpm", "php-fpm8.3"},
 	}
 	if values, ok := aliases[service]; ok {
 		return values

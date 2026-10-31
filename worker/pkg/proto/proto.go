@@ -2,6 +2,7 @@
 package proto
 
 import (
+	db "github.com/clofix/filevps/worker/pkg/database"
 	"time"
 
 	"github.com/clofix/filevps/worker/pkg/scheduler"
@@ -26,6 +27,8 @@ const (
 	ActionServiceControl         = "service-control"
 	ActionInstallService         = "install-service"
 	ActionUninstallService       = "uninstall-service"
+	ActionCreateBackup           = "create-backup"
+	ActionDeleteBackup           = "delete-backup"
 )
 
 const DefaultSwapMB int64 = 512
@@ -61,9 +64,10 @@ type EnrollRequest struct {
 }
 
 type EnrollResponse struct {
-	WorkerID string `json:"worker_id"`
-	CertPEM  string `json:"cert_pem"`
-	CAPEM    string `json:"ca_pem"`
+	WorkerID        string `json:"worker_id"`
+	CertPEM         string `json:"cert_pem"`
+	CAPEM           string `json:"ca_pem"`
+	S3MasterAddress string `json:"s3_master_address,omitempty"`
 }
 
 // ImageRef points at a base image. URL is short-lived (presigned) and never contains long-term credentials.
@@ -94,6 +98,7 @@ type InstanceSpec struct {
 	S3MountPath      string          `json:"s3_mount_path,omitempty"`
 	S3ConnectionID   string          `json:"s3_connection_id,omitempty"`
 	StorageMounts    []StorageMount  `json:"storage_mounts,omitempty"`
+	BackupID         string          `json:"backup_id,omitempty"`
 }
 
 // StorageMount is a per-VPS host-backed persistent directory mounted in the guest.
@@ -144,6 +149,9 @@ type PortMapping struct {
 }
 
 type Operation struct {
+	DatabaseJobID string             `json:"database_job_id,omitempty"`
+	Managed       *ManagedSpec       `json:"managed,omitempty"`
+	Execution     *Execution         `json:"execution,omitempty"`
 	ID            string             `json:"id"`
 	Action        string             `json:"action"`
 	InstanceID    string             `json:"instance_id"`
@@ -157,11 +165,14 @@ type Operation struct {
 	ServiceName   string             `json:"service_name,omitempty"`
 	ServiceAction string             `json:"service_action,omitempty"`
 	ServiceID     string             `json:"service_id,omitempty"`
+	BackupID      string             `json:"backup_id,omitempty"`
+	WorkerID      string             `json:"worker_id,omitempty"`
 	WAFCategory   string             `json:"waf_category,omitempty"`
 	WAFEnabled    bool               `json:"waf_enabled,omitempty"`
 }
 
 type OpResult struct {
+	Execution  *ExecutionResult  `json:"execution,omitempty"`
 	OpID       string            `json:"op_id"`
 	OK         bool              `json:"ok"`
 	Error      string            `json:"error,omitempty"`
@@ -203,11 +214,32 @@ type StorageVolumeMetric struct {
 }
 
 type Heartbeat struct {
-	Version   string               `json:"version"`
-	Capacity  scheduler.Capacity   `json:"capacity"`
-	Instances []InstanceStatus     `json:"instances"`
-	Volumes   []WorkerVolumeStatus `json:"volumes,omitempty"`
-	Results   []OpResult           `json:"results"`
+	DatabaseResults   []db.Result          `json:"database_results,omitempty"`
+	DatabaseStatuses  []db.Status          `json:"database_statuses,omitempty"`
+	ManagedApps       []ManagedStatus      `json:"managed_apps,omitempty"`
+	ExecutionProgress []ExecutionProgress  `json:"execution_progress,omitempty"`
+	Version           string               `json:"version"`
+	Capacity          scheduler.Capacity   `json:"capacity"`
+	Instances         []InstanceStatus     `json:"instances"`
+	Volumes           []WorkerVolumeStatus `json:"volumes,omitempty"`
+	Backups           []BackupInfo         `json:"backups,omitempty"`
+	Results           []OpResult           `json:"results"`
+}
+
+// BackupInfo describes a worker-local snapshot. It intentionally excludes SSH keys and mount credentials.
+type BackupInfo struct {
+	ID         string    `json:"id"`
+	InstanceID string    `json:"instance_id"`
+	WorkerID   string    `json:"worker_id"`
+	Created    time.Time `json:"created"`
+	SizeBytes  uint64    `json:"size_bytes"`
+	RAMMB      int64     `json:"ram_mb"`
+	CPU        float64   `json:"cpu"`
+	SwapMB     int64     `json:"swap_mb"`
+	DiskMB     int64     `json:"disk_mb"`
+	Image      string    `json:"image"`
+	State      string    `json:"state"`
+	Error      string    `json:"error,omitempty"`
 }
 
 type WorkerVolumeStatus struct {
@@ -216,5 +248,7 @@ type WorkerVolumeStatus struct {
 }
 
 type HeartbeatResponse struct {
-	Operations []Operation `json:"operations"`
+	DatabaseAcknowledged []string    `json:"database_acknowledged,omitempty"`
+	Operations           []Operation `json:"operations"`
+	S3MasterAddress      string      `json:"s3_master_address,omitempty"`
 }

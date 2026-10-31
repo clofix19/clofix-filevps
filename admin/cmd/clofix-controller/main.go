@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"log"
@@ -44,6 +45,11 @@ func main() {
 
 	st := newStore()
 	srv := server.New(st, ca, adminTok, env("CLOFIX_UI_DIR", "web/admin-ui"))
+	go srv.RunApplicationScheduler(context.Background())
+	go srv.RunLoadBalancerScheduler(context.Background())
+	go srv.RunHealthScheduler(context.Background())
+	go srv.RunLicenseScheduler(context.Background())
+	go srv.RunDatabaseScheduler(context.Background())
 	srv.LogDir = env("CLOFIX_LOG_DIR", "/worker-logs/instances")
 
 	go func() {

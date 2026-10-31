@@ -6,6 +6,9 @@ COPY internal ./internal
 COPY pkg ./pkg
 RUN CGO_ENABLED=0 go build -o /out/clofix-worker ./cmd/clofix-worker
 
+FROM chrislusf/seaweedfs:4.51 AS seaweed
+FROM docker:27-cli AS dockercli
+
 FROM ubuntu:24.04 AS builtin-rootfs
 RUN export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y --no-install-recommends tar openssh-server iproute2 \
     && rm -rf /var/lib/apt/lists/* \
@@ -16,7 +19,9 @@ RUN export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -
 
 # DEV ONLY image. Production workers are installed as a signed package on Ubuntu.
 FROM ubuntu:24.04
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates iproute2 nftables util-linux e2fsprogs kmod s3fs && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tar iproute2 nftables util-linux e2fsprogs kmod s3fs && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/clofix-worker /usr/local/bin/clofix-worker
+COPY --from=seaweed /usr/bin/weed /usr/local/bin/weed
+COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=builtin-rootfs /tmp/rootfs.tar.gz /opt/clofix/builtin/ubuntu/24.04/rootfs.tar.gz
 CMD ["clofix-worker", "run"]

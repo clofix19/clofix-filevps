@@ -1,0 +1,22 @@
+# CloFix company infrastructure. Deploy independently of customer FileVPS stacks.
+name: clofix-license-server
+services:
+  license:
+    build: .
+    environment:
+      CLOFIX_LICENSE_ADMIN_TOKEN: ${LICENSE_ADMIN_TOKEN:?set a separate LICENSE_ADMIN_TOKEN (minimum 16 characters)}
+      CLOFIX_LICENSE_DATA_DIR: /data
+      CLOFIX_LICENSE_LISTEN: :8090
+    ports:
+      - "${LICENSE_BIND_IP:-127.0.0.1}:${LICENSE_PORT:-8090}:8090"
+    volumes:
+      - licensedata:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8090/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+volumes:
+  licensedata:
+    name: ${LICENSE_DATA_VOLUME:-clofix-license-server-data}

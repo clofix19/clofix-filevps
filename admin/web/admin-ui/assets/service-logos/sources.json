@@ -1,0 +1,118 @@
+{
+  "nginx": {
+    "file": "nginx.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/nginx/nginx-original.svg"
+  },
+  "apache": {
+    "file": "apache.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/apache/apache-original.svg"
+  },
+  "wordpress": {
+    "file": "wordpress.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/wordpress/wordpress-original.svg"
+  },
+  "mysql": {
+    "file": "mysql.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/mysql/mysql-original.svg"
+  },
+  "mariadb": {
+    "file": "mariadb.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/mariadb/mariadb-original.svg"
+  },
+  "postgresql": {
+    "file": "postgresql.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/postgresql/postgresql-original.svg"
+  },
+  "redis": {
+    "file": "redis.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/redis/redis-original.svg"
+  },
+  "php": {
+    "file": "php.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/php/php-original.svg"
+  },
+  "nodejs": {
+    "file": "nodejs.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/nodejs/nodejs-original.svg"
+  },
+  "python": {
+    "file": "python.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/python/python-original.svg"
+  },
+  "haproxy": {
+    "file": "haproxy.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/haproxy/haproxy-original.svg"
+  },
+  "memcached": {
+    "file": "memcached.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/memcached/memcached-original.svg"
+  },
+  "git": {
+    "file": "git.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/git/git-original.svg"
+  },
+  "composer": {
+    "file": "composer.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/composer/composer-original.svg"
+  },
+  "golang": {
+    "file": "golang.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/go/go-original.svg"
+  },
+  "java": {
+    "file": "java.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/java/java-original.svg"
+  },
+  "ruby": {
+    "file": "ruby.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/ruby/ruby-original.svg"
+  },
+  "build-tools": {
+    "file": "build-tools.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/gcc/gcc-original.svg"
+  },
+  "sqlite": {
+    "file": "sqlite.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/sqlite/sqlite-original.svg"
+  },
+  "tomcat": {
+    "file": "tomcat.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/tomcat/tomcat-original.svg"
+  },
+  "code-server": {
+    "file": "code-server.svg",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/icons/vscode/vscode-original.svg"
+  },
+  "joomla": {
+    "file": "joomla.svg",
+    "source": "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/joomla.svg"
+  },
+  "owasp-waf": {
+    "file": "owasp-waf.svg",
+    "source": "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/owasp.svg"
+  },
+  "wildfly": {
+    "file": "wildfly.ico",
+    "source": "https://www.wildfly.org/favicon.ico"
+  },
+  "certbot": {
+    "file": "certbot.svg",
+    "source": "https://certbot.eff.org/assets/Certbot-solid-c4e500f9953fc8ee1d38cb0b22778163602a82cb2b39a5bc89211315c5c877c9.svg"
+  },
+  "rsync": {
+    "file": "rsync.jpg",
+    "source": "https://rsync.samba.org/newrsynclogo.jpg"
+  },
+  "adminer": {
+    "file": "adminer.png",
+    "source": "https://www.adminer.org/apple-touch-icon.png"
+  },
+  "uptime-kuma": {
+    "file": "uptime-kuma.svg",
+    "source": "https://uptime.kuma.pet/img/icon.svg"
+  },
+  "supervisor": {
+    "file": "supervisor.png",
+    "source": "https://raw.githubusercontent.com/Supervisor/supervisor/main/supervisor/ui/images/icon.png"
+  }
+}

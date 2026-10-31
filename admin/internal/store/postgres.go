@@ -29,6 +29,7 @@ func (p *Postgres) EnsureSchema() error {
 		return err
 	}
 	for _, ddl := range []string{
+		`CREATE TABLE IF NOT EXISTS cf_managed_database_state(singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK(singleton), state JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
 		`CREATE TABLE IF NOT EXISTS cf_iam_users (id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, role TEXT NOT NULL, status TEXT NOT NULL, group_ids JSONB NOT NULL DEFAULT '[]', policy_ids JSONB NOT NULL DEFAULT '[]', created TIMESTAMPTZ NOT NULL DEFAULT now())`,
 		`CREATE TABLE IF NOT EXISTS cf_iam_groups (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT NOT NULL DEFAULT '', policy_ids JSONB NOT NULL DEFAULT '[]', created TIMESTAMPTZ NOT NULL DEFAULT now())`,
 		`CREATE TABLE IF NOT EXISTS cf_iam_policies (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT NOT NULL DEFAULT '', permissions JSONB NOT NULL DEFAULT '[]', created TIMESTAMPTZ NOT NULL DEFAULT now())`,

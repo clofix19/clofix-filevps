@@ -19,6 +19,7 @@ import (
 type Config struct {
 	ID        string `json:"id,omitempty"`
 	Name      string `json:"name,omitempty"`
+	Provider  string `json:"provider,omitempty"`
 	Endpoint  string `json:"endpoint"`
 	Bucket    string `json:"bucket"`
 	Region    string `json:"region,omitempty"`
@@ -30,6 +31,7 @@ type Config struct {
 type PublicConfig struct {
 	ID         string `json:"id,omitempty"`
 	Name       string `json:"name,omitempty"`
+	Provider   string `json:"provider,omitempty"`
 	Endpoint   string `json:"endpoint"`
 	Bucket     string `json:"bucket"`
 	Region     string `json:"region,omitempty"`
@@ -78,6 +80,9 @@ func (s *Store) key() ([]byte, error) {
 }
 
 func valid(c Config) error {
+	if c.Provider != "" && c.Provider != "aws" && c.Provider != "gcs" && c.Provider != "azure_s3" && c.Provider != "custom" && c.Provider != "clofix" {
+		return errors.New("unsupported S3 provider")
+	}
 	u, err := url.ParseRequestURI(c.Endpoint)
 	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return errors.New("endpoint must be an http(s) S3 endpoint without credentials or query parameters")
@@ -179,11 +184,11 @@ func (s *Store) Public() PublicConfig {
 	if err != nil {
 		return PublicConfig{}
 	}
-	return PublicConfig{Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, Configured: true}
+	return PublicConfig{Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, Provider: c.Provider, Configured: true}
 }
 
 func public(c Config) PublicConfig {
-	return PublicConfig{ID: c.ID, Name: c.Name, Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, Configured: true}
+	return PublicConfig{ID: c.ID, Name: c.Name, Provider: c.Provider, Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, Configured: true}
 }
 
 func (s *Store) ListConnections() ([]Config, error) {

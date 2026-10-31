@@ -1,0 +1,19 @@
+{{define "content"}}
+<section class="page active" id="page-backups">
+  <div class="section-head"><div><p class="eyebrow">Recovery and restore</p><h2>VPS backups</h2><p>Worker-local snapshots of a stopped VPS writable root filesystem. Restore a backup as a new VPS with its own SSH key and resource limits.</p></div><div class="row-actions"><button class="primary" id="restore-open" type="button">Run backup as a new VPS</button><button class="secondary" id="backups-refresh" type="button">Refresh</button></div></div>
+  <div class="panel"><div class="table-wrap"><table id="backups-table"></table></div><div class="message" id="backups-message" role="status" aria-live="polite"></div></div>
+  <dialog class="terminal-dialog form-dialog" id="restore-dialog" aria-labelledby="restore-title"><div class="section-head"><div><p class="eyebrow">Recovery</p><h2 id="restore-title">Run backup as a new VPS</h2><p>Choose the backup and set the new VPS resources and SSH key.</p></div><button class="secondary" id="restore-close" type="button">Close</button></div>
+    <div class="form-grid">
+      <div class="form-field"><label for="restore-backup">Backup</label><select id="restore-backup"><option value="">Select a ready backup</option></select></div>
+      <div class="form-field"><label for="restore-worker">Worker</label><select id="restore-worker"><option value="">Select backup worker</option></select></div>
+      <div class="form-field"><label for="restore-ram">RAM (MB)</label><input id="restore-ram" type="number" min="128" value="512"></div>
+      <div class="form-field"><label for="restore-cpu">CPU cores</label><input id="restore-cpu" type="number" min="0.1" step="0.1" value="1"></div>
+      <div class="form-field"><label for="restore-disk">Disk allocation (MB)</label><input id="restore-disk" type="number" min="128" value="4096"></div>
+      <div class="form-field"><label for="restore-swap">Swap limit (MB)</label><input id="restore-swap" type="number" min="0" value="512"></div>
+      <div class="form-field form-span"><label for="restore-ssh-key">SSH public key for the restored VPS</label><textarea id="restore-ssh-key" rows="2" placeholder="Paste ~/.ssh/id_ed25519.pub from your Mac"></textarea></div>
+    </div>
+    <div class="inline-fields" style="margin-top:14px"><button class="primary" id="restore-run" type="button">Run as new VPS</button><span id="restore-message" class="message" role="status" aria-live="polite"></span></div>
+  </dialog>
+  <div class="panel backup-note"><strong>Backup scope</strong><p>Snapshot size is the compressed archive size. Disk allocation is placement accounting and does not enforce a disk quota. Persistent volumes and S3 mounts are not included. Create backups only while the VPS is stopped; restore currently requires the original worker and its cached base image.</p></div>
+</section>
+{{end}}

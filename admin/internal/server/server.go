@@ -14,6 +14,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	pathpkg "path"
 	"path/filepath"
@@ -24,6 +25,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	databaseState "github.com/clofix/filevps/admin/internal/database"
 	"github.com/clofix/filevps/admin/internal/objectstore"
 	"github.com/clofix/filevps/admin/internal/pki"
 	"github.com/clofix/filevps/admin/internal/store"
@@ -32,13 +34,24 @@ import (
 )
 
 type Server struct {
-	Store      store.Store
-	CA         *pki.CA
-	AdminToken string
-	Sched      scheduler.Config
-	UIDir      string
-	LogDir     string
-	S3         *objectstore.Store
+	quotaMu           sync.Mutex
+	license           *controllerLicense
+	monitoring        *monitoringStore
+	balancers         *loadBalancerStore
+	applicationKeyMu  sync.Mutex
+	applications      *serverlessStore
+	Store             store.Store
+	CA                *pki.CA
+	AdminToken        string
+	Sched             scheduler.Config
+	UIDir             string
+	LogDir            string
+	S3                *objectstore.Store
+	S3MasterAddress   string
+	databases         *databaseState.State
+	databaseError     error
+	databaseDownloads map[string]databaseDownloadGrant
+	databaseTransfers map[string]bool
 
 	placeMu         sync.Mutex
 	failMu          sync.Mutex
@@ -49,6 +62,7 @@ type Server struct {
 	serviceInstalls map[string]map[string]string
 	volumeFileMu    sync.Mutex
 	volumeFileWait  map[string]volumeFileWaiter
+	backups         map[string]proto.BackupInfo
 }
 
 type volumeFileWaiter struct {
@@ -61,7 +75,9 @@ func New(s store.Store, ca *pki.CA, adminToken, uiDir string) *Server {
 	if dataDir == "" {
 		dataDir = "/var/lib/clofix-controller"
 	}
-	return &Server{Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}}
+	server := &Server{license: loadControllerLicense(dataDir), monitoring: loadMonitoring(dataDir), balancers: loadBalancers(dataDir), applications: loadServerless(dataDir), Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), S3MasterAddress: os.Getenv("CLOFIX_S3_MASTER_ADDRESS"), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}, backups: map[string]proto.BackupInfo{}}
+	server.initDatabases(dataDir)
+	return server
 }
 
 func randHex(n int) string {
@@ -86,6 +102,12 @@ func fail(w http.ResponseWriter, code int, msg string) {
 
 func (s *Server) AdminHandler() http.Handler {
 	mux := http.NewServeMux()
+	s.licenseRoutes(mux)
+	s.monitoringRoutes(mux)
+	s.loadBalancerRoutes(mux)
+	s.applicationRoutes(mux)
+	s.managedRoutes(mux)
+	s.databaseRoutes(mux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /api/ca.pem", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-pem-file")
@@ -113,6 +135,9 @@ func (s *Server) AdminHandler() http.Handler {
 	mux.HandleFunc("POST /api/workers/{id}/activate", s.auth(s.setStatus("active")))
 	mux.HandleFunc("POST /api/workers/{id}/revoke", s.auth(s.setStatus("revoked")))
 	mux.HandleFunc("GET /api/instances", s.auth(s.listInstances))
+	mux.HandleFunc("GET /api/backups", s.auth(s.listBackups))
+	mux.HandleFunc("POST /api/instances/{id}/backups", s.auth(s.createBackup))
+	mux.HandleFunc("DELETE /api/backups/{id}", s.auth(s.deleteBackup))
 	mux.HandleFunc("GET /api/volumes", s.auth(s.listVolumes))
 	mux.HandleFunc("POST /api/volumes", s.auth(s.createVolume))
 	mux.HandleFunc("PUT /api/volumes/{id}", s.auth(s.editVolume))
@@ -159,7 +184,7 @@ func (s *Server) AdminHandler() http.Handler {
 	if s.UIDir != "" {
 		mux.Handle("/", s.uiHandler())
 	}
-	return mux
+	return s.routeALBDomain(mux)
 }
 
 var wafCategories = map[string]string{
@@ -205,7 +230,7 @@ func (s *Server) setWAFCategory(w http.ResponseWriter, r *http.Request) {
 	wafInstalled := s.serviceInstalls[id]["owasp-waf"] == "INSTALLED"
 	s.usageMu.RUnlock()
 	if !wafInstalled {
-		fail(w, http.StatusConflict, "install OWASP CRS WAF from Services before changing WAF rules")
+		fail(w, http.StatusConflict, "install OWASP CRS WAF from CloFix Library before changing WAF rules")
 		return
 	}
 	currentEnabled := true
@@ -244,6 +269,10 @@ func (s *Server) uiHandler() http.Handler {
 	files := http.FileServer(http.Dir(s.UIDir))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cleanURL := pathpkg.Clean("/" + r.URL.Path)
+		if cleanURL == "/create" {
+			http.Redirect(w, r, "/instances?create=1", http.StatusSeeOther)
+			return
+		}
 		page, title, instanceID, isPage := uiPage(cleanURL)
 		if isPage {
 			t, err := template.ParseFiles(filepath.Join(s.UIDir, "layout.html"), filepath.Join(s.UIDir, "pages", page+".html"))
@@ -252,6 +281,7 @@ func (s *Server) uiHandler() http.Handler {
 				return
 			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-store")
 			if err := t.ExecuteTemplate(w, "layout", struct{ Page, Title, InstanceID string }{page, title, instanceID}); err != nil {
 				return
 			}
@@ -260,6 +290,7 @@ func (s *Server) uiHandler() http.Handler {
 		name := strings.TrimPrefix(cleanURL, "/")
 		candidate := filepath.Join(s.UIDir, filepath.FromSlash(name))
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			w.Header().Set("Cache-Control", "no-store")
 			files.ServeHTTP(w, r)
 			return
 		}
@@ -273,24 +304,35 @@ func uiPage(route string) (page, title, instanceID string, ok bool) {
 		return "home", "Overview", "", true
 	case "/instances":
 		return "instances", "FileVPS", "", true
-	case "/create":
-		return "create", "Create FileVPS", "", true
+	case "/health-checks":
+		return "health-checks", "Health Checks", "", true
+	case "/databases":
+		return "databases", "Managed Databases", "", true
 	case "/workers":
 		return "workers", "Workers", "", true
+	case "/load-balancers":
+		return "load-balancers", "Load Balancers", "", true
+	case "/applications":
+		return "applications", "Applications", "", true
 	case "/services":
-		return "services", "Services", "", true
+		return "services", "CloFix Library", "", true
 	case "/security":
 		return "security", "CloFix Security", "", true
 	case "/storage/s3":
 		return "storage", "S3 Filesystem", "", true
 	case "/volumes":
 		return "volumes", "Persistent Volumes", "", true
+	case "/backups":
+		return "backups", "VPS Backups", "", true
 	case "/settings":
 		return "settings", "Settings", "", true
 	case "/iam":
 		return "iam", "Identity and Access Management", "", true
 	}
 	parts := strings.Split(strings.TrimPrefix(route, "/"), "/")
+	if len(parts) == 2 && parts[0] == "load-balancers" && regexp.MustCompile(`^lb-[0-9a-f]{32}$`).MatchString(parts[1]) {
+		return "load-balancers", "Load Balancer Details", parts[1], true
+	}
 	if len(parts) == 2 && parts[0] == "instances" && apiInstanceID.MatchString(parts[1]) {
 		return "details", "VPS Details", parts[1], true
 	}
@@ -457,7 +499,7 @@ func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		r = r.WithContext(context.WithValue(r.Context(), iamPrincipalContextKey{}, p))
-		h(w, r)
+		s.licenseMutation(w, r, h)
 	}
 }
 
@@ -491,6 +533,15 @@ func (s *Server) listWorkers(w http.ResponseWriter, r *http.Request) {
 func (s *Server) setStatus(status string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
+		if status == "active" {
+			wk, e := s.Store.GetWorker(id)
+			if e == nil && wk.Status == "revoked" {
+				if e = s.checkQuota("workers", 1); e != nil {
+					fail(w, 403, e.Error())
+					return
+				}
+			}
+		}
 		if err := s.Store.SetWorkerStatus(id, status); err != nil {
 			fail(w, 404, "worker not found")
 			return
@@ -545,6 +596,10 @@ func (s *Server) createVolume(w http.ResponseWriter, r *http.Request) {
 	in.Name = strings.TrimSpace(in.Name)
 	if len(in.Name) < 1 || len(in.Name) > 80 || !apiInstanceID.MatchString(in.WorkerID) || in.LimitMB < 0 || (in.LimitMB > 0 && in.LimitMB < 64) || in.LimitMB > 1_048_576 {
 		fail(w, http.StatusBadRequest, "volume name and worker are required; a hard limit must be 0 (unlimited) or 64–1,048,576 MB")
+		return
+	}
+	if e := s.checkStorage(in.LimitMB<<20, in.LimitMB == 0); e != nil {
+		fail(w, 403, e.Error())
 		return
 	}
 	wk, err := s.Store.GetWorker(in.WorkerID)
@@ -989,6 +1044,10 @@ func (s *Server) updateInstanceResources(w http.ResponseWriter, r *http.Request)
 		fail(w, http.StatusConflict, "assigned worker is unavailable")
 		return
 	}
+	if e := s.checkStorage((in.DiskMB-inst.Spec.DiskMB)<<20, false); e != nil {
+		fail(w, 403, e.Error())
+		return
+	}
 	oldRAM, oldSwap, oldDisk, oldCPU := uint64(inst.Spec.RAMMB)<<20, uint64(proto.SwapLimitMB(inst.Spec))<<20, uint64(inst.Spec.DiskMB)<<20, inst.Spec.CPU
 	if wk.Capacity.RAMCommitted >= oldRAM {
 		wk.Capacity.RAMCommitted -= oldRAM
@@ -1030,6 +1089,10 @@ func (s *Server) updateInstanceResources(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) listS3Connections(w http.ResponseWriter, r *http.Request) {
+	if err := s.normalizeLocalS3PoolEndpoints(); err != nil {
+		fail(w, http.StatusInternalServerError, "could not update local S3 pool endpoint")
+		return
+	}
 	items, err := s.S3.PublicConnections()
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "could not read S3 connections")
@@ -1039,6 +1102,53 @@ func (s *Server) listS3Connections(w http.ResponseWriter, r *http.Request) {
 		items = []objectstore.PublicConfig{}
 	}
 	writeJSON(w, http.StatusOK, items)
+}
+
+// Local UI connections run from the admin container, where localhost points
+// back to the admin process. Migrate the documented local S3 endpoint to the
+// Compose service DNS name, keeping bucket and prefix in their own fields.
+func (s *Server) normalizeLocalS3PoolEndpoints() error {
+	items, err := s.S3.ListConnections()
+	if err != nil {
+		return err
+	}
+	for _, c := range items {
+		u, parseErr := url.Parse(c.Endpoint)
+		if parseErr != nil || u.Port() != "8333" {
+			continue
+		}
+		host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+		localEndpoint := host == "s3pool" || host == "localhost" || host == "127.0.0.1" || host == "::1"
+		if !localEndpoint {
+			continue
+		}
+		changed := false
+		if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+			u.Scheme, u.Host, u.Path, u.RawPath = "http", "s3pool:8333", "", ""
+			u.RawQuery, u.Fragment = "", ""
+			c.Endpoint = u.String()
+			changed = true
+		}
+		// The built-in SeaweedFS gateway applies S3 bucket naming rules. Older
+		// CloFix setup instructions used "Master", which is rejected due to
+		// uppercase letters. Migrate that local pool bucket to its valid
+		// lowercase equivalent; this does not affect external S3 connections.
+		if strings.EqualFold(c.Bucket, "Master") && c.Bucket != "master" {
+			c.Bucket = "master"
+			changed = true
+		}
+		if host == "s3pool" && c.Provider != "clofix" {
+			c.Provider = "clofix"
+			changed = true
+		}
+		if !changed {
+			continue
+		}
+		if err := s.S3.SaveConnection(c); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Server) createS3Connection(w http.ResponseWriter, r *http.Request) {
@@ -1054,7 +1164,7 @@ func (s *Server) createS3Connection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Store.Audit("admin", "storage.s3.create", c.ID, c.Name)
-	writeJSON(w, http.StatusCreated, map[string]any{"connection": objectstore.PublicConfig{ID: c.ID, Name: c.Name, Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, Configured: true}})
+	writeJSON(w, http.StatusCreated, map[string]any{"connection": objectstore.PublicConfig{ID: c.ID, Name: c.Name, Provider: c.Provider, Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, Configured: true}})
 }
 
 func (s *Server) updateS3Connection(w http.ResponseWriter, r *http.Request) {
@@ -1083,18 +1193,30 @@ func (s *Server) updateS3Connection(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(c.Name) == "" {
 		c.Name = old.Name
 	}
+	if c.Provider == "" {
+		c.Provider = old.Provider
+	}
 	if err := s.S3.SaveConnection(c); err != nil {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	s.Store.Audit("admin", "storage.s3.edit", id, c.Name)
-	writeJSON(w, http.StatusOK, map[string]any{"connection": objectstore.PublicConfig{ID: c.ID, Name: c.Name, Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, Configured: true}})
+	writeJSON(w, http.StatusOK, map[string]any{"connection": objectstore.PublicConfig{ID: c.ID, Name: c.Name, Provider: c.Provider, Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, Configured: true}})
 }
 
 func (s *Server) deleteS3Connection(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !apiInstanceID.MatchString(id) {
 		fail(w, http.StatusBadRequest, "invalid connection id")
+		return
+	}
+	connection, err := s.S3.GetConnection(id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "S3 connection not found")
+		return
+	}
+	if u, parseErr := url.Parse(connection.Endpoint); parseErr == nil && strings.EqualFold(u.Hostname(), "s3pool") {
+		fail(w, http.StatusConflict, "CloFix S3 is the default worker storage and cannot be deleted")
 		return
 	}
 	instances, _ := s.Store.ListInstances()
@@ -1279,6 +1401,19 @@ func (s *Server) getS3Config(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) saveS3Config(w http.ResponseWriter, r *http.Request) {
+	configs, e := s.S3.ListConnections()
+	if e != nil {
+		fail(w, 503, "could not read S3 usage")
+		return
+	}
+	delta := int64(0)
+	if len(configs) == 0 {
+		delta = 1
+	}
+	if e = s.checkQuota("s3-connections", delta); e != nil {
+		fail(w, 403, e.Error())
+		return
+	}
 	var c objectstore.Config
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&c); err != nil {
 		fail(w, http.StatusBadRequest, "invalid S3 configuration")
@@ -1582,7 +1717,7 @@ func (s *Server) serviceErrorLog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"service": name, "logs": "Service is not reporting logs. Start it and wait for a worker heartbeat."})
 }
 
-var serviceCatalog = map[string]bool{"nginx": true, "apache": true, "mysql": true, "mariadb": true, "postgresql": true, "redis": true, "php": true, "nodejs": true, "python": true, "wordpress": true, "joomla": true, "owasp-waf": true}
+var serviceCatalog = map[string]bool{"wildfly": true, "tomcat": true, "nginx": true, "apache": true, "mysql": true, "mariadb": true, "postgresql": true, "redis": true, "php": true, "nodejs": true, "python": true, "wordpress": true, "joomla": true, "owasp-waf": true, "haproxy": true, "memcached": true, "supervisor": true, "git": true, "composer": true, "golang": true, "java": true, "ruby": true, "build-tools": true, "sqlite": true, "certbot": true, "rsync": true}
 
 func (s *Server) installService(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -1691,6 +1826,7 @@ func (s *Server) uninstallService(w http.ResponseWriter, r *http.Request) {
 type createReq struct {
 	Spec     proto.InstanceSpec `json:"spec"`
 	WorkerID string             `json:"worker_id"` // empty = automatic placement
+	BackupID string             `json:"backup_id,omitempty"`
 }
 
 const (
@@ -1848,12 +1984,36 @@ func reserveNetwork(spec *proto.InstanceSpec, instances []store.Instance) bool {
 }
 
 func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
+	if r.Context().Value(quotaLockKey{}) != true {
+		s.quotaMu.Lock()
+		defer s.quotaMu.Unlock()
+	}
+	if e := s.checkQuota("instances", 1); e != nil {
+		fail(w, 403, e.Error())
+		return
+	}
+
 	var in createReq
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		fail(w, 400, "invalid json")
 		return
 	}
 	sp := in.Spec
+	if in.BackupID != "" {
+		s.usageMu.RLock()
+		backup, ok := s.backups[in.BackupID]
+		s.usageMu.RUnlock()
+		if !ok || backup.State != "READY" {
+			fail(w, http.StatusNotFound, "ready backup not found")
+			return
+		}
+		if in.WorkerID == "" || in.WorkerID != backup.WorkerID {
+			fail(w, http.StatusConflict, "backup restore must run on its source worker; cross-worker restore is not available")
+			return
+		}
+		sp.BackupID = backup.ID
+		sp.Image.Name, sp.Image.Version = restoreImage(backup.Image)
+	}
 	if sp.ProtectionMode == nil {
 		enabled := true
 		sp.ProtectionMode = &enabled
@@ -1864,7 +2024,7 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 	if sp.Image.Name == "ubuntu" && sp.Image.Version == "" {
 		sp.Image.Version = "24.04"
 	}
-	if sp.Image.Name == "" || sp.Image.Version == "" || sp.RAMMB <= 0 || sp.CPU <= 0 || sp.DiskMB <= 0 {
+	if sp.Image.Name == "" || sp.Image.Version == "" || sp.RAMMB <= 0 || sp.CPU <= 0 || sp.DiskMB <= 0 || sp.DiskMB > 1<<30 {
 		fail(w, 400, "spec requires image.name, ram_mb, cpu, disk_mb")
 		return
 	}
@@ -1878,6 +2038,10 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 	}
 	if *sp.SwapMB < 0 {
 		fail(w, http.StatusBadRequest, "swap_mb cannot be negative")
+		return
+	}
+	if e := s.checkStorage(sp.DiskMB<<20, false); e != nil {
+		fail(w, 403, e.Error())
 		return
 	}
 	req := scheduler.Request{RAM: uint64(sp.RAMMB) << 20, Swap: uint64(proto.SwapLimitMB(sp)) << 20, Disk: uint64(sp.DiskMB) << 20, CPU: sp.CPU}
@@ -2045,6 +2209,7 @@ func (s *Server) WorkerHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/enroll", s.enroll)
 	mux.HandleFunc("POST /v1/heartbeat", s.heartbeat)
+	s.databaseWorkerRoutes(mux)
 	return mux
 }
 
@@ -2142,6 +2307,13 @@ func (s *Server) noteFail(ip string) {
 }
 
 func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
+	s.quotaMu.Lock()
+	defer s.quotaMu.Unlock()
+	if e := s.checkQuota("workers", 1); e != nil {
+		fail(w, 403, e.Error())
+		return
+	}
+
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 	if s.rateLimited(ip) {
 		fail(w, 429, "too many failed attempts")
@@ -2166,7 +2338,7 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Store.UpsertWorker(store.Worker{ID: id, Hostname: in.Hostname, Status: "pending", Version: in.Version, Capacity: in.Capacity, LastHeartbeat: time.Now()})
 	s.Store.Audit("worker", "enroll", id, "ok")
-	writeJSON(w, 201, proto.EnrollResponse{WorkerID: id, CertPEM: string(cert), CAPEM: string(s.CA.CertPEM)})
+	writeJSON(w, 201, proto.EnrollResponse{WorkerID: id, CertPEM: string(cert), CAPEM: string(s.CA.CertPEM), S3MasterAddress: s.S3MasterAddress})
 }
 
 func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
@@ -2201,6 +2373,23 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = s.Store.SaveVolume(v)
 	}
+	s.usageMu.Lock()
+	reportedBackups := make(map[string]bool, len(hb.Backups))
+	for _, backup := range hb.Backups {
+		if backup.WorkerID != id {
+			continue
+		}
+		reportedBackups[backup.ID] = true
+		if old, exists := s.backups[backup.ID]; !exists || old.State != "DELETING" {
+			s.backups[backup.ID] = backup
+		}
+	}
+	for backupID, backup := range s.backups {
+		if backup.WorkerID == id && backup.State == "DELETING" && !reportedBackups[backupID] {
+			delete(s.backups, backupID)
+		}
+	}
+	s.usageMu.Unlock()
 
 	for _, st := range hb.Instances {
 		if inst, err := s.Store.GetInstance(st.ID); err == nil && inst.WorkerID == id && inst.State != proto.StateDeleting {
@@ -2226,12 +2415,41 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 			s.usageMu.Unlock()
 		}
 	}
+	s.recordManagedApps(id, hb.ManagedApps)
+	s.recordExecutionProgress(id, hb.ExecutionProgress)
 	for _, res := range hb.Results {
+		if strings.HasPrefix(res.OpID, "managed/") {
+			s.completeManaged(id, res)
+			continue
+		}
+		if strings.HasPrefix(res.OpID, "execution/") {
+			s.completeExecution(id, res)
+			continue
+		}
 		if strings.HasPrefix(res.OpID, "fileop/") {
 			s.completeVolumeFileResult(id, res)
 			continue
 		}
 		parts := strings.Split(res.OpID, "/") // instance or volume operation ID
+		if len(parts) == 4 && parts[0] == "backup" {
+			s.usageMu.Lock()
+			backup, exists := s.backups[parts[1]]
+			if exists && backup.WorkerID == id {
+				if parts[2] == "delete" {
+					if res.OK {
+						delete(s.backups, parts[1])
+					} else {
+						backup.State, backup.Error = "READY", res.Error
+						s.backups[parts[1]] = backup
+					}
+				} else if !res.OK {
+					backup.State, backup.Error = "FAILED", res.Error
+					s.backups[parts[1]] = backup
+				}
+			}
+			s.usageMu.Unlock()
+			continue
+		}
 		if len(parts) == 4 && parts[0] == "volume" {
 			s.completeVolumeOperation(id, parts[1], parts[2], res)
 			continue
@@ -2306,5 +2524,7 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 		s.Store.Audit(id, "op."+parts[1], inst.ID, map[bool]string{true: "ok", false: "failed"}[res.OK])
 	}
 	ops, _ := s.Store.TakeOps(id)
-	writeJSON(w, 200, proto.HeartbeatResponse{Operations: ops})
+	databaseOps, acknowledged := s.databaseHeartbeat(id, hb.DatabaseResults, hb.DatabaseStatuses)
+	ops = append(ops, databaseOps...)
+	writeJSON(w, 200, proto.HeartbeatResponse{Operations: ops, DatabaseAcknowledged: acknowledged, S3MasterAddress: s.S3MasterAddress})
 }

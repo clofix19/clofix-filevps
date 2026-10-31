@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -16,12 +17,17 @@ import (
 const tok = "test-admin-token-123456"
 
 func newSrv(t *testing.T) (*Server, *store.MemoryStore) {
+	if os.Getenv("CLOFIX_DATA_DIR") == "" {
+		t.Setenv("CLOFIX_DATA_DIR", t.TempDir())
+	}
 	ca, err := pki.LoadOrCreate(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := store.NewMemory()
-	return New(m, ca, tok, ""), m
+	s := New(m, ca, tok, "")
+	setTestLicense(s)
+	return s, m
 }
 
 func do(h http.Handler, method, path, body, auth string) *httptest.ResponseRecorder {
@@ -67,7 +73,7 @@ func TestAutomaticPlacementAndRejection(t *testing.T) {
 	s, m := newSrv(t)
 	m.UpsertWorker(store.Worker{ID: "w1", Status: "active", LastHeartbeat: time.Now(), Capacity: scheduler.Capacity{
 		RAMTotal: 8 << 30, HostReserve: 1 << 30, MemAvailable: 6 << 30, CPUCores: 4, DiskTotal: 100 << 30, DiskFree: 80 << 30}})
-	ok := `{"spec":{"image":{"name":"ubuntu","version":"24.04"},"ram_mb":512,"cpu":1,"disk_mb":2048,"ssh_authorized_key":"ssh-ed25519 QUFB user@test"}}`
+	ok := `{"spec":{"image":{"name":"ubuntu","version":"24.04"},"ram_mb":512,"swap_mb":0,"cpu":1,"disk_mb":2048,"ssh_authorized_key":"ssh-ed25519 QUFB user@test"}}`
 	if c := do(s.AdminHandler(), "POST", "/api/instances", ok, tok).Code; c != 201 {
 		t.Fatalf("want 201 got %d", c)
 	}
@@ -86,4 +92,12 @@ func TestHeartbeatRequiresClientCert(t *testing.T) {
 	if c := do(s.WorkerHandler(), "POST", "/v1/heartbeat", "{}", "").Code; c != 401 {
 		t.Fatalf("want 401 got %d", c)
 	}
+}
+
+// Tests of individual controller features use a valid unrestricted entitlement fixture.
+func setTestLicense(s *Server) {
+	unlimited := -1
+	s.license.EncryptedKey = []byte("test-fixture")
+	s.license.LastCheck = time.Now()
+	s.license.Grant = licenseGrant{InstallationID: s.license.InstallationID, Valid: true, Expires: time.Now().Add(24 * time.Hour), Plan: licensePlan{MaxDatabaseProjects: &unlimited, MaxDatabases: &unlimited, MaxDatabaseUsers: &unlimited, MaxDatabaseSchedules: &unlimited, MaxVPS: 100000, MaxWorkers: 100000, MaxLB: 100000, MaxHealthChecks: &unlimited, MaxBackups: &unlimited, MaxVolumes: &unlimited, MaxStorageGB: &unlimited, MaxS3Connections: &unlimited, MaxApplications: &unlimited, MaxManagedApps: &unlimited, MaxNotificationChannels: &unlimited, MaxIAMUsers: &unlimited, MaxIAMGroups: &unlimited, MaxIAMPolicies: &unlimited, MaxAccessKeys: &unlimited}}
 }

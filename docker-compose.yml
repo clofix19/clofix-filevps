@@ -2,6 +2,21 @@
 #   cp .env.example .env && docker compose up --build
 # No enrollment secret lives in this file. Enroll the worker interactively (see README).
 services:
+  s3pool:
+    image: chrislusf/seaweedfs:4.51
+    entrypoint: ["/bin/sh", "/opt/clofix/s3-entrypoint.sh"]
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-clofixdevaccesskey}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-clofixdevsecretkey-change-me}
+    volumes:
+      - s3masterdata:/data
+      - ./storage/s3-entrypoint.sh:/opt/clofix/s3-entrypoint.sh:ro
+    ports:
+      - "127.0.0.1:8333:8333" # local S3 API; use private networking and a TLS proxy in production
+      - "${S3_MASTER_BIND_IP:-127.0.0.1}:9333:9333"
+      - "${S3_MASTER_BIND_IP:-127.0.0.1}:19333:19333"
+    restart: unless-stopped
+
   db:
     image: postgres:16-alpine
     environment:
@@ -25,11 +40,17 @@ services:
       CLOFIX_ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in .env (min 16 chars)}
       CLOFIX_DB_URL: postgres://clofix:${DB_PASSWORD}@db:5432/clofix?sslmode=disable
       CLOFIX_DATA_DIR: /data
+      CLOFIX_LICENSE_SERVER_URL: ${CLOFIX_LICENSE_SERVER_URL:-}
+      CLOFIX_LICENSE_PUBLIC_URL: ${CLOFIX_LICENSE_PUBLIC_URL:-}
       CLOFIX_LOG_DIR: /worker-logs/instances
+      CLOFIX_LB_WORKER_HOST: worker # Docker service DNS for the local single worker
+      CLOFIX_NLB_LISTEN_MAP: '{"127.0.0.1:18080":"0.0.0.0:18080"}' # Explicit local NAT mapping; public deployments bind their assigned IPs directly
       CLOFIX_TLS_NAMES: localhost,127.0.0.1,admin
+      CLOFIX_S3_MASTER_ADDRESS: ${CLOFIX_S3_MASTER_ADDRESS:-s3pool:9333}
     ports:
       - "8080:8080"   # Admin UI + API
       - "8443:8443"   # Worker API (mTLS)
+      - "127.0.0.1:18080:18080/tcp" # Local NLB application endpoint
     volumes:
       - ctldata:/data   # CA key and certificates
       - workerlogs:/worker-logs:ro
@@ -37,9 +58,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      s3pool:
+        condition: service_started
 
   worker:
     build: ./worker
+    hostname: clofix-local-worker
     restart: unless-stopped
     # DEV ONLY: fx needs namespaces, cgroups v2, overlayfs and mounts
     privileged: true
@@ -50,11 +74,18 @@ services:
       CLOFIX_LOG_DIR: /var/log/clofix-filevps
       CLOFIX_USER_NS: "false" # local Docker Desktop only; production keeps user namespaces enabled
       CLOFIX_ZRAM_MB: ${ZRAM_MB:-0} # set ZRAM_MB in .env on Linux hosts with /dev/zram0
+      CLOFIX_DATABASE_PUBLIC_HOST: 127.0.0.1
+      CLOFIX_DATABASE_DIRECTORY_STORAGE: "true" # DEV ONLY: shared with the isolated dind sidecar
+      DOCKER_HOST: unix:///var/run/clofix-docker/docker.sock
     volumes:
       - workerstate:/var/lib/clofix-filevps
       - workerconfig:/etc/clofix-filevps
       - workerlogs:/var/log/clofix-filevps
+      - database-runtime-socket:/var/run/clofix-docker
+      - database-runtime-secrets:/dev/shm/clofix-database
     ports:
+      - "127.0.0.1:25000-25099:25000-25099" # Authenticated Managed App gateways (development)
+      - "127.0.0.1:26000-26099:26000-26099" # TLS database listeners (development)
       - "127.0.0.1:22000-22099:22000-22099" # SSH forwarding for up to 100 local VPSs
       - "127.0.0.1:23000-23099:23000-23099" # HTTP port 80 for each local VPS
       - "127.0.0.1:23100-23199:23100-23199" # HTTPS port 443 for each local VPS
@@ -63,9 +94,60 @@ services:
     depends_on:
       - admin
 
+  # DEV/TEST ONLY. The production worker uses its own host-local Docker daemon.
+  # This daemon shares the worker network namespace so the worker can reach
+  # isolated database containers without exposing the host Docker socket.
+  database-runtime:
+    image: docker:27-dind
+    privileged: true
+    cgroup: host
+    network_mode: service:worker
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    entrypoint: ["dockerd"]
+    command: ["--host=unix:///var/run/clofix-docker/docker.sock", "--storage-driver=overlay2"]
+    volumes:
+      - database-runtime-socket:/var/run/clofix-docker
+      - database-runtime-data:/var/lib/docker
+      - workerstate:/var/lib/clofix-filevps
+      - database-runtime-secrets:/dev/shm/clofix-database
+    depends_on:
+      worker:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "docker", "-H", "unix:///var/run/clofix-docker/docker.sock", "info"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  database-runtime-prepare:
+    image: docker:27-cli
+    hostname: clofix-local-worker
+    environment:
+      DOCKER_HOST: unix:///var/run/clofix-docker/docker.sock
+    entrypoint: ["/bin/sh", "/scripts/prepare-database-images.sh", "/var/lib/clofix-filevps"]
+    volumes:
+      - database-runtime-socket:/var/run/clofix-docker
+      - workerstate:/var/lib/clofix-filevps
+      - ./scripts:/scripts:ro
+    depends_on:
+      database-runtime:
+        condition: service_healthy
+    restart: "no"
+
 volumes:
+  s3masterdata:
   dbdata:
   ctldata:
   workerstate:
   workerconfig:
   workerlogs:
+  database-runtime-socket:
+  database-runtime-data:
+  database-runtime-secrets:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=64m,mode=0700

@@ -1,8 +1,12 @@
 {{define "content"}}
 <section class="page active" id="page-services">
-      <div class="section-head"><div><p class="eyebrow">VPS software</p><h2>Service catalog</h2><p>Install, track, and uninstall catalog services in your VPSs.</p></div></div>
-      <div class="panel"><p class="muted">Service changes require a running VPS with Protection Mode disabled. Package installation or removal may take several minutes. Database files are retained; uninstalling Joomla removes its site files.</p><div class="message" id="catalog-message" role="status" aria-live="polite"></div></div>
-      <div class="cards" id="service-catalog"></div>
+      <div class="section-head"><div><p class="eyebrow">VPS software</p><h2>CloFix Library</h2><p>Install, track, and uninstall catalog services in your VPSs.</p></div></div>
+      <div class="panel"><div class="section-head"><div><h2>Quick Apps</h2><p>Deploy a managed web app with its own login and persistent data.</p></div></div><div class="table-wrap"><table id="managed-templates-table"></table></div></div>
+      <div class="panel"><div class="section-head"><h2>Your managed apps</h2></div><p class="message" id="managed-message" role="status" aria-live="polite"></p><div class="table-wrap"><table id="managed-apps-table"></table></div></div>
+      <div class="section-head"><div><h2>VPS software</h2><p>Install packages into an existing VPS.</p></div></div>
+      <div class="toolbar library-toolbar"><label for="library-search">Search library</label><input id="library-search" type="search" placeholder="Search services, tools, or categories…" aria-controls="service-catalog"><span id="library-count" class="muted" role="status" aria-live="polite"></span></div>
+      <div class="service-catalog-table"><div class="service-list-head" aria-hidden="true"><span>Service</span><span>Status</span><span>Actions</span></div><div class="service-list" id="service-catalog" aria-label="Available services"></div></div>
+      <p id="library-empty" class="muted" hidden>No services match your search. Try another name or category.</p>
     </section>
     <dialog class="terminal-dialog service-install-dialog" id="service-install-dialog" aria-labelledby="service-install-title">
       <div class="section-head"><div><p class="eyebrow">Service installation</p><h2 id="service-install-title">Install service</h2><p id="service-install-description" class="muted"></p></div><button type="button" class="secondary" id="service-install-close" aria-label="Close install dialog">Close</button></div>
@@ -11,4 +15,6 @@
       <div class="service-install-status" id="service-install-status" role="status" aria-live="polite">Select a running VPS with Protection Mode disabled.</div>
       <div class="inline-fields"><button type="button" class="primary" id="service-install-run">Install</button><button type="button" class="secondary" id="service-install-done" hidden>Close</button></div>
     </dialog>
+<dialog class="terminal-dialog form-dialog" id="managed-deploy-dialog" aria-labelledby="managed-deploy-title"><form id="managed-deploy-form"><div class="section-head"><h2 id="managed-deploy-title">Deploy app</h2><button type="button" class="secondary" data-managed-close>Close</button></div><div class="form-field"><label for="managed-name">Application name</label><input id="managed-name" required maxlength="80"></div><details><summary>Resources</summary><div class="form-grid"><div class="form-field"><label for="managed-ram">RAM (MiB)</label><input id="managed-ram" type="number" min="128" max="4096" value="512"></div><div class="form-field"><label for="managed-cpu">CPU cores</label><input id="managed-cpu" type="number" min="0.25" max="4" step="0.25" value="1"></div></div></details><p class="muted">CloFix manages the sandbox and 2 GiB persistent storage. No VPS setup is needed.</p><p class="error" id="managed-deploy-error" role="alert"></p><button type="submit" class="primary">Deploy</button></form></dialog>
+<dialog class="terminal-dialog form-dialog" id="managed-info-dialog" aria-labelledby="managed-info-title"><div class="section-head"><h2 id="managed-info-title">Application details</h2><button type="button" class="secondary" data-managed-close>Close</button></div><pre class="log-view" id="managed-info-content"></pre></dialog>
 {{end}}

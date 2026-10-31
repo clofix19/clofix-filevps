@@ -1,0 +1,39 @@
+{{define "content"}}
+<section class="page active">
+ <div class="section-head"><div><h2>Load Balancers</h2><p>Distribute TCP or HTTP traffic across healthy VPS instances and scale between your minimum and maximum.</p></div><button class="primary" id="lb-new">＋ Create load balancer</button></div>
+ <p class="muted">Manage the allocated NLB IP pool in <a href="/settings#settings-nlb">Settings → NLB network settings</a>.</p>
+ <div class="message" id="lb-message" role="status" aria-live="polite"></div>
+ <div class="panel" id="lb-list"><div class="table-wrap"><table id="lb-table"></table></div></div>
+ <div id="lb-detail" hidden>
+ <div class="section-head"><a href="/load-balancers">← All load balancers</a><button class="secondary" id="lb-detail-edit">Modify load balancer</button></div>
+ <div class="panel"><h2 id="lb-detail-name"></h2><div class="form-grid" id="lb-detail-summary"></div><p><a id="lb-detail-url" target="_blank" rel="noopener"></a> <button class="small-btn" id="lb-copy-url">Copy URL</button></p><p id="lb-detail-status" role="status"></p></div>
+ <div class="panel"><h3>Backend VPS instances</h3><div class="table-wrap"><table id="lb-backends"></table></div></div>
+ </div>
+ <p class="muted">Each balancer creates and owns its backend VPS instances. The selected backup must run your application on the configured backend port. NLB forwards TCP without terminating TLS. The public endpoint forwards application traffic without a controller login.</p>
+</section>
+<dialog class="terminal-dialog form-dialog" id="lb-dialog" aria-labelledby="lb-title">
+<form id="lb-form"><div class="section-head"><h2 id="lb-title">Create load balancer</h2><button class="secondary" type="button" id="lb-close">Close</button></div>
+<p class="muted" id="lb-type-help" role="status" aria-live="polite"></p>
+<div class="form-grid">
+ <div class="form-field"><label for="lb-mode">Load balancer type</label><select id="lb-mode"><option value="nlb">NLB · TCP · unique IP</option><option value="http">ALB · HTTP/HTTPS · domain routing</option></select></div>
+ <div class="form-field" data-lb-type="nlb"><label for="lb-listen-port">NLB TCP listener port</label><input id="lb-listen-port" type="number" min="1" max="65535" value="80" required></div>
+ <div class="form-field" data-lb-type="nlb"><label for="lb-backend-port">NLB backend guest port</label><select id="lb-backend-port"><option value="80">80 · HTTP</option><option value="443">443 · TLS passthrough</option><option value="22">22 · SSH</option></select></div>
+ <div class="form-field"><label for="lb-name">Name</label><input id="lb-name" maxlength="80" required></div>
+ <div class="form-field form-span" data-lb-type="http" hidden><label for="lb-domains">ALB custom domains · optional</label><textarea id="lb-domains" rows="2" placeholder="app.example.com"></textarea><small class="muted">One hostname per line. Point DNS to this controller; HTTPS requires a TLS ingress/certificate. Without domains, use the generated /lb/ URL.</small></div>
+ <div class="form-field" data-lb-type="http" hidden><label for="lb-slug">Application URL name (optional)</label><input id="lb-slug" pattern="[a-z0-9][a-z0-9-]{0,62}" maxlength="63" placeholder="my-app"><small class="muted">Application URL: /lb/my-app/ · leave blank to use the LB ID. Names starting with lb- are reserved.</small></div>
+ <div class="form-field"><label for="lb-algorithm">Balancing algorithm</label><select id="lb-algorithm"><option value="round_robin">Round robin</option><option value="least_connections">Least connections</option><option value="least_response_time">Least response time</option><option value="ip_hash">Client IP hash</option><option value="uri_hash">URI hash</option><option value="random">Random</option><option value="power_of_two">Power of two choices</option></select></div>
+ <div class="form-field"><label for="lb-min">Minimum VPS</label><input id="lb-min" type="number" min="1" max="100" value="1" required></div>
+ <div class="form-field"><label for="lb-max">Maximum VPS</label><input id="lb-max" type="number" min="1" max="100" value="3" required></div>
+ <div class="form-field"><label for="lb-target">Target CPU per allocated core (%)</label><input id="lb-target" type="number" min="10" max="95" value="70" required></div>
+ <div class="form-field" data-lb-type="http" hidden><label for="lb-health">Health check path</label><input id="lb-health" value="/" required></div>
+ <div class="form-field form-span"><label for="lb-backup">VPS image · saved backup</label><select id="lb-backup" required><option value="">Select a ready VPS backup…</option></select><small class="muted" id="lb-backup-note">Backups from the Backups page. New VPS instances restore on the backup's source worker.</small></div>
+ <div class="form-field"><label for="lb-ram">RAM per VPS (MiB)</label><input id="lb-ram" type="number" min="32" value="512" required></div>
+ <div class="form-field"><label for="lb-cpu">CPU cores per VPS</label><input id="lb-cpu" type="number" min="0.1" step="0.1" value="1" required></div>
+ <div class="form-field"><label for="lb-disk">Disk per VPS (MiB)</label><input id="lb-disk" type="number" min="1" value="4096" required></div>
+ <div class="form-field"><label for="lb-swap">Swap per VPS (MiB)</label><input id="lb-swap" type="number" min="0" value="0" required><small class="muted">0 disables guest swap. A positive value reserves host swap for each VPS, in addition to existing allocations.</small></div>
+ <div class="form-field form-span"><label for="lb-ssh">SSH public key</label><textarea id="lb-ssh" rows="3" required spellcheck="false"></textarea></div>
+</div>
+<p class="muted">Settings for the backup and resources apply to newly created VPS instances. CPU above target adds one VPS; below half target removes one after a two-minute cooldown. Lowering maximum removes excess VPS instances. Deleting a balancer deletes all VPS instances it owns.</p>
+<p class="message" id="lb-save-status" role="status" aria-live="polite"></p><p class="error" id="lb-error" role="alert"></p><button class="primary" id="lb-save" type="submit">Save load balancer</button>
+</form></dialog>
+{{end}}

@@ -33,10 +33,17 @@ func principalFrom(r *http.Request) iamPrincipal {
 var iamIDPattern = regexp.MustCompile(`^(usr|grp|pol)-[0-9a-f]{16}$`)
 var iamUsernamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]{2,64}$`)
 var iamPermissionSet = map[string]bool{
+	"databases:read": true, "databases:manage": true,
+	"license:read": true, "license:manage": true,
+	"health-checks:read": true, "health-checks:manage": true,
+	"load-balancers:read": true, "load-balancers:manage": true,
+	"managed-apps:read": true, "managed-apps:manage": true,
+	"*": true, "read:*": true, "backups:read": true, "backups:manage": true, "platform:read": true, "platform:manage": true,
+	"applications:read": true, "applications:manage": true,
 	"instances:read": true, "instances:manage": true, "workers:read": true, "workers:manage": true,
 	"volumes:read": true, "volumes:manage": true, "storage:read": true, "storage:manage": true,
 	"security:read": true, "security:manage": true, "services:read": true, "services:manage": true,
-	"iam:read": true,
+	"iam:read": true, "iam:manage": true,
 }
 
 func iamPermissionCatalog() []string {
@@ -95,6 +102,20 @@ func (s *Server) authenticate(r *http.Request) (iamPrincipal, bool) {
 
 func permissionResource(path string) string {
 	switch {
+	case strings.HasPrefix(path, "/api/databases"):
+		return "databases"
+	case strings.HasPrefix(path, "/api/license"):
+		return "license"
+	case strings.HasPrefix(path, "/api/monitoring"):
+		return "health-checks"
+	case strings.HasPrefix(path, "/api/load-balancers"):
+		return "load-balancers"
+	case strings.HasPrefix(path, "/api/managed-apps"):
+		return "managed-apps"
+	case strings.HasPrefix(path, "/api/backups"), strings.HasPrefix(path, "/api/instances/") && strings.HasSuffix(path, "/backups"):
+		return "backups"
+	case strings.HasPrefix(path, "/api/applications"), strings.HasPrefix(path, "/api/application-runs"), strings.HasPrefix(path, "/api/functions"):
+		return "applications"
 	case strings.HasPrefix(path, "/api/iam"):
 		return "iam"
 	case path == "/api/ca.pem":
@@ -122,8 +143,15 @@ func permissionResource(path string) string {
 	}
 }
 func hasIAMPermission(p iamPrincipal, permission string) bool {
+	// Existing instance policies retain their historical backup access.
+	if strings.HasPrefix(permission, "backups:") && hasIAMPermission(p, "instances:"+strings.TrimPrefix(permission, "backups:")) {
+		return true
+	}
 	for _, v := range p.Permissions {
 		if v == "*" || v == permission {
+			return true
+		}
+		if strings.HasSuffix(v, ":manage") && permission == strings.TrimSuffix(v, ":manage")+":read" {
 			return true
 		}
 		if strings.HasSuffix(v, ":*") {
@@ -137,6 +165,17 @@ func hasIAMPermission(p iamPrincipal, permission string) bool {
 		}
 	}
 	return false
+}
+
+func isIAMConflict(err error) bool {
+	if errors.Is(err, store.ErrConflict) {
+		return true
+	}
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "23505") || strings.Contains(msg, "unique constraint") || strings.Contains(msg, "duplicate key")
 }
 
 func (s *Server) iamMe(w http.ResponseWriter, r *http.Request) {
@@ -196,7 +235,7 @@ func (s *Server) listIAMPolicies(w http.ResponseWriter, r *http.Request) {
 		{"name": "CloFixFullAdministrator", "permissions": []string{"*"}},
 		{"name": "CloFixReadOnly", "permissions": []string{"read:*"}},
 	}
-	writeJSON(w, 200, map[string]any{"policies": v, "permissions": iamPermissionCatalog(), "built_in": builtIn})
+	writeJSON(w, 200, map[string]any{"policies": v, "permissions": iamPermissionCatalog(), "permission_details": iamPermissionDetails(), "built_in": builtIn})
 }
 func decodeIAM(w http.ResponseWriter, r *http.Request, dst any) bool {
 	if e := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(dst); e != nil {
@@ -269,9 +308,20 @@ func (s *Server) saveIAMUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	existingUsers, listErr := s.Store.ListIAMUsers()
+	if listErr != nil {
+		fail(w, 500, "could not validate IAM username")
+		return
+	}
+	for _, existing := range existingUsers {
+		if existing.ID != user.ID && strings.EqualFold(existing.Username, in.Username) {
+			fail(w, 409, "username already exists")
+			return
+		}
+	}
 	user.Username, user.Role, user.Status, user.GroupIDs, user.PolicyIDs = in.Username, in.Role, in.Status, in.GroupIDs, in.PolicyIDs
 	if err = s.Store.SaveIAMUser(user); err != nil {
-		if errors.Is(err, store.ErrConflict) {
+		if isIAMConflict(err) {
 			fail(w, 409, "username already exists")
 		} else {
 			fail(w, 500, "could not save IAM user")
@@ -333,9 +383,20 @@ func (s *Server) saveIAMGroup(w http.ResponseWriter, r *http.Request) {
 		}
 		g = old
 	}
+	existingGroups, listErr := s.Store.ListIAMGroups()
+	if listErr != nil {
+		fail(w, 500, "could not validate group name")
+		return
+	}
+	for _, existing := range existingGroups {
+		if existing.ID != g.ID && strings.EqualFold(existing.Name, in.Name) {
+			fail(w, 409, "group name already exists")
+			return
+		}
+	}
 	g.Name, g.Description, g.PolicyIDs = in.Name, strings.TrimSpace(in.Description), in.PolicyIDs
 	if e := s.Store.SaveIAMGroup(g); e != nil {
-		if errors.Is(e, store.ErrConflict) {
+		if isIAMConflict(e) {
 			fail(w, 409, "group name already exists")
 		} else {
 			fail(w, 500, "could not save group")
@@ -410,9 +471,20 @@ func (s *Server) saveIAMPolicy(w http.ResponseWriter, r *http.Request) {
 		}
 		p = old
 	}
+	existingPolicies, listErr := s.Store.ListIAMPolicies()
+	if listErr != nil {
+		fail(w, 500, "could not validate policy name")
+		return
+	}
+	for _, existing := range existingPolicies {
+		if existing.ID != p.ID && strings.EqualFold(existing.Name, in.Name) {
+			fail(w, 409, "policy name already exists")
+			return
+		}
+	}
 	p.Name, p.Description, p.Permissions = in.Name, strings.TrimSpace(in.Description), in.Permissions
 	if e := s.Store.SaveIAMPolicy(p); e != nil {
-		if errors.Is(e, store.ErrConflict) {
+		if isIAMConflict(e) {
 			fail(w, 409, "policy name already exists")
 		} else {
 			fail(w, 500, "could not save policy")

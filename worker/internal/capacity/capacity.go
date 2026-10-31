@@ -10,6 +10,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/clofix/filevps/worker/internal/gpu"
 	"github.com/clofix/filevps/worker/pkg/scheduler"
 )
 
@@ -96,6 +97,7 @@ func (c *Collector) cpuUtil() float64 {
 func (c *Collector) Collect(committedRAM uint64, allocCPU float64, committedDisk uint64) scheduler.Capacity {
 	mi := parseMeminfo(read("/proc/meminfo"))
 	cp := scheduler.Capacity{
+		GPUs:          gpuCapacity(),
 		RAMTotal:      mi["MemTotal"],
 		HostReserve:   c.HostReserve,
 		RAMCommitted:  committedRAM,
@@ -134,4 +136,17 @@ func (c *Collector) Collect(committedRAM uint64, allocCPU float64, committedDisk
 		cp.DiskFree = uint64(st.Bavail) * uint64(st.Bsize)
 	}
 	return cp
+}
+
+func gpuCapacity() []scheduler.GPUDevice {
+	devices := gpu.Detect()
+	out := make([]scheduler.GPUDevice, 0, len(devices))
+	for _, d := range devices {
+		out = append(out, scheduler.GPUDevice{
+			Index: d.Index, UUID: d.UUID, Name: d.Name,
+			MemoryTotal: d.MemoryTotal, MemoryUsed: d.MemoryUsed,
+			MemoryFree: d.MemoryFree, UtilizationPct: d.UtilizationPct,
+		})
+	}
+	return out
 }

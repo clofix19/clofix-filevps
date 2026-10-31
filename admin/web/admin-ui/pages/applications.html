@@ -1,0 +1,40 @@
+{{define "content"}}
+<section class="page active" id="page-applications">
+  <div class="section-head"><div><h2>Jobs &amp; Functions</h2><p>Run scripts, ZIP projects and binaries without creating a VPS.</p></div><button class="primary" id="application-new" type="button">＋ Add application</button></div>
+  <p class="muted" id="application-runtime-status"></p>
+  <div id="application-message" class="message" role="status" aria-live="polite"></div>
+  <div class="panel"><div class="toolbar"><strong>Applications</strong><input type="search" id="application-search" placeholder="Search applications…" aria-label="Search applications"></div><div class="table-wrap"><table id="applications-table"></table></div></div>
+  <div class="panel"><div class="section-head"><h2>Run history</h2><button class="small-btn" id="application-refresh" type="button">Refresh</button></div><div class="table-wrap"><table id="application-runs-table"></table></div></div>
+</section>
+<dialog class="terminal-dialog form-dialog" id="application-create-dialog" aria-labelledby="application-create-title">
+  <form id="application-create-form"><div class="section-head"><h2 id="application-create-title">Add application</h2><button class="secondary" type="button" data-app-close>Close</button></div>
+  <div class="form-grid">
+    <div class="form-field"><label for="application-name">Name</label><input id="application-name" maxlength="80" required></div>
+    <div class="form-field"><label for="application-kind">Type</label><select id="application-kind"><option value="job">Job · run once</option><option value="function">Function · HTTP invocation</option></select></div>
+    <div class="form-field"><label for="application-runtime">Runtime</label><select id="application-runtime"><option value="python">Python 3 script</option><option value="go">Go · Linux binary</option><option value="nodejs">Node.js</option><option value="php">PHP CLI</option><option value="java">Java JAR</option><option value="ruby">Ruby</option><option value="bun">Bun · JavaScript/TypeScript</option><option value="deno">Deno · JavaScript/TypeScript</option></select></div>
+    <div class="form-field"><label for="application-file">Application file · maximum 4 MiB</label><input id="application-file" type="file"><small class="muted">Single file or ZIP project. For an update, leave blank to keep the existing upload.</small></div>
+    <div class="form-field"><label for="application-format">Upload format</label><select id="application-format"><option value="file">Single file</option><option value="zip">ZIP project</option></select></div>
+    <div class="form-field"><label for="application-entry">Entrypoint inside upload</label><input id="application-entry" placeholder="main.py, index.js, app.jar…"><small class="muted">ZIP: path relative to its root. Single file: optional filename.</small></div>
+    <div class="form-field form-span"><label for="application-args">Arguments · JSON array</label><input id="application-args" placeholder='["--mode", "daily"]'></div>
+    <div class="form-field"><label for="application-env">Environment · JSON object</label><textarea id="application-env" rows="3" placeholder='{"MODE":"production"}'></textarea></div>
+    <div class="form-field"><label for="application-secrets">Secrets · JSON object</label><textarea id="application-secrets" rows="3" autocomplete="off" spellcheck="false" placeholder='{"API_KEY":"…"}'></textarea><small class="muted">Encrypted at rest. Blank keeps existing secrets; {} clears them.</small></div>
+    <div class="form-field"><label for="application-schedule">Schedule · UTC cron (jobs only)</label><input id="application-schedule" placeholder="*/15 * * * *"><small class="muted">Leave blank for manual execution.</small></div>
+    <label class="inline-fields"><input id="application-deps" type="checkbox"> Install bundled Python/npm dependencies offline</label>
+    <div class="form-field"><label for="application-ram">RAM (MiB)</label><input id="application-ram" type="number" min="32" max="2048" value="128" required></div>
+    <div class="form-field"><label for="application-cpu">CPU cores</label><input id="application-cpu" type="number" min="0.1" max="2" step="0.1" value="0.5" required></div>
+    <div class="form-field"><label for="application-timeout">Timeout (seconds)</label><input id="application-timeout" type="number" min="1" max="120" value="30" required></div>
+  </div><p class="muted">Input is passed through stdin. Write your result to stdout. Runs have no external network access.</p><p id="application-create-error" class="error" role="alert"></p><button class="primary" type="submit">Save application</button></form>
+</dialog>
+<dialog class="terminal-dialog form-dialog" id="application-run-dialog" aria-labelledby="application-run-title">
+  <div class="section-head"><h2 id="application-run-title">Run application</h2><button class="secondary" type="button" data-app-close>Close</button></div>
+  <div class="form-field"><label for="application-input">Input (stdin, maximum 64 KiB)</label><textarea id="application-input" rows="5" placeholder='{"message":"hello"}'></textarea></div>
+  <p class="muted" id="application-endpoint"></p><div class="message" id="application-invoke-message" role="status"></div><button type="button" class="primary" id="application-run-submit">Run</button>
+</dialog>
+<dialog class="terminal-dialog form-dialog" id="application-log-dialog" aria-labelledby="application-log-title">
+  <div class="section-head"><h2 id="application-log-title">Run output</h2><button class="secondary" type="button" data-app-close>Close</button></div>
+  <p id="application-log-status" class="muted"></p><h3>Stdout</h3><pre class="log-view" id="application-stdout"></pre><h3>Stderr</h3><pre class="log-view" id="application-stderr"></pre><div class="inline-fields"><button type="button" class="secondary" id="application-output-download">Download logs</button><button type="button" class="secondary" id="application-files-download">Download output files</button></div>
+</dialog>
+<dialog class="terminal-dialog form-dialog" id="application-versions-dialog" aria-labelledby="application-versions-title"><div class="section-head"><h2 id="application-versions-title">Application versions</h2><button class="secondary" type="button" data-app-close>Close</button></div><div class="table-wrap"><table id="application-versions-table"></table></div><p class="message" id="application-versions-message" role="status"></p></dialog>
+<dialog class="terminal-dialog form-dialog" id="application-webhook-dialog" aria-labelledby="application-webhook-title"><div class="section-head"><h2 id="application-webhook-title">Webhook trigger</h2><button class="secondary" type="button" data-app-close>Close</button></div><p class="muted">POST the event body to this URL. Send the secret in the X-CloFix-Webhook-Key header.</p><pre id="application-webhook-details" class="log-view"></pre><p class="message" id="application-webhook-message" role="status"></p><div class="inline-fields"><button id="application-webhook-enable" type="button" class="primary">Create / rotate secret</button><button id="application-webhook-disable" type="button" class="secondary">Disable webhook</button></div></dialog>
+{{end}}
+
