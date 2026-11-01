@@ -29,6 +29,7 @@ const (
 	ActionUninstallService       = "uninstall-service"
 	ActionCreateBackup           = "create-backup"
 	ActionDeleteBackup           = "delete-backup"
+	ActionSetPassword            = "set-password"
 )
 
 const DefaultSwapMB int64 = 512
@@ -90,6 +91,7 @@ type InstanceSpec struct {
 	IPAddress        string          `json:"ip_address,omitempty"`
 	SSHPort          int             `json:"ssh_port,omitempty"`
 	SSHAuthorizedKey string          `json:"ssh_authorized_key,omitempty"`
+	PasswordAuth     bool            `json:"password_auth,omitempty"`
 	PortMappings     []PortMapping   `json:"port_mappings,omitempty"`
 	ProtectionMode   *bool           `json:"protection_mode,omitempty"`
 	SSHLoginBlocked  *bool           `json:"ssh_login_blocked,omitempty"`
@@ -169,6 +171,7 @@ type Operation struct {
 	WorkerID      string             `json:"worker_id,omitempty"`
 	WAFCategory   string             `json:"waf_category,omitempty"`
 	WAFEnabled    bool               `json:"waf_enabled,omitempty"`
+	RootPassword  string             `json:"root_password,omitempty"`
 }
 
 type OpResult struct {

@@ -30,6 +30,12 @@ func (e *Engine) CreateBackup(instanceID, backupID, workerID string) error {
 	if e.CG.Alive(instanceID) {
 		return errors.New("stop the VPS before creating a consistent backup")
 	}
+	// Stop unmounts the quota loop. Remount so upperDir() points at the ext4
+	// layer instead of the migrated-away instances/<id>/upper directory.
+	if err := e.ensureDiskQuota(m); err != nil {
+		return err
+	}
+	defer e.unmountLayer(instanceID)
 	dir := e.backupDir(backupID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err

@@ -9,10 +9,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -32,6 +34,7 @@ func RunInit(args []string) error {
 	type bindMount struct{ source, target string }
 	var binds []bindMount
 	meminfo := ""
+	userNSHostUID := 0
 	for argStart < len(args) && args[argStart] != "--" {
 		switch args[argStart] {
 		case "--unprivileged":
@@ -40,6 +43,16 @@ func RunInit(args []string) error {
 		case "--protection-mode":
 			protected = true
 			argStart++
+		case "--user-ns-host-uid":
+			if argStart+1 >= len(args) {
+				return errors.New("--user-ns-host-uid requires a host uid")
+			}
+			u, err := strconv.Atoi(args[argStart+1])
+			if err != nil || u <= 0 {
+				return errors.New("--user-ns-host-uid must be a positive host uid")
+			}
+			userNSHostUID = u
+			argStart += 2
 		case "--meminfo-file":
 			if argStart+1 >= len(args) {
 				return errors.New("--meminfo-file requires a path")
@@ -68,6 +81,11 @@ func RunInit(args []string) error {
 	// pivot_root needs the new root to be a mount point
 	if err := syscall.Mount(root, root, "", syscall.MS_BIND|syscall.MS_REC, ""); err != nil {
 		return fmt.Errorf("bind rootfs: %w", err)
+	}
+	if userNSHostUID > 0 {
+		if err := bindWorker(root, userNSHostUID); err != nil {
+			return err
+		}
 	}
 	if err := syscall.Mount("proc", filepath.Join(root, "proc"), "proc", syscall.MS_NOSUID|syscall.MS_NODEV|syscall.MS_NOEXEC, ""); err != nil {
 		return fmt.Errorf("mount /proc: %w", err)
@@ -141,6 +159,15 @@ func RunInit(args []string) error {
 		return fmt.Errorf("unmount old root: %w", err)
 	}
 	os.Remove("/.oldroot")
+	if userNSHostUID > 0 {
+		for _, p := range []string{"/run/sshd", "/run/nginx", "/var/log/nginx", "/var/cache/nginx"} {
+			_ = os.MkdirAll(p, 0o755)
+			_ = os.Chown(p, userNSHostUID, userNSHostUID)
+		}
+		for _, p := range []string{"/run", "/tmp", "/var/tmp", "/dev", "/etc/ssh", "/root", "/var/log", "/var/cache"} {
+			_ = chownTree(p, userNSHostUID)
+		}
+	}
 	var appEnv map[string]string
 	if unprivileged {
 		data, err := os.ReadFile("/app/.clofix-env.json")
@@ -173,6 +200,18 @@ func RunInit(args []string) error {
 		if err := os.Chdir("/tmp"); err != nil {
 			return err
 		}
+	}
+	if userNSHostUID > 0 {
+		// Become the mapped host uid after the last privileged mount (including
+		// Protection Mode remount). After the parent writes "0 hostUID 65536",
+		// this process is ns root. Staying host uid 0 leaves overflowuid.
+		if err := syscall.Setgid(userNSHostUID); err != nil {
+			return fmt.Errorf("setgid host uid: %w", err)
+		}
+		if err := syscall.Setuid(userNSHostUID); err != nil {
+			return fmt.Errorf("setuid host uid: %w", err)
+		}
+		return execUnshareUser(argv)
 	}
 	if err := dropCaps(); err != nil {
 		return fmt.Errorf("drop capabilities: %w", err)
@@ -286,6 +325,72 @@ func validBindTarget(p string) bool {
 		}
 	}
 	return true
+}
+
+// execUnshareUser replaces this process with util-linux unshare --user.
+// Go's syscall.Unshare(CLONE_NEWUSER) returns EINVAL in a multi-threaded
+// process; the C unshare binary is single-threaded. The parent worker writes
+// uid_map after it sees the new user ns, then we exec fx-confine.
+func chownTree(root string, uid int) error {
+	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		_ = os.Lchown(path, uid, uid)
+		return nil
+	})
+}
+
+func bindWorker(root string, uid int) error {
+	dest := filepath.Join(root, ".fx-worker")
+	src, err := os.Open("/proc/self/exe")
+	if err != nil {
+		return fmt.Errorf("open worker binary: %w", err)
+	}
+	defer src.Close()
+	dst, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
+	if err != nil {
+		return fmt.Errorf("create /.fx-worker: %w", err)
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		dst.Close()
+		return fmt.Errorf("copy /.fx-worker: %w", err)
+	}
+	if err := dst.Close(); err != nil {
+		return err
+	}
+	if uid > 0 {
+		if err := os.Chown(dest, uid, uid); err != nil {
+			return fmt.Errorf("chown /.fx-worker: %w", err)
+		}
+	}
+	out, err := exec.Command("setcap", "cap_chown,cap_dac_override,cap_dac_read_search,cap_fowner,cap_fsetid,cap_kill,cap_setgid,cap_setuid,cap_setpcap,cap_net_bind_service,cap_sys_chroot,cap_audit_write=ep", dest).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("setcap /.fx-worker: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func execUnshareUser(argv []string) error {
+	if _, err := os.Stat("/.fx-worker"); err != nil {
+		return fmt.Errorf("missing /.fx-worker for user ns: %w", err)
+	}
+	if _, err := os.Stat("/usr/bin/unshare"); err != nil {
+		return fmt.Errorf("guest has no /usr/bin/unshare: %w", err)
+	}
+	script := `i=0
+while ! grep -q " 65536" /proc/self/uid_map 2>/dev/null; do
+  i=$((i+1))
+  [ "$i" -gt 500 ] && echo "fx-init: uid_map timeout" >&2 && exit 1
+  sleep 0.01
+done
+exec /.fx-worker fx-confine -- "$@"
+`
+	// --net so the network namespace is owned by this user namespace;
+	// otherwise CAP_NET_BIND_SERVICE cannot bind guest :22.
+	args := append([]string{"unshare", "--user", "--net", "--", "/bin/sh", "-c", script, "sh"}, argv...)
+	env := []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "HOME=/root", "TERM=xterm", "container=clofix-fx"}
+	return syscall.Exec("/usr/bin/unshare", args, env)
 }
 
 func setupDev(root string) error {

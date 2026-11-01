@@ -16,7 +16,7 @@ func TestIAMPermissionCatalogCoversResources(t *testing.T) {
 		"/api/applications": "applications", "/api/application-runs/run-1/cancel": "applications", "/api/functions/app-1/invoke": "applications",
 		"/api/applications/app-1/rollback/1": "applications", "/api/applications/app-1/webhook": "applications",
 		"/api/backups": "backups", "/api/instances/vps-1/backups": "backups",
-		"/api/instances/vps-1/resources": "instances", "/api/workers/w-1/drain": "workers", "/api/enrollment-tokens": "workers",
+		"/api/instances/vps-1/resources": "instances", "/api/ssh-keys": "instances", "/api/workers/w-1/drain": "workers", "/api/enrollment-tokens": "workers",
 		"/api/volumes/v-1/file": "volumes", "/api/storage/connections/c-1/objects": "storage",
 		"/api/instances/vps-1/waf/logs": "security", "/api/instances/vps-1/install-service": "services",
 		"/api/iam/policies": "iam", "/api/ca.pem": "platform",

@@ -138,13 +138,26 @@ def bench_section(bench):
     return L
 
 
+def load_suite():
+    extra = {}
+    p = os.path.join(RES, "suite-fx.tsv")
+    if not os.path.isfile(p):
+        return extra
+    for line in open(p, encoding="utf-8"):
+        parts = line.rstrip("\n").split("\t")
+        if len(parts) >= 4:
+            extra[parts[1]] = (parts[2], parts[4] if len(parts) > 4 else parts[3])
+    return extra
+
+
 def catalog_section(bench, audit):
     fx_bench = bench.get("fx", {})
     fx_audit = audit.get("fx", [])
+    extra = load_suite()
     L = [
         "## 3. Master test catalog",
         "",
-        "These are the P0/P1 cases from the FileVPS QA checklist. Status comes from the last `bench-fx.tsv` / `audit-fx.tsv` on this host. Cases without a probe stay **NOT RUN**. Skipped items were not executed on purpose (density cap, no `--destructive`, no compare backends). Later engine fixes are not treated as a new measurement.",
+        "These are the P0/P1 cases from the FileVPS QA checklist. Status comes from `bench-fx.tsv`, `audit-fx.tsv`, and `suite-fx.tsv` (isolated NOT-RUN suite runner). Later engine fixes are not invented as a pass. Density above 10, worker crash, and multi-worker cases stay skipped on this live fleet host.",
         "",
     ]
     counts = collections.Counter()
@@ -152,7 +165,7 @@ def catalog_section(bench, audit):
     for title, pri, cases in test_catalog.SUITES:
         body += [f"### {title} ({pri})", "", "| ID | Case | Status | Evidence |", "|---|---|---|---|"]
         for cid, name, spec in cases:
-            status, detail = test_catalog.resolve(name, spec, fx_bench, fx_audit)
+            status, detail = test_catalog.resolve(cid, name, spec, fx_bench, fx_audit, extra)
             counts[status] += 1
             body.append(f"| {cid} | {name} | {status} | {detail.replace('|', '/')} |")
         body.append("")
@@ -212,7 +225,7 @@ These rows describe what the current worker engine is written to do. They are **
 
 | ID | Expected | Why (code) | Verification |
 |---|---|---|---|
-| I01 | PASS when `user_ns=true` | `CLONE_NEWUSER` maps guest 0 to `uid_base` (default 100000) | Unverified on this Mac workspace |
+| I01 | PASS when `user_ns=true` | `CLONE_NEWUSER` maps guest 0 to `uid_base` (default 100000) | Isolated try on this linuxkit host: `fx-init` EPERM on make-rprivate |
 | I02 | PASS | Guest allowlist drops SYS_MODULE/RAWIO/BOOT/TIME/PTRACE/SYS_ADMIN | Unverified |
 | I03 | PASS | `fx-init` installs a seccomp filter and `no_new_privs` | Unverified |
 | I04 | WARN | AppArmor is detected on the host; no per-guest profile is applied | Unverified |
@@ -221,7 +234,7 @@ These rows describe what the current worker engine is written to do. They are **
 | N01 N02 | PASS | New mount, PID, UTS, IPC, net, cgroup (and user when enabled) namespaces | Unverified |
 | N05 | PASS | After the process is placed in `/clofix-filevps/<id>`, `CLONE_NEWCGROUP` makes the guest see `0::/`. Host `pids.max` / `memory.max` / `cpu.max` still apply. | Unverified |
 | X01 X03 X04 | PASS | Separate OverlayFS upper layers and namespaces | Unverified |
-| X05 | PASS when `user_ns=true` | Each guest gets a unique `host_uid` range (`uid_base + index * 65536`) | Unverified |
+| X05 | PASS when `user_ns=true` | Each guest gets a unique `host_uid` range (`uid_base + index * 65536`) | Isolated user-ns guests never reached `uid_map` on linuxkit |
 | X06 | PASS | Each veth is `bridge link set isolated on`; nftables default-drop forward | Unverified |
 | R01 R02 R03 | PASS | cgroup v2 sets `pids.max`, `memory.max`/`memory.high`, `cpu.max` | Unverified |
 | R04 R12 | PASS | `disk_mb` is a loop+ext4 backing for overlay upper/work; guest `df` shows the limit | Unverified |
@@ -252,6 +265,7 @@ def methodology():
             "sudo ./run-compare.sh            # backends that are installed",
             "sudo ./clofix-bench.sh fx",
             "sudo ./clofix-audit.sh fx",
+            "sudo FX_BIN=/tmp/clofix-worker-new ./run-notrun-suites.sh",
             "python3 make-report.py results results/report.md",
             "```",
             "",

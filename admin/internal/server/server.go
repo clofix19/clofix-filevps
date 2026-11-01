@@ -54,6 +54,7 @@ type Server struct {
 	databaseTransfers map[string]bool
 	billing           *billingStore
 	dns               *dnsStore
+	sshKeys           *sshKeyStore
 
 	placeMu         sync.Mutex
 	failMu          sync.Mutex
@@ -77,7 +78,7 @@ func New(s store.Store, ca *pki.CA, adminToken, uiDir string) *Server {
 	if dataDir == "" {
 		dataDir = "/var/lib/clofix-controller"
 	}
-	server := &Server{license: loadControllerLicense(dataDir), monitoring: loadMonitoring(dataDir), balancers: loadBalancers(dataDir), applications: loadServerless(dataDir), billing: loadBilling(dataDir), dns: loadDNS(dataDir), Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), S3MasterAddress: os.Getenv("CLOFIX_S3_MASTER_ADDRESS"), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}, backups: map[string]proto.BackupInfo{}}
+	server := &Server{license: loadControllerLicense(dataDir), monitoring: loadMonitoring(dataDir), balancers: loadBalancers(dataDir), applications: loadServerless(dataDir), billing: loadBilling(dataDir), dns: loadDNS(dataDir), sshKeys: loadSSHKeys(dataDir), Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), S3MasterAddress: os.Getenv("CLOFIX_S3_MASTER_ADDRESS"), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}, backups: map[string]proto.BackupInfo{}}
 	server.initDatabases(dataDir)
 	return server
 }
@@ -112,6 +113,7 @@ func (s *Server) AdminHandler() http.Handler {
 	s.databaseRoutes(mux)
 	s.billingRoutes(mux)
 	s.dnsRoutes(mux)
+	s.sshKeyRoutes(mux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /api/ca.pem", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-pem-file")
@@ -170,6 +172,7 @@ func (s *Server) AdminHandler() http.Handler {
 	mux.HandleFunc("POST /api/instances/{id}/ports", s.auth(s.addPortMapping))
 	mux.HandleFunc("POST /api/instances/{id}/protection", s.auth(s.setProtectionMode))
 	mux.HandleFunc("POST /api/instances/{id}/ssh-login", s.auth(s.setSSHLoginBlocked))
+	mux.HandleFunc("POST /api/instances/{id}/password", s.auth(s.setInstancePassword))
 	mux.HandleFunc("POST /api/instances/{id}/delete-protection", s.auth(s.setDeleteProtection))
 	mux.HandleFunc("POST /api/instances/{id}/waf", s.auth(s.setWAFCategory))
 	mux.HandleFunc("DELETE /api/instances/{id}/ports/{hostPort}", s.auth(s.deletePortMapping))
@@ -390,6 +393,46 @@ func (s *Server) setProtectionMode(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Store.Audit("admin", "instance.protection", id, fmt.Sprintf("enabled=%t", *in.Enabled))
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "protection_mode": *in.Enabled, "queued": true, "restart_required": inst.State == proto.StateRunning})
+}
+
+func (s *Server) setInstancePassword(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !apiInstanceID.MatchString(id) {
+		fail(w, http.StatusBadRequest, "invalid instance id")
+		return
+	}
+	var in struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&in); err != nil || !validRootPassword(in.Password) {
+		fail(w, http.StatusBadRequest, "password must be 8–128 characters without line breaks or colons")
+		return
+	}
+	s.placeMu.Lock()
+	defer s.placeMu.Unlock()
+	inst, err := s.Store.GetInstance(id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "instance not found")
+		return
+	}
+	if inst.State == proto.StateDeleting {
+		fail(w, http.StatusConflict, "cannot change password while VPS is deleting")
+		return
+	}
+	previous := inst
+	inst.Spec.PasswordAuth = true
+	if err := s.Store.SaveInstance(inst); err != nil {
+		fail(w, http.StatusInternalServerError, "could not save password setting")
+		return
+	}
+	spec := inst.Spec
+	if err := s.Store.QueueOp(inst.WorkerID, proto.Operation{ID: id + "/" + proto.ActionSetPassword + "/" + randHex(4), Action: proto.ActionSetPassword, InstanceID: id, Spec: &spec, RootPassword: in.Password}); err != nil {
+		_ = s.Store.SaveInstance(previous)
+		fail(w, http.StatusInternalServerError, "could not queue password update")
+		return
+	}
+	s.Store.Audit("admin", "instance.password", id, "queued")
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "queued": true})
 }
 
 func (s *Server) setSSHLoginBlocked(w http.ResponseWriter, r *http.Request) {
@@ -1850,9 +1893,13 @@ func (s *Server) uninstallService(w http.ResponseWriter, r *http.Request) {
 }
 
 type createReq struct {
-	Spec     proto.InstanceSpec `json:"spec"`
-	WorkerID string             `json:"worker_id"` // empty = automatic placement
-	BackupID string             `json:"backup_id,omitempty"`
+	Spec         proto.InstanceSpec `json:"spec"`
+	WorkerID     string             `json:"worker_id"` // empty = automatic placement
+	BackupID     string             `json:"backup_id,omitempty"`
+	RootPassword string             `json:"root_password,omitempty"`
+	GeneratePEM  bool               `json:"generate_pem,omitempty"`
+	SSHKeyID     string             `json:"ssh_key_id,omitempty"`
+	AuthMethod   string             `json:"auth_method,omitempty"` // key | pam | both
 }
 
 const (
@@ -2054,9 +2101,44 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "spec requires image.name, ram_mb, cpu, disk_mb")
 		return
 	}
-	if !validSSHPublicKey(sp.SSHAuthorizedKey) {
+	auth := strings.ToLower(strings.TrimSpace(in.AuthMethod))
+	if auth == "" {
+		auth = "key"
+	}
+	if auth != "key" && auth != "pam" && auth != "both" {
+		fail(w, 400, "auth_method must be key, pam, or both")
+		return
+	}
+	generatedPEM := ""
+	if in.SSHKeyID != "" {
+		saved, ok := s.lookupSSHKey(in.SSHKeyID)
+		if !ok {
+			fail(w, 400, "selected PEM key was not found")
+			return
+		}
+		sp.SSHAuthorizedKey = saved.PublicKey
+	}
+	if in.GeneratePEM {
+		pub, priv, err := generateEd25519PEM("clofix-" + time.Now().Format("20060102"))
+		if err != nil {
+			fail(w, 500, "could not generate PEM key")
+			return
+		}
+		sp.SSHAuthorizedKey, generatedPEM = pub, priv
+	}
+	if auth == "pam" || auth == "both" {
+		if !validRootPassword(in.RootPassword) {
+			fail(w, 400, "PAM auth requires an 8–128 character root password without line breaks or colons")
+			return
+		}
+		sp.PasswordAuth = true
+	}
+	if auth != "pam" && !validSSHPublicKey(sp.SSHAuthorizedKey) {
 		fail(w, 400, "a valid single-line SSH public key is required")
 		return
+	}
+	if auth == "pam" && !validSSHPublicKey(sp.SSHAuthorizedKey) {
+		sp.SSHAuthorizedKey = ""
 	}
 	if sp.SwapMB == nil {
 		swapMB := proto.DefaultSwapMB
@@ -2107,9 +2189,16 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 		wk.Capacity.CPUAllocated += req.CPU
 		s.Store.UpsertWorker(wk)
 	}
-	s.Store.QueueOp(dec.WorkerID, proto.Operation{ID: inst.ID + "/create/" + randHex(4), Action: proto.ActionCreate, InstanceID: inst.ID, Spec: &sp})
+	s.Store.QueueOp(dec.WorkerID, proto.Operation{ID: inst.ID + "/create/" + randHex(4), Action: proto.ActionCreate, InstanceID: inst.ID, Spec: &sp, RootPassword: in.RootPassword})
 	s.Store.Audit("admin", "instance.create", inst.ID, "ok")
-	writeJSON(w, 201, map[string]any{"instance": inst, "placement": dec.Explain})
+	if generatedPEM != "" && sp.SSHAuthorizedKey != "" {
+		key := sshPEMKey{ID: "pem-" + randHex(6), Name: "FileVPS " + inst.ID, PublicKey: sp.SSHAuthorizedKey, Created: time.Now()}
+		s.sshKeys.Lock()
+		s.sshKeys.Keys[key.ID] = key
+		_ = s.sshKeys.save()
+		s.sshKeys.Unlock()
+	}
+	writeJSON(w, 201, map[string]any{"instance": inst, "placement": dec.Explain, "pem": generatedPEM, "password_auth": sp.PasswordAuth})
 }
 
 func (s *Server) instanceOp(action string) http.HandlerFunc {

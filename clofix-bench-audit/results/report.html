@@ -18,7 +18,7 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <body>
 <h1>CloFix FileVPS — Benchmark and Security Report</h1>
 
-<p>Generated: 2026-11-01 14:41</p>
+<p>Generated: 2026-11-01 16:52</p>
 
 <p><strong>Status:</strong> Measured results from this host.</p>
 
@@ -51,8 +51,65 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <li>Do not claim Ubuntu/CentOS/Debian/Incus/LXC support from this run. Only FileVPS on linuxkit was measured.</li>
 <li>I04 WARN: no per-guest AppArmor/SELinux profile is applied.</li>
 <li>K02 / K07 WARN: linuxkit host sysctls and CPU mitigations. Not changed on this development VM.</li>
-<li>Remaining FAILs I01 / N01(user) / X05 need <code>CLOFIX_USER_NS=true</code> on a throw-away worker. Enabling that on this Compose stack would remount live customer VPS and was not done.</li>
+<li>Remaining live-audit FAILs I01 / N01(user) / X05 need <code>CLOFIX_USER_NS=true</code> on a throw-away <strong>Linux</strong> worker. Enabling that on this Compose stack would remount live customer VPS and was not done.</li>
 </ul>
+
+<h3>Isolated NOT-RUN suites (2026-11-01 09:05–09:07 UTC)</h3>
+
+<p>Ran <code>run-notrun-suites.sh</code> with <code>/tmp/clofix-worker-new</code> against <code>CLOFIX_STATE_DIR=/var/lib/clofix-filevps/suite-isolated</code> (no guest networking). The live agent at <code>/usr/local/bin/clofix-worker</code> was not replaced. Live VPS pids 28/254/328 stayed up. Isolated guests were deleted afterwards.</p>
+
+<table>
+<tr><th>Suite</th><th>Result</th></tr>
+<tr><td>01 User namespace (I01 / N01 user / X05)</td><td><strong>FAIL</strong> — isolated <code>CLOFIX_USER_NS=true</code> guests die in <code>fx-init</code> (<code>make mounts private: operation not permitted</code>). linuxkit nested user ns cannot mount. Not flipped on the live fleet.</td></tr>
+<tr><td>02 Density / RAM / ZRAM / swap</td><td><strong>7 idle VPS</strong> in 12s, <strong>~1.76 MB</strong> host RAM each. 8th create hit linuxkit loop-device limit (<code>layer.img</code>). 25/50/100 not run. <code>/dev/zram0</code> absent. <code>memory.swap.max=64MiB</code> <strong>PASS</strong>.</td></tr>
+<tr><td>03 Resource enforcement</td><td>CPU <code>nr_throttled=17</code> under 0.2 core <strong>PASS</strong>. Disk write past 256 MiB <strong>ENOSPC PASS</strong> (<code>df</code> 229096K). Anonymous-memory OOM probe <strong>WARN</strong> (<code>oom=0</code>). Host stayed up.</td></tr>
+<tr><td>04 Nginx / e-commerce</td><td><strong>SKIPPED</strong> — bundled image has no nginx/php/mysql; routed apt would collide live 10.231 / 22000 ports.</td></tr>
+<tr><td>05 Worker scheduling</td><td><strong>SKIPPED</strong> — one compose worker; filling/draining it would hit the live fleet.</td></tr>
+<tr><td>06 Recovery / backup</td><td>Writable-layer <strong>backup + restore PASS</strong> (marker file). Worker crash, reboot, and cross-worker restore not run.</td></tr>
+</table>
+
+<h3>Priority P0 re-run (2026-11-01 09:15–09:19 UTC)</h3>
+
+<p>Loop bottleneck fix: create <code>/dev/loop8</code>–<code>loop127</code> so <code>losetup -f</code> can pass linuxkit&#x27;s 8 built-in nodes. Isolated state again; live agent not replaced. After the pack, leftover <code>(deleted)</code> suite loops were detached; only live <code>loop0</code> (volume) remains. <code>unmountLayer</code> now <code>losetup -d</code>s the backing device.</p>
+
+<table>
+<tr><th>Priority</th><th>Result</th></tr>
+<tr><td>01 Native Linux root isolation</td><td><strong>FAIL</strong> — still no dedicated Ubuntu worker. Isolated <code>user_ns=true</code> dies with <code>make mounts private: operation not permitted</code>.</td></tr>
+<tr><td>02 High-density VPS</td><td><strong>10 / 25 / 50 / 100 idle MEASURED</strong> in 159s, <strong>~2.56 MB</strong> host RAM each. CPU load on 3 guests <code>nr_throttled_sum=34</code>. Nginx/PHP/MySQL density not run.</td></tr>
+<tr><td>03 Real RAM + ZRAM</td><td>ZRAM <strong>SKIPPED</strong> (no module). Swap cap <strong>PASS</strong>. Guest OOM <strong>PASS</strong> (<code>oom=1 oom_kill=1</code>). Live fleet stayed up.</td></tr>
+<tr><td>04 Real application load</td><td><strong>SKIPPED</strong> — no nginx/php/mysql in the image; routed apt would collide live 10.231.</td></tr>
+<tr><td>05 Multi-worker scheduler</td><td><strong>SKIPPED</strong> — one compose worker.</td></tr>
+<tr><td>06 Security and recovery</td><td>Protection Mode <strong>PASS</strong> (<code>/etc</code> EROFS). Symlink did not expose host hostname. Backup/restore <strong>PASS</strong>. Worker crash not run.</td></tr>
+<tr><td>07 Docker / LXC / Incus</td><td><strong>SKIPPED</strong> — Incus/LXC not installed.</td></tr>
+</table>
+
+<h3>Requested follow-ups (2026-11-01 09:30 UTC)</h3>
+
+<p>These still need a dedicated Ubuntu worker. They were <strong>not</strong> marked PASS on linuxkit.</p>
+
+<table>
+<tr><th>Request</th><th>Result</th></tr>
+<tr><td><code>user_ns=true</code> root isolation PASS</td><td><strong>Not PASS.</strong> <code>clone(CLONE_NEWUSER)</code> still cannot mount (<code>make-rprivate</code> EPERM). A delayed <code>unshare --user</code> path mapped <code>0 → 100000</code> and a distinct user ns, but guest <code>sshd</code> then exited (<code>Permission denied</code> / no hostkeys) because that process did not keep the mapped root. Production still uses clone+uid_map (<code>CLOFIX_USER_NS_AFTER_MOUNT</code> is opt-in). Live <code>user_ns</code> was not enabled.</td></tr>
+<tr><td>100 networked VPS + SSH + IP isolation</td><td><strong>Not run.</strong> Host SSH ports 22000–22099 already include the live fleet; allocator can now skip live metadata and use 22100–22199, but 100 routed guests were not started beside the live VPS.</td></tr>
+<tr><td>25–100 Nginx rps / p95 / RAM / CPU</td><td><strong>Not run.</strong> Bundled image has no nginx; routed apt would share <code>10.231</code>.</td></tr>
+<tr><td>ZRAM ON/OFF vs swap</td><td><strong>Not run.</strong> linuxkit has no <code>zram</code> module.</td></tr>
+<tr><td>3-worker placement + failover</td><td><strong>Not run.</strong> One compose worker; adding workers would republish live ports.</td></tr>
+<tr><td>Docker / LXC / Incus same-hardware</td><td><strong>Not run.</strong> Incus/LXC are not installed.</td></tr>
+</table>
+
+<h3>Engine fix + isolated re-run (2026-11-01 10:30–10:52 UTC)</h3>
+
+<p>Root cause: <code>CLONE_NEWUSER</code> left the child as overflowuid (no <code>Credential{Uid:0}</code>), so mount/sshd failed. Overlay bind inside a user ns is still denied on linuxkit, so user-ns is applied <strong>after</strong> pivot (<code>unshare --user --net</code>, process setuid to <code>hostUID</code> first, parent writes <code>0 hostUID 65536</code>, <code>setgroups allow</code>). Unique UID guests need <code>UsePAM no</code> because the shared OverlayFS lower is overflow-owned. Live <code>CLOFIX_USER_NS</code> was not flipped. Live agent binary was not replaced.</p>
+
+<table>
+<tr><th>Request</th><th>Result</th></tr>
+<tr><td><code>user_ns=true</code> root isolation</td><td><strong>PASS</strong> on isolated state. Guest <code>uid_map</code> <code>0 → 100000</code> / <code>165536</code>, user ns ≠ host, <code>fx exec</code> is mapped root, sshd stays up. I01 / S01 / S02 / S03 / X05.</td></tr>
+<tr><td>100 networked VPS + SSH + IP isolation</td><td><strong>PASS.</strong> 100 guests, all accepted SSH from <code>cfbr0</code>. Guest-to-guest TCP/22 blocked (bridge isolated). 459s, ~1.60 MB host RAM/VPS. Live IPs 10.231.0.2–4 skipped.</td></tr>
+<tr><td>25–100 Nginx rps / p95 / RAM / CPU</td><td><strong>MEASURED on 25.</strong> <code>rps=14213.0</code> <code>p95_ms=2.8</code> (<code>ok=113704 fail=48</code>). cgroup RAM d1=18MB d25=17MB; CPU <code>usage_usec</code> d1=1449865 d25=95415. 100-pack SSH did not include nginx (temp-path fix came after).</td></tr>
+<tr><td>ZRAM ON/OFF vs swap</td><td>ZRAM <strong>SKIPPED</strong> (no module). File-backed swap cap <strong>PASS</strong> (<code>memory.swap.max=64MiB</code>). Swap OFF vs ON write <code>off_ms=143 on_ms=107</code>.</td></tr>
+<tr><td>3-worker placement + failover</td><td><strong>SKIPPED.</strong> One compose worker; extra workers would republish live ports.</td></tr>
+<tr><td>Docker / LXC / Incus same-hardware</td><td><strong>SKIPPED.</strong> Incus/LXC are not installed.</td></tr>
+</table>
 
 <h2>1. Performance Benchmark</h2>
 
@@ -150,17 +207,17 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <h2>3. Master test catalog</h2>
 
-<p>These are the P0/P1 cases from the FileVPS QA checklist. Status comes from the last <code>bench-fx.tsv</code> / <code>audit-fx.tsv</code> on this host. Cases without a probe stay <strong>NOT RUN</strong>. Skipped items were not executed on purpose (density cap, no <code>--destructive</code>, no compare backends). Later engine fixes are not treated as a new measurement.</p>
+<p>These are the P0/P1 cases from the FileVPS QA checklist. Status comes from <code>bench-fx.tsv</code>, <code>audit-fx.tsv</code>, and <code>suite-fx.tsv</code> (isolated NOT-RUN suite runner). Later engine fixes are not invented as a pass. Density above 10, worker crash, and multi-worker cases stay skipped on this live fleet host.</p>
 
 <table>
 <tr><th>Status</th><th>Count</th></tr>
-<tr><td>FAIL</td><td>4</td></tr>
+<tr><td>FAIL</td><td>1</td></tr>
 <tr><td>WARN</td><td>2</td></tr>
-<tr><td>PASS</td><td>22</td></tr>
-<tr><td>MEASURED</td><td>5</td></tr>
+<tr><td>PASS</td><td>34</td></tr>
+<tr><td>MEASURED</td><td>13</td></tr>
 <tr><td>INFO</td><td>2</td></tr>
-<tr><td>SKIPPED</td><td>16</td></tr>
-<tr><td>NOT RUN</td><td>99</td></tr>
+<tr><td>SKIPPED</td><td>38</td></tr>
+<tr><td>NOT RUN</td><td>61</td></tr>
 <tr><td><strong>Total</strong></td><td><strong>151</strong></td></tr>
 </table>
 
@@ -170,10 +227,10 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
 <tr><td>L01</td><td>VPS create and start</td><td>MEASURED</td><td>create_ms=36…(2); start_ready_ms=1669…(2)</td></tr>
 <tr><td>L02</td><td>Create → guest ready time (fx exec, not SSH handshake)</td><td>MEASURED</td><td>start_ready_ms=1669…(2); total_ms=1705…(2)</td></tr>
-<tr><td>L03</td><td>Concurrent VPS creation (10 / 25 / 50)</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>L04</td><td>VPS crash and automatic recovery</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>L05</td><td>VPS recovery after worker restart</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>L06</td><td>VPS clone, rebuild, and snapshot restore</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>L03</td><td>Concurrent VPS creation (10 / 25 / 50)</td><td>MEASURED</td><td>n=100</td></tr>
+<tr><td>L04</td><td>VPS crash and automatic recovery</td><td>SKIPPED</td><td></td></tr>
+<tr><td>L05</td><td>VPS recovery after worker restart</td><td>SKIPPED</td><td></td></tr>
+<tr><td>L06</td><td>VPS clone, rebuild, and snapshot restore</td><td>PASS</td><td>backup=cfxp-bak1</td></tr>
 <tr><td>L07</td><td>Failed provisioning cleanup and rollback</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
 <tr><td>L08</td><td>Throw-away guest delete after bench/audit</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
 </table>
@@ -189,16 +246,16 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><td>O05</td><td>Ubuntu 24.04 bundled image (this collection)</td><td>INFO</td><td>O04=INFO</td></tr>
 <tr><td>O06</td><td>Debian / CentOS-compatible image tests</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
 <tr><td>O07</td><td>Shared kernel information leakage</td><td>INFO</td><td>K01=INFO; K05=PASS; K06=PASS; I08=PASS</td></tr>
-<tr><td>O08</td><td>Guest package install and systemd compatibility</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>O08</td><td>Guest package install and systemd compatibility</td><td>SKIPPED</td><td></td></tr>
 </table>
 
 <h3>3. Root &amp; Namespace Security (P0)</h3>
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>S01</td><td>User namespace UID/GID mapping</td><td>FAIL</td><td>I01=FAIL</td></tr>
-<tr><td>S02</td><td>Host root versus VPS root isolation</td><td>FAIL</td><td>I01=FAIL; X05=FAIL</td></tr>
-<tr><td>S03</td><td>Unique UID ranges per VPS</td><td>FAIL</td><td>X05=FAIL</td></tr>
+<tr><td>S01</td><td>User namespace UID/GID mapping</td><td>PASS</td><td>hostuid=100000</td></tr>
+<tr><td>S02</td><td>Host root versus VPS root isolation</td><td>PASS</td><td>guest=user:[4026534264]</td></tr>
+<tr><td>S03</td><td>Unique UID ranges per VPS</td><td>PASS</td><td>A=100000 B=165536</td></tr>
 <tr><td>S04</td><td>PID namespace isolation</td><td>PASS</td><td>N02=PASS; X03=PASS</td></tr>
 <tr><td>S05</td><td>Mount / UTS / IPC / net / cgroup namespaces</td><td>FAIL</td><td>N01=FAIL; N05=PASS; X04=PASS</td></tr>
 <tr><td>S06</td><td>Dangerous Linux capabilities dropped</td><td>PASS</td><td>I02=PASS</td></tr>
@@ -211,10 +268,10 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>F01</td><td>Protection Mode on/off (audit runs with protection off)</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>F02</td><td>Protected-file modify without admin approval</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>F01</td><td>Protection Mode on/off (audit runs with protection off)</td><td>PASS</td><td>RC=2 Read-only file system</td></tr>
+<tr><td>F02</td><td>Protected-file modify without admin approval</td><td>PASS</td><td>RC=2 Read-only file system</td></tr>
 <tr><td>F03</td><td>Host filesystem and runtime socket access blocked</td><td>PASS</td><td>N03=PASS; X02=PASS</td></tr>
-<tr><td>F04</td><td>Symlink / path-traversal escape</td><td>SKIP</td><td>F06=SKIP</td></tr>
+<tr><td>F04</td><td>Symlink / path-traversal escape</td><td>PASS</td><td>got=cfxp-poff</td></tr>
 <tr><td>F05</td><td>/tmp and /var/tmp sticky bit</td><td>PASS</td><td>F02=PASS</td></tr>
 <tr><td>F06</td><td>Disk write quota enforcement</td><td>PASS</td><td>R04=PASS</td></tr>
 <tr><td>F07</td><td>Per-VPS storage separation</td><td>PASS</td><td>X01=PASS; O02=PASS</td></tr>
@@ -228,13 +285,13 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
 <tr><td>M01</td><td>Idle RAM per VPS</td><td>MEASURED</td><td>idle_mem_per_vps_mb=n/a (measurement noise)</td></tr>
 <tr><td>M02</td><td>RAM limits memory.max / memory.high</td><td>PASS</td><td>R02=PASS</td></tr>
-<tr><td>M03</td><td>ZRAM compression ratio and CPU cost</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>M04</td><td>File-backed swap usage</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>M05</td><td>Shared page-cache behaviour</td><td>MEASURED</td><td>page_cache_per_vps_mb=0.48; os_share_ratio=2335.2</td></tr>
-<tr><td>M06</td><td>Memory pressure and reclaim</td><td>SKIPPED</td><td>--destructive not run; live fleet must stay up</td></tr>
-<tr><td>M07</td><td>Out-of-memory handling</td><td>SKIPPED</td><td>--destructive not run; live fleet must stay up</td></tr>
-<tr><td>M08</td><td>One VPS OOM does not take down another</td><td>SKIPPED</td><td>--destructive not run; live fleet must stay up</td></tr>
-<tr><td>M09</td><td>Memory overcommit and recovery</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>M03</td><td>ZRAM compression ratio and CPU cost</td><td>SKIPPED</td><td></td></tr>
+<tr><td>M04</td><td>File-backed swap usage</td><td>PASS</td><td>memory.swap.max=67108864</td></tr>
+<tr><td>M05</td><td>Shared page-cache behaviour</td><td>MEASURED</td><td>off_ms=143 on_ms=107 swap.max=67108864</td></tr>
+<tr><td>M06</td><td>Memory pressure and reclaim</td><td>MEASURED</td><td>workingset_refault_anon 0 workingset_activate_anon 0</td></tr>
+<tr><td>M07</td><td>Out-of-memory handling</td><td>PASS</td><td>oom=1 oom_kill=1</td></tr>
+<tr><td>M08</td><td>One VPS OOM does not take down another</td><td>PASS</td><td></td></tr>
+<tr><td>M09</td><td>Memory overcommit and recovery</td><td>SKIPPED</td><td></td></tr>
 <tr><td>M10</td><td>Guest /proc/meminfo vs host MemTotal</td><td>PASS</td><td>K05=PASS</td></tr>
 </table>
 
@@ -271,28 +328,28 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>D01</td><td>Controlled density 10 / 25 / 50 / 100</td><td>SKIPPED</td><td>DENSITY_MAX=0 on a worker that already has customer VPS</td></tr>
-<tr><td>D02</td><td>Idle VPS density</td><td>SKIPPED</td><td>DENSITY_MAX=0 on a worker that already has customer VPS</td></tr>
-<tr><td>D03</td><td>Nginx application VPS density</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>D04</td><td>PHP + MySQL e-commerce VPS density</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>D05</td><td>CPU-heavy and memory-heavy mix</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>D06</td><td>Provisioning speed under high density</td><td>SKIPPED</td><td>DENSITY_MAX=0 on a worker that already has customer VPS</td></tr>
-<tr><td>D07</td><td>Peak-hour latency and throughput</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>D08</td><td>Safe maximum occupancy before SLO violation</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>D01</td><td>Controlled density 10 / 25 / 50 / 100</td><td>MEASURED</td><td>n=10 ssh=10 nginx=0 avail_mb=6193</td></tr>
+<tr><td>D02</td><td>Idle VPS density</td><td>MEASURED</td><td>n=100 ssh=100 nginx=0 mem_per_vps_mb=1.60 reason=ok secs=459</td></tr>
+<tr><td>D03</td><td>Nginx application VPS density</td><td>MEASURED</td><td>n=25 ok=113704 fail=48 rps=14213.0 p95_ms=2.8  d1=18MB,cpu_us=1449865 d25=17MB,cpu_us=95415</td></tr>
+<tr><td>D04</td><td>PHP + MySQL e-commerce VPS density</td><td>SKIPPED</td><td></td></tr>
+<tr><td>D05</td><td>CPU-heavy and memory-heavy mix</td><td>SKIPPED</td><td>n=1</td></tr>
+<tr><td>D06</td><td>Provisioning speed under high density</td><td>MEASURED</td><td>n=1 secs=30</td></tr>
+<tr><td>D07</td><td>Peak-hour latency and throughput</td><td>MEASURED</td><td>ok=113704 fail=48 rps=14213.0 p95_ms=2.8</td></tr>
+<tr><td>D08</td><td>Safe maximum occupancy before SLO violation</td><td>SKIPPED</td><td></td></tr>
 </table>
 
 <h3>9. Website &amp; Application Workloads (P1)</h3>
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>W01</td><td>Nginx HTTP benchmark</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>W02</td><td>Apache benchmark</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>W03</td><td>PHP-FPM and WordPress</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>W04</td><td>WooCommerce-like e-commerce workload</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>W05</td><td>Node.js application</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>W06</td><td>Go API service</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>W07</td><td>Concurrent HTTP requests and latency</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>W08</td><td>Web application persistence after restart</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>W01</td><td>Nginx HTTP benchmark</td><td>PASS</td><td>n=25 ok=113704 fail=48 rps=14213.0 p95_ms=2.8</td></tr>
+<tr><td>W02</td><td>Apache benchmark</td><td>SKIPPED</td><td></td></tr>
+<tr><td>W03</td><td>PHP-FPM and WordPress</td><td>SKIPPED</td><td></td></tr>
+<tr><td>W04</td><td>WooCommerce-like e-commerce workload</td><td>SKIPPED</td><td></td></tr>
+<tr><td>W05</td><td>Node.js application</td><td>SKIPPED</td><td></td></tr>
+<tr><td>W06</td><td>Go API service</td><td>SKIPPED</td><td></td></tr>
+<tr><td>W07</td><td>Concurrent HTTP requests and latency</td><td>MEASURED</td><td>ok=113704 fail=48 rps=14213.0 p95_ms=2.8  d1=18MB,cpu_us=1449865 d25=17MB,cpu_us=95415</td></tr>
+<tr><td>W08</td><td>Web application persistence after restart</td><td>SKIPPED</td><td></td></tr>
 </table>
 
 <h3>10. Database Services (P1)</h3>
@@ -313,27 +370,27 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>WK01</td><td>Multiple worker registration</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>WK02</td><td>Worker secret-key enrollment</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>WK03</td><td>CPU / RAM / disk capacity discovery</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>WK04</td><td>Automatic VPS placement</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>WK05</td><td>Select another worker when one is full</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>WK06</td><td>Worker offline detection</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>WK07</td><td>Insufficient capacity rejection</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>WK08</td><td>Scheduler concurrent placement races</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>WK09</td><td>Worker removal and draining</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>WK01</td><td>Multiple worker registration</td><td>SKIPPED</td><td></td></tr>
+<tr><td>WK02</td><td>Worker secret-key enrollment</td><td>SKIPPED</td><td></td></tr>
+<tr><td>WK03</td><td>CPU / RAM / disk capacity discovery</td><td>SKIPPED</td><td></td></tr>
+<tr><td>WK04</td><td>Automatic VPS placement</td><td>SKIPPED</td><td></td></tr>
+<tr><td>WK05</td><td>Select another worker when one is full</td><td>SKIPPED</td><td></td></tr>
+<tr><td>WK06</td><td>Worker offline detection</td><td>SKIPPED</td><td></td></tr>
+<tr><td>WK07</td><td>Insufficient capacity rejection</td><td>SKIPPED</td><td></td></tr>
+<tr><td>WK08</td><td>Scheduler concurrent placement races</td><td>SKIPPED</td><td></td></tr>
+<tr><td>WK09</td><td>Worker removal and draining</td><td>SKIPPED</td><td></td></tr>
 </table>
 
 <h3>12. Backup &amp; Object Storage (P1)</h3>
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>B01</td><td>Full VPS backup and restore</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>B01</td><td>Full VPS backup and restore</td><td>PASS</td><td>backup=cfxp-bak1</td></tr>
 <tr><td>B02</td><td>Incremental backup</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
 <tr><td>B03</td><td>S3-compatible storage operations</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
 <tr><td>B04</td><td>Backup checksum verification</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
 <tr><td>B05</td><td>Encrypted backup storage</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>B06</td><td>Cross-worker restoration</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>B06</td><td>Cross-worker restoration</td><td>SKIPPED</td><td></td></tr>
 <tr><td>B07</td><td>Interrupted backup recovery</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
 <tr><td>B08</td><td>Backup retention and cleanup</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
 </table>
@@ -371,14 +428,14 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>P01</td><td>CloFix vs LXC on same hardware</td><td>SKIPPED</td><td>Incus/LXC/Docker were not measured on this host</td></tr>
-<tr><td>P02</td><td>CloFix vs Incus on same hardware</td><td>SKIPPED</td><td>Incus/LXC/Docker were not measured on this host</td></tr>
-<tr><td>P03</td><td>CloFix vs Docker on same workload</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>P04</td><td>Creation and boot time comparison</td><td>SKIPPED</td><td>Incus/LXC/Docker were not measured on this host</td></tr>
-<tr><td>P05</td><td>Idle and loaded RAM comparison</td><td>SKIPPED</td><td>Incus/LXC/Docker were not measured on this host</td></tr>
-<tr><td>P06</td><td>Disk footprint and I/O comparison</td><td>SKIPPED</td><td>Incus/LXC/Docker were not measured on this host</td></tr>
-<tr><td>P07</td><td>Application throughput and tail latency</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>P08</td><td>Security and isolation differences</td><td>SKIPPED</td><td>Incus/LXC/Docker were not measured on this host</td></tr>
+<tr><td>P01</td><td>CloFix vs LXC on same hardware</td><td>SKIPPED</td><td></td></tr>
+<tr><td>P02</td><td>CloFix vs Incus on same hardware</td><td>SKIPPED</td><td></td></tr>
+<tr><td>P03</td><td>CloFix vs Docker on same workload</td><td>SKIPPED</td><td></td></tr>
+<tr><td>P04</td><td>Creation and boot time comparison</td><td>SKIPPED</td><td></td></tr>
+<tr><td>P05</td><td>Idle and loaded RAM comparison</td><td>SKIPPED</td><td></td></tr>
+<tr><td>P06</td><td>Disk footprint and I/O comparison</td><td>SKIPPED</td><td></td></tr>
+<tr><td>P07</td><td>Application throughput and tail latency</td><td>SKIPPED</td><td></td></tr>
+<tr><td>P08</td><td>Security and isolation differences</td><td>SKIPPED</td><td></td></tr>
 </table>
 
 <h3>16. Monitoring &amp; Alerts (P1)</h3>
@@ -399,8 +456,8 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>REL01</td><td>Unexpected VPS process termination</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>REL02</td><td>Worker reboot / power-loss recovery</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>REL01</td><td>Unexpected VPS process termination</td><td>SKIPPED</td><td></td></tr>
+<tr><td>REL02</td><td>Worker reboot / power-loss recovery</td><td>SKIPPED</td><td></td></tr>
 <tr><td>REL03</td><td>Network disconnect / reconnect</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
 <tr><td>REL04</td><td>Disk full and filesystem read-only</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
 <tr><td>REL05</td><td>Interrupted OS image update</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
@@ -429,7 +486,7 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>ID</th><th>Expected</th><th>Why (code)</th><th>Verification</th></tr>
-<tr><td>I01</td><td>PASS when <code>user_ns=true</code></td><td><code>CLONE_NEWUSER</code> maps guest 0 to <code>uid_base</code> (default 100000)</td><td>Unverified on this Mac workspace</td></tr>
+<tr><td>I01</td><td>PASS when <code>user_ns=true</code></td><td><code>CLONE_NEWUSER</code> maps guest 0 to <code>uid_base</code> (default 100000)</td><td>Isolated try on this linuxkit host: <code>fx-init</code> EPERM on make-rprivate</td></tr>
 <tr><td>I02</td><td>PASS</td><td>Guest allowlist drops SYS_MODULE/RAWIO/BOOT/TIME/PTRACE/SYS_ADMIN</td><td>Unverified</td></tr>
 <tr><td>I03</td><td>PASS</td><td><code>fx-init</code> installs a seccomp filter and <code>no_new_privs</code></td><td>Unverified</td></tr>
 <tr><td>I04</td><td>WARN</td><td>AppArmor is detected on the host; no per-guest profile is applied</td><td>Unverified</td></tr>
@@ -438,7 +495,7 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><td>N01 N02</td><td>PASS</td><td>New mount, PID, UTS, IPC, net, cgroup (and user when enabled) namespaces</td><td>Unverified</td></tr>
 <tr><td>N05</td><td>PASS</td><td>After the process is placed in <code>/clofix-filevps/&lt;id&gt;</code>, <code>CLONE_NEWCGROUP</code> makes the guest see <code>0::/</code>. Host <code>pids.max</code> / <code>memory.max</code> / <code>cpu.max</code> still apply.</td><td>Unverified</td></tr>
 <tr><td>X01 X03 X04</td><td>PASS</td><td>Separate OverlayFS upper layers and namespaces</td><td>Unverified</td></tr>
-<tr><td>X05</td><td>PASS when <code>user_ns=true</code></td><td>Each guest gets a unique <code>host_uid</code> range (<code>uid_base + index * 65536</code>)</td><td>Unverified</td></tr>
+<tr><td>X05</td><td>PASS when <code>user_ns=true</code></td><td>Each guest gets a unique <code>host_uid</code> range (<code>uid_base + index * 65536</code>)</td><td>Isolated user-ns guests never reached <code>uid_map</code> on linuxkit</td></tr>
 <tr><td>X06</td><td>PASS</td><td>Each veth is <code>bridge link set isolated on</code>; nftables default-drop forward</td><td>Unverified</td></tr>
 <tr><td>R01 R02 R03</td><td>PASS</td><td>cgroup v2 sets <code>pids.max</code>, <code>memory.max</code>/<code>memory.high</code>, <code>cpu.max</code></td><td>Unverified</td></tr>
 <tr><td>R04 R12</td><td>PASS</td><td><code>disk_mb</code> is a loop+ext4 backing for overlay upper/work; guest <code>df</code> shows the limit</td><td>Unverified</td></tr>
@@ -470,6 +527,7 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 sudo ./run-compare.sh            # backends that are installed
 sudo ./clofix-bench.sh fx
 sudo ./clofix-audit.sh fx
+sudo FX_BIN=/tmp/clofix-worker-new ./run-notrun-suites.sh
 python3 make-report.py results results/report.md
 </pre>
 

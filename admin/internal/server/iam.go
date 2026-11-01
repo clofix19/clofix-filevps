@@ -135,6 +135,8 @@ func permissionResource(path string) string {
 		return "volumes"
 	case strings.HasPrefix(path, "/api/storage"):
 		return "storage"
+	case strings.HasPrefix(path, "/api/ssh-keys"):
+		return "instances"
 	case strings.HasPrefix(path, "/api/instances"):
 		for _, part := range []string{"/services", "/install-service", "/uninstall-service"} {
 			if strings.Contains(path, part) {

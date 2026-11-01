@@ -94,7 +94,7 @@ func ensureBridge() error {
 func (m *Manager) Setup(id string, pid int, address string, sshPort int, mappings []proto.PortMapping) error {
 	parsed := net.ParseIP(address).To4()
 	_, network, _ := net.ParseCIDR(subnet)
-	if parsed == nil || !network.Contains(parsed) || parsed[3] < 2 || sshPort < 22000 || sshPort > 22099 || pid <= 0 {
+	if parsed == nil || !network.Contains(parsed) || parsed[3] < 2 || sshPort < 22000 || sshPort > 22199 || pid <= 0 {
 		return fmt.Errorf("invalid instance network settings")
 	}
 	// Reconciliation may be recreating an instance after the worker process restarted.

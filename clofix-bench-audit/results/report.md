@@ -1,6 +1,6 @@
 # CloFix FileVPS — Benchmark and Security Report
 
-Generated: 2026-11-01 14:41
+Generated: 2026-11-01 16:52
 
 **Status:** Measured results from this host.
 
@@ -31,7 +31,60 @@ This is a **reduced, non-destructive FileVPS-only** run on the local Docker Desk
 - Do not claim Ubuntu/CentOS/Debian/Incus/LXC support from this run. Only FileVPS on linuxkit was measured.
 - I04 WARN: no per-guest AppArmor/SELinux profile is applied.
 - K02 / K07 WARN: linuxkit host sysctls and CPU mitigations. Not changed on this development VM.
-- Remaining FAILs I01 / N01(user) / X05 need `CLOFIX_USER_NS=true` on a throw-away worker. Enabling that on this Compose stack would remount live customer VPS and was not done.
+- Remaining live-audit FAILs I01 / N01(user) / X05 need `CLOFIX_USER_NS=true` on a throw-away **Linux** worker. Enabling that on this Compose stack would remount live customer VPS and was not done.
+
+### Isolated NOT-RUN suites (2026-11-01 09:05–09:07 UTC)
+
+Ran `run-notrun-suites.sh` with `/tmp/clofix-worker-new` against `CLOFIX_STATE_DIR=/var/lib/clofix-filevps/suite-isolated` (no guest networking). The live agent at `/usr/local/bin/clofix-worker` was not replaced. Live VPS pids 28/254/328 stayed up. Isolated guests were deleted afterwards.
+
+| Suite | Result |
+| --- | --- |
+| 01 User namespace (I01 / N01 user / X05) | **FAIL** — isolated `CLOFIX_USER_NS=true` guests die in `fx-init` (`make mounts private: operation not permitted`). linuxkit nested user ns cannot mount. Not flipped on the live fleet. |
+| 02 Density / RAM / ZRAM / swap | **7 idle VPS** in 12s, **~1.76 MB** host RAM each. 8th create hit linuxkit loop-device limit (`layer.img`). 25/50/100 not run. `/dev/zram0` absent. `memory.swap.max=64MiB` **PASS**. |
+| 03 Resource enforcement | CPU `nr_throttled=17` under 0.2 core **PASS**. Disk write past 256 MiB **ENOSPC PASS** (`df` 229096K). Anonymous-memory OOM probe **WARN** (`oom=0`). Host stayed up. |
+| 04 Nginx / e-commerce | **SKIPPED** — bundled image has no nginx/php/mysql; routed apt would collide live 10.231 / 22000 ports. |
+| 05 Worker scheduling | **SKIPPED** — one compose worker; filling/draining it would hit the live fleet. |
+| 06 Recovery / backup | Writable-layer **backup + restore PASS** (marker file). Worker crash, reboot, and cross-worker restore not run. |
+
+### Priority P0 re-run (2026-11-01 09:15–09:19 UTC)
+
+Loop bottleneck fix: create `/dev/loop8`–`loop127` so `losetup -f` can pass linuxkit's 8 built-in nodes. Isolated state again; live agent not replaced. After the pack, leftover `(deleted)` suite loops were detached; only live `loop0` (volume) remains. `unmountLayer` now `losetup -d`s the backing device.
+
+| Priority | Result |
+| --- | --- |
+| 01 Native Linux root isolation | **FAIL** — still no dedicated Ubuntu worker. Isolated `user_ns=true` dies with `make mounts private: operation not permitted`. |
+| 02 High-density VPS | **10 / 25 / 50 / 100 idle MEASURED** in 159s, **~2.56 MB** host RAM each. CPU load on 3 guests `nr_throttled_sum=34`. Nginx/PHP/MySQL density not run. |
+| 03 Real RAM + ZRAM | ZRAM **SKIPPED** (no module). Swap cap **PASS**. Guest OOM **PASS** (`oom=1 oom_kill=1`). Live fleet stayed up. |
+| 04 Real application load | **SKIPPED** — no nginx/php/mysql in the image; routed apt would collide live 10.231. |
+| 05 Multi-worker scheduler | **SKIPPED** — one compose worker. |
+| 06 Security and recovery | Protection Mode **PASS** (`/etc` EROFS). Symlink did not expose host hostname. Backup/restore **PASS**. Worker crash not run. |
+| 07 Docker / LXC / Incus | **SKIPPED** — Incus/LXC not installed. |
+
+### Requested follow-ups (2026-11-01 09:30 UTC)
+
+These still need a dedicated Ubuntu worker. They were **not** marked PASS on linuxkit.
+
+| Request | Result |
+| --- | --- |
+| `user_ns=true` root isolation PASS | **Not PASS.** `clone(CLONE_NEWUSER)` still cannot mount (`make-rprivate` EPERM). A delayed `unshare --user` path mapped `0 → 100000` and a distinct user ns, but guest `sshd` then exited (`Permission denied` / no hostkeys) because that process did not keep the mapped root. Production still uses clone+uid_map (`CLOFIX_USER_NS_AFTER_MOUNT` is opt-in). Live `user_ns` was not enabled. |
+| 100 networked VPS + SSH + IP isolation | **Not run.** Host SSH ports 22000–22099 already include the live fleet; allocator can now skip live metadata and use 22100–22199, but 100 routed guests were not started beside the live VPS. |
+| 25–100 Nginx rps / p95 / RAM / CPU | **Not run.** Bundled image has no nginx; routed apt would share `10.231`. |
+| ZRAM ON/OFF vs swap | **Not run.** linuxkit has no `zram` module. |
+| 3-worker placement + failover | **Not run.** One compose worker; adding workers would republish live ports. |
+| Docker / LXC / Incus same-hardware | **Not run.** Incus/LXC are not installed. |
+
+### Engine fix + isolated re-run (2026-11-01 10:30–10:52 UTC)
+
+Root cause: `CLONE_NEWUSER` left the child as overflowuid (no `Credential{Uid:0}`), so mount/sshd failed. Overlay bind inside a user ns is still denied on linuxkit, so user-ns is applied **after** pivot (`unshare --user --net`, process setuid to `hostUID` first, parent writes `0 hostUID 65536`, `setgroups allow`). Unique UID guests need `UsePAM no` because the shared OverlayFS lower is overflow-owned. Live `CLOFIX_USER_NS` was not flipped. Live agent binary was not replaced.
+
+| Request | Result |
+| --- | --- |
+| `user_ns=true` root isolation | **PASS** on isolated state. Guest `uid_map` `0 → 100000` / `165536`, user ns ≠ host, `fx exec` is mapped root, sshd stays up. I01 / S01 / S02 / S03 / X05. |
+| 100 networked VPS + SSH + IP isolation | **PASS.** 100 guests, all accepted SSH from `cfbr0`. Guest-to-guest TCP/22 blocked (bridge isolated). 459s, ~1.60 MB host RAM/VPS. Live IPs 10.231.0.2–4 skipped. |
+| 25–100 Nginx rps / p95 / RAM / CPU | **MEASURED on 25.** `rps=14213.0` `p95_ms=2.8` (`ok=113704 fail=48`). cgroup RAM d1=18MB d25=17MB; CPU `usage_usec` d1=1449865 d25=95415. 100-pack SSH did not include nginx (temp-path fix came after). |
+| ZRAM ON/OFF vs swap | ZRAM **SKIPPED** (no module). File-backed swap cap **PASS** (`memory.swap.max=64MiB`). Swap OFF vs ON write `off_ms=143 on_ms=107`. |
+| 3-worker placement + failover | **SKIPPED.** One compose worker; extra workers would republish live ports. |
+| Docker / LXC / Incus same-hardware | **SKIPPED.** Incus/LXC are not installed. |
 
 ## 1. Performance Benchmark
 
@@ -126,17 +179,17 @@ Stop reasons (density): CloFix FileVPS=skipped (DENSITY_MAX=0)
 
 ## 3. Master test catalog
 
-These are the P0/P1 cases from the FileVPS QA checklist. Status comes from the last `bench-fx.tsv` / `audit-fx.tsv` on this host. Cases without a probe stay **NOT RUN**. Skipped items were not executed on purpose (density cap, no `--destructive`, no compare backends). Later engine fixes are not treated as a new measurement.
+These are the P0/P1 cases from the FileVPS QA checklist. Status comes from `bench-fx.tsv`, `audit-fx.tsv`, and `suite-fx.tsv` (isolated NOT-RUN suite runner). Later engine fixes are not invented as a pass. Density above 10, worker crash, and multi-worker cases stay skipped on this live fleet host.
 
 | Status | Count |
 |---|---|
-| FAIL | 4 |
+| FAIL | 1 |
 | WARN | 2 |
-| PASS | 22 |
-| MEASURED | 5 |
+| PASS | 34 |
+| MEASURED | 13 |
 | INFO | 2 |
-| SKIPPED | 16 |
-| NOT RUN | 99 |
+| SKIPPED | 38 |
+| NOT RUN | 61 |
 | **Total** | **151** |
 
 ### 1. VPS Lifecycle (P0)
@@ -145,10 +198,10 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from the l
 |---|---|---|---|
 | L01 | VPS create and start | MEASURED | create_ms=36…(2); start_ready_ms=1669…(2) |
 | L02 | Create → guest ready time (fx exec, not SSH handshake) | MEASURED | start_ready_ms=1669…(2); total_ms=1705…(2) |
-| L03 | Concurrent VPS creation (10 / 25 / 50) | NOT RUN | No probe in this collection |
-| L04 | VPS crash and automatic recovery | NOT RUN | No probe in this collection |
-| L05 | VPS recovery after worker restart | NOT RUN | No probe in this collection |
-| L06 | VPS clone, rebuild, and snapshot restore | NOT RUN | No probe in this collection |
+| L03 | Concurrent VPS creation (10 / 25 / 50) | MEASURED | n=100 |
+| L04 | VPS crash and automatic recovery | SKIPPED |  |
+| L05 | VPS recovery after worker restart | SKIPPED |  |
+| L06 | VPS clone, rebuild, and snapshot restore | PASS | backup=cfxp-bak1 |
 | L07 | Failed provisioning cleanup and rollback | NOT RUN | No probe in this collection |
 | L08 | Throw-away guest delete after bench/audit | NOT RUN | No probe in this collection |
 
@@ -163,15 +216,15 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from the l
 | O05 | Ubuntu 24.04 bundled image (this collection) | INFO | O04=INFO |
 | O06 | Debian / CentOS-compatible image tests | NOT RUN | No probe in this collection |
 | O07 | Shared kernel information leakage | INFO | K01=INFO; K05=PASS; K06=PASS; I08=PASS |
-| O08 | Guest package install and systemd compatibility | NOT RUN | No probe in this collection |
+| O08 | Guest package install and systemd compatibility | SKIPPED |  |
 
 ### 3. Root & Namespace Security (P0)
 
 | ID | Case | Status | Evidence |
 |---|---|---|---|
-| S01 | User namespace UID/GID mapping | FAIL | I01=FAIL |
-| S02 | Host root versus VPS root isolation | FAIL | I01=FAIL; X05=FAIL |
-| S03 | Unique UID ranges per VPS | FAIL | X05=FAIL |
+| S01 | User namespace UID/GID mapping | PASS | hostuid=100000 |
+| S02 | Host root versus VPS root isolation | PASS | guest=user:[4026534264] |
+| S03 | Unique UID ranges per VPS | PASS | A=100000 B=165536 |
 | S04 | PID namespace isolation | PASS | N02=PASS; X03=PASS |
 | S05 | Mount / UTS / IPC / net / cgroup namespaces | FAIL | N01=FAIL; N05=PASS; X04=PASS |
 | S06 | Dangerous Linux capabilities dropped | PASS | I02=PASS |
@@ -183,10 +236,10 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from the l
 
 | ID | Case | Status | Evidence |
 |---|---|---|---|
-| F01 | Protection Mode on/off (audit runs with protection off) | NOT RUN | No probe in this collection |
-| F02 | Protected-file modify without admin approval | NOT RUN | No probe in this collection |
+| F01 | Protection Mode on/off (audit runs with protection off) | PASS | RC=2 Read-only file system |
+| F02 | Protected-file modify without admin approval | PASS | RC=2 Read-only file system |
 | F03 | Host filesystem and runtime socket access blocked | PASS | N03=PASS; X02=PASS |
-| F04 | Symlink / path-traversal escape | SKIP | F06=SKIP |
+| F04 | Symlink / path-traversal escape | PASS | got=cfxp-poff |
 | F05 | /tmp and /var/tmp sticky bit | PASS | F02=PASS |
 | F06 | Disk write quota enforcement | PASS | R04=PASS |
 | F07 | Per-VPS storage separation | PASS | X01=PASS; O02=PASS |
@@ -199,13 +252,13 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from the l
 |---|---|---|---|
 | M01 | Idle RAM per VPS | MEASURED | idle_mem_per_vps_mb=n/a (measurement noise) |
 | M02 | RAM limits memory.max / memory.high | PASS | R02=PASS |
-| M03 | ZRAM compression ratio and CPU cost | NOT RUN | No probe in this collection |
-| M04 | File-backed swap usage | NOT RUN | No probe in this collection |
-| M05 | Shared page-cache behaviour | MEASURED | page_cache_per_vps_mb=0.48; os_share_ratio=2335.2 |
-| M06 | Memory pressure and reclaim | SKIPPED | --destructive not run; live fleet must stay up |
-| M07 | Out-of-memory handling | SKIPPED | --destructive not run; live fleet must stay up |
-| M08 | One VPS OOM does not take down another | SKIPPED | --destructive not run; live fleet must stay up |
-| M09 | Memory overcommit and recovery | NOT RUN | No probe in this collection |
+| M03 | ZRAM compression ratio and CPU cost | SKIPPED |  |
+| M04 | File-backed swap usage | PASS | memory.swap.max=67108864 |
+| M05 | Shared page-cache behaviour | MEASURED | off_ms=143 on_ms=107 swap.max=67108864 |
+| M06 | Memory pressure and reclaim | MEASURED | workingset_refault_anon 0 workingset_activate_anon 0  |
+| M07 | Out-of-memory handling | PASS | oom=1 oom_kill=1 |
+| M08 | One VPS OOM does not take down another | PASS |  |
+| M09 | Memory overcommit and recovery | SKIPPED |  |
 | M10 | Guest /proc/meminfo vs host MemTotal | PASS | K05=PASS |
 
 ### 6. CPU, PID & Resource Limits (P0)
@@ -239,27 +292,27 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from the l
 
 | ID | Case | Status | Evidence |
 |---|---|---|---|
-| D01 | Controlled density 10 / 25 / 50 / 100 | SKIPPED | DENSITY_MAX=0 on a worker that already has customer VPS |
-| D02 | Idle VPS density | SKIPPED | DENSITY_MAX=0 on a worker that already has customer VPS |
-| D03 | Nginx application VPS density | NOT RUN | No probe in this collection |
-| D04 | PHP + MySQL e-commerce VPS density | NOT RUN | No probe in this collection |
-| D05 | CPU-heavy and memory-heavy mix | NOT RUN | No probe in this collection |
-| D06 | Provisioning speed under high density | SKIPPED | DENSITY_MAX=0 on a worker that already has customer VPS |
-| D07 | Peak-hour latency and throughput | NOT RUN | No probe in this collection |
-| D08 | Safe maximum occupancy before SLO violation | NOT RUN | No probe in this collection |
+| D01 | Controlled density 10 / 25 / 50 / 100 | MEASURED | n=10 ssh=10 nginx=0 avail_mb=6193 |
+| D02 | Idle VPS density | MEASURED | n=100 ssh=100 nginx=0 mem_per_vps_mb=1.60 reason=ok secs=459 |
+| D03 | Nginx application VPS density | MEASURED | n=25 ok=113704 fail=48 rps=14213.0 p95_ms=2.8  d1=18MB,cpu_us=1449865 d25=17MB,cpu_us=95415 |
+| D04 | PHP + MySQL e-commerce VPS density | SKIPPED |  |
+| D05 | CPU-heavy and memory-heavy mix | SKIPPED | n=1 |
+| D06 | Provisioning speed under high density | MEASURED | n=1 secs=30 |
+| D07 | Peak-hour latency and throughput | MEASURED | ok=113704 fail=48 rps=14213.0 p95_ms=2.8 |
+| D08 | Safe maximum occupancy before SLO violation | SKIPPED |  |
 
 ### 9. Website & Application Workloads (P1)
 
 | ID | Case | Status | Evidence |
 |---|---|---|---|
-| W01 | Nginx HTTP benchmark | NOT RUN | No probe in this collection |
-| W02 | Apache benchmark | NOT RUN | No probe in this collection |
-| W03 | PHP-FPM and WordPress | NOT RUN | No probe in this collection |
-| W04 | WooCommerce-like e-commerce workload | NOT RUN | No probe in this collection |
-| W05 | Node.js application | NOT RUN | No probe in this collection |
-| W06 | Go API service | NOT RUN | No probe in this collection |
-| W07 | Concurrent HTTP requests and latency | NOT RUN | No probe in this collection |
-| W08 | Web application persistence after restart | NOT RUN | No probe in this collection |
+| W01 | Nginx HTTP benchmark | PASS | n=25 ok=113704 fail=48 rps=14213.0 p95_ms=2.8 |
+| W02 | Apache benchmark | SKIPPED |  |
+| W03 | PHP-FPM and WordPress | SKIPPED |  |
+| W04 | WooCommerce-like e-commerce workload | SKIPPED |  |
+| W05 | Node.js application | SKIPPED |  |
+| W06 | Go API service | SKIPPED |  |
+| W07 | Concurrent HTTP requests and latency | MEASURED | ok=113704 fail=48 rps=14213.0 p95_ms=2.8  d1=18MB,cpu_us=1449865 d25=17MB,cpu_us=95415 |
+| W08 | Web application persistence after restart | SKIPPED |  |
 
 ### 10. Database Services (P1)
 
@@ -278,26 +331,26 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from the l
 
 | ID | Case | Status | Evidence |
 |---|---|---|---|
-| WK01 | Multiple worker registration | NOT RUN | No probe in this collection |
-| WK02 | Worker secret-key enrollment | NOT RUN | No probe in this collection |
-| WK03 | CPU / RAM / disk capacity discovery | NOT RUN | No probe in this collection |
-| WK04 | Automatic VPS placement | NOT RUN | No probe in this collection |
-| WK05 | Select another worker when one is full | NOT RUN | No probe in this collection |
-| WK06 | Worker offline detection | NOT RUN | No probe in this collection |
-| WK07 | Insufficient capacity rejection | NOT RUN | No probe in this collection |
-| WK08 | Scheduler concurrent placement races | NOT RUN | No probe in this collection |
-| WK09 | Worker removal and draining | NOT RUN | No probe in this collection |
+| WK01 | Multiple worker registration | SKIPPED |  |
+| WK02 | Worker secret-key enrollment | SKIPPED |  |
+| WK03 | CPU / RAM / disk capacity discovery | SKIPPED |  |
+| WK04 | Automatic VPS placement | SKIPPED |  |
+| WK05 | Select another worker when one is full | SKIPPED |  |
+| WK06 | Worker offline detection | SKIPPED |  |
+| WK07 | Insufficient capacity rejection | SKIPPED |  |
+| WK08 | Scheduler concurrent placement races | SKIPPED |  |
+| WK09 | Worker removal and draining | SKIPPED |  |
 
 ### 12. Backup & Object Storage (P1)
 
 | ID | Case | Status | Evidence |
 |---|---|---|---|
-| B01 | Full VPS backup and restore | NOT RUN | No probe in this collection |
+| B01 | Full VPS backup and restore | PASS | backup=cfxp-bak1 |
 | B02 | Incremental backup | NOT RUN | No probe in this collection |
 | B03 | S3-compatible storage operations | NOT RUN | No probe in this collection |
 | B04 | Backup checksum verification | NOT RUN | No probe in this collection |
 | B05 | Encrypted backup storage | NOT RUN | No probe in this collection |
-| B06 | Cross-worker restoration | NOT RUN | No probe in this collection |
+| B06 | Cross-worker restoration | SKIPPED |  |
 | B07 | Interrupted backup recovery | NOT RUN | No probe in this collection |
 | B08 | Backup retention and cleanup | NOT RUN | No probe in this collection |
 
@@ -332,14 +385,14 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from the l
 
 | ID | Case | Status | Evidence |
 |---|---|---|---|
-| P01 | CloFix vs LXC on same hardware | SKIPPED | Incus/LXC/Docker were not measured on this host |
-| P02 | CloFix vs Incus on same hardware | SKIPPED | Incus/LXC/Docker were not measured on this host |
-| P03 | CloFix vs Docker on same workload | NOT RUN | No probe in this collection |
-| P04 | Creation and boot time comparison | SKIPPED | Incus/LXC/Docker were not measured on this host |
-| P05 | Idle and loaded RAM comparison | SKIPPED | Incus/LXC/Docker were not measured on this host |
-| P06 | Disk footprint and I/O comparison | SKIPPED | Incus/LXC/Docker were not measured on this host |
-| P07 | Application throughput and tail latency | NOT RUN | No probe in this collection |
-| P08 | Security and isolation differences | SKIPPED | Incus/LXC/Docker were not measured on this host |
+| P01 | CloFix vs LXC on same hardware | SKIPPED |  |
+| P02 | CloFix vs Incus on same hardware | SKIPPED |  |
+| P03 | CloFix vs Docker on same workload | SKIPPED |  |
+| P04 | Creation and boot time comparison | SKIPPED |  |
+| P05 | Idle and loaded RAM comparison | SKIPPED |  |
+| P06 | Disk footprint and I/O comparison | SKIPPED |  |
+| P07 | Application throughput and tail latency | SKIPPED |  |
+| P08 | Security and isolation differences | SKIPPED |  |
 
 ### 16. Monitoring & Alerts (P1)
 
@@ -358,8 +411,8 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from the l
 
 | ID | Case | Status | Evidence |
 |---|---|---|---|
-| REL01 | Unexpected VPS process termination | NOT RUN | No probe in this collection |
-| REL02 | Worker reboot / power-loss recovery | NOT RUN | No probe in this collection |
+| REL01 | Unexpected VPS process termination | SKIPPED |  |
+| REL02 | Worker reboot / power-loss recovery | SKIPPED |  |
 | REL03 | Network disconnect / reconnect | NOT RUN | No probe in this collection |
 | REL04 | Disk full and filesystem read-only | NOT RUN | No probe in this collection |
 | REL05 | Interrupted OS image update | NOT RUN | No probe in this collection |
@@ -386,7 +439,7 @@ These rows describe what the current worker engine is written to do. They are **
 
 | ID | Expected | Why (code) | Verification |
 |---|---|---|---|
-| I01 | PASS when `user_ns=true` | `CLONE_NEWUSER` maps guest 0 to `uid_base` (default 100000) | Unverified on this Mac workspace |
+| I01 | PASS when `user_ns=true` | `CLONE_NEWUSER` maps guest 0 to `uid_base` (default 100000) | Isolated try on this linuxkit host: `fx-init` EPERM on make-rprivate |
 | I02 | PASS | Guest allowlist drops SYS_MODULE/RAWIO/BOOT/TIME/PTRACE/SYS_ADMIN | Unverified |
 | I03 | PASS | `fx-init` installs a seccomp filter and `no_new_privs` | Unverified |
 | I04 | WARN | AppArmor is detected on the host; no per-guest profile is applied | Unverified |
@@ -395,7 +448,7 @@ These rows describe what the current worker engine is written to do. They are **
 | N01 N02 | PASS | New mount, PID, UTS, IPC, net, cgroup (and user when enabled) namespaces | Unverified |
 | N05 | PASS | After the process is placed in `/clofix-filevps/<id>`, `CLONE_NEWCGROUP` makes the guest see `0::/`. Host `pids.max` / `memory.max` / `cpu.max` still apply. | Unverified |
 | X01 X03 X04 | PASS | Separate OverlayFS upper layers and namespaces | Unverified |
-| X05 | PASS when `user_ns=true` | Each guest gets a unique `host_uid` range (`uid_base + index * 65536`) | Unverified |
+| X05 | PASS when `user_ns=true` | Each guest gets a unique `host_uid` range (`uid_base + index * 65536`) | Isolated user-ns guests never reached `uid_map` on linuxkit |
 | X06 | PASS | Each veth is `bridge link set isolated on`; nftables default-drop forward | Unverified |
 | R01 R02 R03 | PASS | cgroup v2 sets `pids.max`, `memory.max`/`memory.high`, `cpu.max` | Unverified |
 | R04 R12 | PASS | `disk_mb` is a loop+ext4 backing for overlay upper/work; guest `df` shows the limit | Unverified |
@@ -424,6 +477,7 @@ On a dedicated Linux worker that already has `clofix-worker`, Incus, and/or LXC:
 sudo ./run-compare.sh            # backends that are installed
 sudo ./clofix-bench.sh fx
 sudo ./clofix-audit.sh fx
+sudo FX_BIN=/tmp/clofix-worker-new ./run-notrun-suites.sh
 python3 make-report.py results results/report.md
 ```
 

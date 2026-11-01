@@ -285,7 +285,9 @@ def _worst(statuses):
     return worst
 
 
-def resolve(case, spec, bench, audit_rows):
+def resolve(cid, case, spec, bench, audit_rows, extra=None):
+    if extra and cid in extra:
+        return extra[cid]
     skip = spec.get("skip")
     if skip == "density":
         return "SKIPPED", "DENSITY_MAX=0 on a worker that already has customer VPS"

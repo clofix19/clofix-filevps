@@ -220,11 +220,10 @@ func (e *Engine) setState(m *Meta, state, errMsg string) {
 }
 
 func (e *Engine) configureSSHFiles(id string, spec proto.InstanceSpec, owner int) error {
-	if spec.SSHAuthorizedKey == "" {
-		return nil
-	}
-	if len(spec.SSHAuthorizedKey) > 8192 || strings.ContainsAny(spec.SSHAuthorizedKey, "\r\n") {
-		return errors.New("invalid SSH authorized key")
+	if spec.SSHAuthorizedKey != "" {
+		if len(spec.SSHAuthorizedKey) > 8192 || strings.ContainsAny(spec.SSHAuthorizedKey, "\r\n") {
+			return errors.New("invalid SSH authorized key")
+		}
 	}
 	upper := e.upperDir(id)
 	sshDir := filepath.Join(upper, "root", ".ssh")
@@ -236,19 +235,21 @@ func (e *Engine) configureSSHFiles(id string, spec proto.InstanceSpec, owner int
 			return err
 		}
 	}
-	keyPath := filepath.Join(sshDir, "authorized_keys")
-	if err := os.WriteFile(keyPath, []byte(spec.SSHAuthorizedKey+"\n"), 0o600); err != nil {
-		return err
-	}
-	if err := os.Lchown(keyPath, owner, owner); err != nil {
-		return err
+	if spec.SSHAuthorizedKey != "" {
+		keyPath := filepath.Join(sshDir, "authorized_keys")
+		if err := os.WriteFile(keyPath, []byte(spec.SSHAuthorizedKey+"\n"), 0o600); err != nil {
+			return err
+		}
+		if err := os.Lchown(keyPath, owner, owner); err != nil {
+			return err
+		}
 	}
 	sshdConfigDir := filepath.Join(upper, "etc", "ssh", "sshd_config.d")
 	if err := os.MkdirAll(sshdConfigDir, 0o755); err != nil {
 		return err
 	}
 	sshdConfig := filepath.Join(sshdConfigDir, "00-clofix.conf")
-	configBody := "PermitRootLogin prohibit-password\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPubkeyAuthentication yes\n"
+	configBody := sshdAuthConfig(spec)
 	if sshLoginBlocked(spec) {
 		configBody += "DenyUsers *\n"
 	}
@@ -261,6 +262,111 @@ func (e *Engine) configureSSHFiles(id string, spec proto.InstanceSpec, owner int
 		}
 	}
 	return nil
+}
+
+func sshdAuthConfig(spec proto.InstanceSpec) string {
+	if spec.PasswordAuth {
+		body := "UsePAM yes\nPermitRootLogin yes\nPasswordAuthentication yes\nKbdInteractiveAuthentication yes\n"
+		if spec.SSHAuthorizedKey != "" {
+			body += "PubkeyAuthentication yes\n"
+		} else {
+			body += "PubkeyAuthentication no\n"
+		}
+		return body
+	}
+	return "UsePAM no\nPermitRootLogin prohibit-password\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPubkeyAuthentication yes\nAuthenticationMethods publickey\n"
+}
+
+func (e *Engine) updatePasswordAuth(id string, enabled bool) error {
+	m, err := e.get(id)
+	if err != nil {
+		return err
+	}
+	m.Spec.PasswordAuth = enabled
+	if err := e.configureSSHFiles(id, m.Spec, e.guestOwner(m)); err != nil {
+		return err
+	}
+	return e.save(m)
+}
+
+func (e *Engine) setRootPassword(id, password string) error {
+	if len(password) < 8 || len(password) > 128 || strings.ContainsAny(password, "\r\n:") {
+		return errors.New("invalid root password")
+	}
+	m, err := e.get(id)
+	if err != nil {
+		return err
+	}
+	hash, err := cryptSHA512(password)
+	if err != nil {
+		return err
+	}
+	if err := e.writeRootShadow(id, m, hash); err != nil {
+		return err
+	}
+	if e.CG.Alive(id) && m.Pid > 0 {
+		script := "usermod -p '" + strings.ReplaceAll(hash, "'", "") + "' root; kill -HUP 1 2>/dev/null || true"
+		_ = e.guestExec(id, m.Pid, "/bin/sh", []string{"-c", script})
+	}
+	return nil
+}
+
+func cryptSHA512(password string) (string, error) {
+	cmd := exec.Command("openssl", "passwd", "-6", "-stdin")
+	cmd.Stdin = strings.NewReader(password)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("hash password: %w", err)
+	}
+	hash := strings.TrimSpace(string(out))
+	if !strings.HasPrefix(hash, "$6$") {
+		return "", errors.New("openssl did not return a SHA-512 crypt hash")
+	}
+	return hash, nil
+}
+
+func (e *Engine) writeRootShadow(id string, m *Meta, hash string) error {
+	owner := e.guestOwner(m)
+	upperEtc := filepath.Join(e.upperDir(id), "etc")
+	if err := os.MkdirAll(upperEtc, 0o755); err != nil {
+		return err
+	}
+	src := filepath.Join(e.merged(id), "etc", "shadow")
+	if _, err := os.Stat(src); err != nil {
+		if root, imgErr := e.Images.Ensure(m.Spec.Image); imgErr == nil {
+			src = filepath.Join(root, "etc", "shadow")
+		}
+	}
+	raw, err := os.ReadFile(src)
+	if err != nil {
+		raw = []byte("root:*:19600:0:99999:7:::\n")
+	}
+	var lines []string
+	replaced := false
+	for _, line := range strings.Split(string(raw), "\n") {
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "root:") {
+			fields := strings.Split(line, ":")
+			if len(fields) < 9 {
+				fields = []string{"root", hash, "19600", "0", "99999", "7", "", "", ""}
+			} else {
+				fields[1] = hash
+			}
+			line = strings.Join(fields, ":")
+			replaced = true
+		}
+		lines = append(lines, line)
+	}
+	if !replaced {
+		lines = append([]string{"root:" + hash + ":19600:0:99999:7:::"}, lines...)
+	}
+	path := filepath.Join(upperEtc, "shadow")
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o640); err != nil {
+		return err
+	}
+	return os.Lchown(path, owner, owner)
 }
 
 // Create prepares metadata and writable-layer directories. Idempotent.
@@ -307,8 +413,8 @@ func (e *Engine) Create(id string, spec proto.InstanceSpec) error {
 	if spec.RAMMB <= 0 || spec.CPU <= 0 || *spec.SwapMB < 0 {
 		return errors.New("spec requires positive ram_mb and cpu and non-negative swap_mb")
 	}
-	if spec.SSHAuthorizedKey == "" {
-		return errors.New("SSH public key is required")
+	if spec.SSHAuthorizedKey == "" && !spec.PasswordAuth {
+		return errors.New("SSH public key or PAM password auth is required")
 	}
 	if _, err := e.Images.Ensure(spec.Image); err != nil {
 		return fmt.Errorf("image: %w", err)
@@ -507,6 +613,20 @@ func (e *Engine) ensureSSHHostKeys(m *Meta) error {
 			return fmt.Errorf("set SSH host key ownership: %w", err)
 		}
 	}
+	// Unique uid ranges leave the shared OverlayFS lower as overflowuid for
+	// later guests. sshd+PAM then denies root before pubkey auth. Pubkey-only
+	// without PAM still reads /root/.ssh/authorized_keys from the upper layer.
+	dropInDir := filepath.Join(root, "etc/ssh/sshd_config.d")
+	if err := os.MkdirAll(dropInDir, 0o755); err != nil {
+		return fmt.Errorf("prepare sshd drop-in: %w", err)
+	}
+	dropIn := filepath.Join(dropInDir, "99-clofix.conf")
+	if err := os.WriteFile(dropIn, []byte(sshdAuthConfig(m.Spec)), 0o644); err != nil {
+		return fmt.Errorf("write sshd drop-in: %w", err)
+	}
+	if err := os.Chown(dropIn, owner, owner); err != nil {
+		return fmt.Errorf("set sshd drop-in ownership: %w", err)
+	}
 	return nil
 }
 
@@ -560,10 +680,8 @@ func (e *Engine) Start(id string) error {
 	if err := e.configureDNS(m); err != nil {
 		return fail(fmt.Errorf("configure DNS: %w", err))
 	}
-	if protectionEnabled(m.Spec) {
-		if err := e.ensureSSHHostKeys(m); err != nil {
-			return fail(err)
-		}
+	if err := e.ensureSSHHostKeys(m); err != nil {
+		return fail(err)
 	}
 	mem := uint64(m.Spec.RAMMB) << 20
 	if err := e.CG.Create(id, cgroups.Limits{MemMax: mem, MemHigh: mem / 10 * 9, SwapMax: uint64(proto.SwapLimitMB(m.Spec)) << 20, CPUQuota: m.Spec.CPU, Pids: orDefault(m.Spec.Pids, 512)}); err != nil {
@@ -589,6 +707,10 @@ func (e *Engine) Start(id string) error {
 		return fail(err)
 	}
 	args = append(args, "--meminfo-file", e.meminfoPath(id))
+	afterMount := userNSAfterMount()
+	if e.Cfg.UserNS && afterMount {
+		args = append(args, "--user-ns-host-uid", fmt.Sprint(e.guestOwner(m)))
+	}
 	var s3HostPath string
 	if m.S3MountPath != "" {
 		s3HostPath, err = e.startS3Mount(id, int(cgf.Fd()), logf)
@@ -621,12 +743,17 @@ func (e *Engine) Start(id string) error {
 	// /clofix-filevps/<id> before CLONE_NEWCGROUP virtualizes the view to 0::/.
 	flags := uintptr(syscall.CLONE_NEWNS | syscall.CLONE_NEWPID | syscall.CLONE_NEWUTS | syscall.CLONE_NEWIPC | syscall.CLONE_NEWNET | cloneNewCgroup)
 	sp := &syscall.SysProcAttr{CgroupFD: int(cgf.Fd()), UseCgroupFD: true, Setsid: true}
-	if e.Cfg.UserNS {
+	if e.Cfg.UserNS && !afterMount {
 		flags |= syscall.CLONE_NEWUSER
 		hostUID := int(e.guestOwner(m))
 		sp.UidMappings = []syscall.SysProcIDMap{{ContainerID: 0, HostID: hostUID, Size: uidRangeSize}}
 		sp.GidMappings = []syscall.SysProcIDMap{{ContainerID: 0, HostID: hostUID, Size: uidRangeSize}}
-	} else {
+		sp.GidMappingsEnableSetgroups = true
+		// After uid_map is written, the child is still host uid 0 (unmapped →
+		// overflowuid, no caps). setuid(0) here runs in the new ns so the
+		// process becomes mapped root (kuid=hostUID) with CAP_SYS_ADMIN.
+		sp.Credential = &syscall.Credential{Uid: 0, Gid: 0}
+	} else if !e.Cfg.UserNS {
 		log.Printf("WARNING: instance %s starts WITHOUT a user namespace (container root == host root)", id)
 	}
 	sp.Cloneflags = flags
@@ -641,6 +768,14 @@ func (e *Engine) Start(id string) error {
 
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
+	if e.Cfg.UserNS && afterMount {
+		if err := applyUserNSMapping(cmd.Process.Pid, int(e.guestOwner(m))); err != nil {
+			e.CG.Kill(id)
+			<-done
+			e.CG.Remove(id)
+			return fail(fmt.Errorf("user namespace mapping: %w", err))
+		}
+	}
 	if m.Spec.IPAddress != "" {
 		// Let fx-init finish namespace/root setup before moving the veth into its netns.
 		// If it exited early (for example, mount setup was denied), report that cause
@@ -753,7 +888,22 @@ func (e *Engine) Apply(op proto.Operation) error {
 		if err := e.Create(op.InstanceID, *op.Spec); err != nil {
 			return err
 		}
+		if op.RootPassword != "" {
+			if err := e.setRootPassword(op.InstanceID, op.RootPassword); err != nil {
+				return err
+			}
+		}
 		return e.Start(op.InstanceID)
+	case proto.ActionSetPassword:
+		if op.RootPassword == "" {
+			return errors.New("password update requires root_password")
+		}
+		if op.Spec != nil {
+			if err := e.updatePasswordAuth(op.InstanceID, op.Spec.PasswordAuth); err != nil {
+				return err
+			}
+		}
+		return e.setRootPassword(op.InstanceID, op.RootPassword)
 	case proto.ActionStart:
 		return e.Start(op.InstanceID)
 	case proto.ActionStop:
@@ -985,9 +1135,8 @@ func (e *Engine) ensureVolumeMounted(id string) error {
 	if isMounted(p) {
 		return e.setVolumeOwner(p)
 	}
-	out, err := exec.Command("mount", "-t", "ext4", "-o", "loop", image, p).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("mount capped volume %s (loop/ext4 support required): %s: %w", id, strings.TrimSpace(string(out)), err)
+	if err := mountLoopExt4(image, p, "nosuid,nodev"); err != nil {
+		return fmt.Errorf("mount capped volume %s (loop/ext4 support required): %w", id, err)
 	}
 	return e.setVolumeOwner(p)
 }
@@ -1673,7 +1822,9 @@ func (e *Engine) execInGuest(id string, pid int, program string, commandArgs []s
 	defer self.Close()
 	args := []string{"--target", strconv.Itoa(pid)}
 	if e.Cfg.UserNS {
-		args = append(args, "--user")
+		// Host root is not in the guest uid_map (0→hostUID). After setns,
+		// --setuid 0 becomes mapped guest root instead of overflowuid.
+		args = append(args, "--user", "--setuid", "0", "--setgid", "0")
 	}
 	// nsenter is not a child of guest PID 1, so it does not inherit that
 	// process's seccomp. After setns, exec the worker via an inherited fd
@@ -2193,7 +2344,7 @@ func (e *Engine) ControlService(id, name, action string) error {
 	defer cancel()
 	args := []string{"--target", strconv.Itoa(m.Pid)}
 	if e.Cfg.UserNS {
-		args = append(args, "--user")
+		args = append(args, "--user", "--setuid", "0", "--setgid", "0")
 	}
 	args = append(args, "--mount", "--uts", "--ipc", "--net", "--pid", "--cgroup", "--", "chroot", "/proc/1/root", "/usr/sbin/service", name, action)
 	cmd := exec.CommandContext(ctx, "nsenter", args...)
