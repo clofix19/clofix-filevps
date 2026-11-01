@@ -176,6 +176,7 @@ func (m *Manager) SyncPorts(id, address string, sshPort int, mappings []proto.Po
 func (m *Manager) Cleanup(id string, sshPort int) {
 	hostIf, _ := names(id)
 	m.removeRules(id)
+	m.RemoveVPSFirewall(id)
 	command("ip", "link", "del", hostIf)
 }
 

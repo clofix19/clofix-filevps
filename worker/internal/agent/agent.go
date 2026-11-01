@@ -50,6 +50,7 @@ type Agent struct {
 	results             []proto.OpResult
 	seen                map[string]bool
 	ops                 chan proto.Operation
+	logSources          []proto.LogSourceSpec
 }
 
 func New(cfg config.Config, eng *lifecycle.Engine) (*Agent, error) {
@@ -171,7 +172,7 @@ func (a *Agent) beat(ctx context.Context) error {
 	res := a.results
 	a.results = nil
 	a.mu.Unlock()
-	body, _ := json.Marshal(proto.Heartbeat{DatabaseResults: a.Database.Results(), DatabaseStatuses: statuses, ManagedApps: a.Managed.Statuses(), ExecutionProgress: progress, Version: Version, Capacity: a.capacity(), Instances: a.Engine.Statuses(), Volumes: a.Engine.VolumeStatuses(), Backups: a.Engine.BackupStatuses(), Results: res})
+	body, _ := json.Marshal(proto.Heartbeat{DatabaseResults: a.Database.Results(), DatabaseStatuses: statuses, ManagedApps: a.Managed.Statuses(), ExecutionProgress: progress, Version: Version, Capacity: a.capacity(), Instances: a.Engine.Statuses(), Volumes: a.Engine.VolumeStatuses(), Backups: a.Engine.BackupStatuses(), LogTails: a.collectLogTails(), Results: res})
 	resp, err := a.hc.Post(a.Cfg.ControllerURL+"/v1/heartbeat", "application/json", bytes.NewReader(body))
 	if err != nil {
 		a.requeue(res)
@@ -186,6 +187,10 @@ func (a *Agent) beat(ctx context.Context) error {
 	if err := json.NewDecoder(resp.Body).Decode(&hr); err != nil {
 		return err
 	}
+	a.Engine.SetDNSHosts(hr.DNSHosts)
+	a.setLogSources(hr.LogSources)
+	a.Engine.ApplyFirewalls(hr.Firewalls)
+	a.Engine.ApplyEFSShares(hr.EFSShares)
 	if hr.S3MasterAddress != "" && a.Cfg.S3MasterAddress == "" {
 		a.Cfg.S3MasterAddress = hr.S3MasterAddress
 		if a.Cfg.S3DataDir == "" {

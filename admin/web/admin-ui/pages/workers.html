@@ -1,11 +1,34 @@
 {{define "content"}}
 <section class="page active" id="page-workers">
-      <div class="section-head"><div><p class="eyebrow">Platform</p><h2>Workers</h2><p>Capacity and health of your enrolled CloFix workers.</p></div><button class="secondary" id="mktok">＋ Enroll worker</button></div>
-      <div class="chart-grid"><article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Worker network</div><div class="chart-subtitle">Host uplink IN and OUT · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-host-net-current">—</div><div class="chart-ranges" role="group" aria-label="Worker network chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button></div></div></div><svg id="chart-host-net" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live worker network IN and OUT chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>IN</span><span><i class="legend-dot amber"></i>OUT</span></div></article><article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Worker bandwidth</div><div class="chart-subtitle">Combined host uplink IN + OUT · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-host-bw-current">—</div><div class="chart-ranges" role="group" aria-label="Worker bandwidth chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button></div></div></div><svg id="chart-host-bw" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live worker bandwidth chart"></svg><div class="chart-legend"><span><i class="legend-dot blue"></i>Bandwidth</span></div></article></div>
-      <div class="cards"><div class="stat"><div class="stat-label">CPU</div><div class="stat-value" id="worker-stat-cpu">—</div><div class="stat-note" id="worker-stat-cpu-note">Host CPU across active workers</div></div><div class="stat"><div class="stat-label">RAM</div><div class="stat-value" id="worker-stat-ram">—</div><div class="stat-note" id="worker-stat-ram-note">Host memory across active workers</div></div><div class="stat"><div class="stat-label">Disk</div><div class="stat-value" id="worker-stat-disk">—</div><div class="stat-note" id="worker-stat-disk-note">Worker filesystem capacity</div></div></div>
-      <div class="cards" id="worker-s3-summary"></div>
-      <div class="cards" id="worker-memory-cards"></div>
-      <div class="panel"><div class="table-wrap"><table id="workers"></table></div></div>
-      <div class="panel"><div class="muted" style="font-size:11px">Enrollment token · valid for 60 minutes</div><pre id="newtok" class="code"></pre></div>
+      <div class="section-head"><div><p class="eyebrow">Platform</p><h2>Workers</h2><p>Capacity and health of your enrolled CloFix workers.</p></div><div class="inline-fields"><a class="secondary" href="/firewall#firewall-workers">Host firewall</a><button class="secondary" id="mktok">＋ Enroll worker</button></div></div>
+      <div class="settings-layout">
+        <nav class="settings-nav" aria-label="Worker sections">
+          <a href="#workers-overview" data-settings-link aria-controls="workers-overview" aria-current="location"><strong>Overview</strong><span>Network charts and host totals</span></a>
+          <a href="#workers-capacity" data-settings-link aria-controls="workers-capacity"><strong>Capacity</strong><span>Per-worker CPU, RAM and disk</span></a>
+          <a href="#workers-list" data-settings-link aria-controls="workers-list"><strong>Workers</strong><span>Inventory and drain actions</span></a>
+          <a href="#workers-enroll" data-settings-link aria-controls="workers-enroll"><strong>Enrollment</strong><span>Token valid for 60 minutes</span></a>
+        </nav>
+        <div class="settings-content">
+          <div class="settings-section" id="workers-overview" data-settings-panel aria-labelledby="workers-heading-overview">
+            <h2 id="workers-heading-overview" class="visually-hidden" tabindex="-1">Overview</h2>
+            <div class="chart-toolbar"><div class="chart-ranges" role="group" aria-label="Chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="6h" aria-pressed="false">6h</button><button type="button" data-chart-range="1d" aria-pressed="false">1d</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button><button type="button" data-chart-range="custom" aria-pressed="false">Custom</button></div><div class="chart-custom" hidden><label>From <input type="datetime-local" data-chart-from></label><label>To <input type="datetime-local" data-chart-to></label><button type="button" class="small-btn" data-chart-custom-apply>Apply</button></div></div><div class="chart-grid"><article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Worker network</div><div class="chart-subtitle">Host uplink IN and OUT · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-host-net-current">—</div></div></div><svg id="chart-host-net" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live worker network IN and OUT chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>IN</span><span><i class="legend-dot amber"></i>OUT</span></div></article><article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Worker bandwidth</div><div class="chart-subtitle">Combined host uplink IN + OUT · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-host-bw-current">—</div></div></div><svg id="chart-host-bw" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live worker bandwidth chart"></svg><div class="chart-legend"><span><i class="legend-dot blue"></i>Bandwidth</span></div></article></div>
+            <div class="cards"><div class="stat"><div class="stat-label">CPU</div><div class="stat-value" id="worker-stat-cpu">—</div><div class="stat-note" id="worker-stat-cpu-note">Host CPU across active workers</div></div><div class="stat"><div class="stat-label">RAM</div><div class="stat-value" id="worker-stat-ram">—</div><div class="stat-note" id="worker-stat-ram-note">Host memory across active workers</div></div><div class="stat"><div class="stat-label">Disk</div><div class="stat-value" id="worker-stat-disk">—</div><div class="stat-note" id="worker-stat-disk-note">Worker filesystem capacity</div></div></div>
+            <div class="cards" id="worker-s3-summary"></div>
+          </div>
+          <div class="settings-section" id="workers-capacity" data-settings-panel aria-labelledby="workers-heading-capacity" hidden>
+            <h2 id="workers-heading-capacity" tabindex="-1">Capacity</h2>
+            <div class="cards" id="worker-memory-cards"></div>
+          </div>
+          <div class="panel settings-section" id="workers-list" data-settings-panel aria-labelledby="workers-heading-list" hidden>
+            <h2 id="workers-heading-list" tabindex="-1">Workers</h2>
+            <div class="table-wrap"><table id="workers"></table></div>
+          </div>
+          <div class="panel settings-section" id="workers-enroll" data-settings-panel aria-labelledby="workers-heading-enroll" hidden>
+            <h2 id="workers-heading-enroll" tabindex="-1">Enrollment</h2>
+            <div class="muted" style="font-size:11px">Enrollment token · valid for 60 minutes</div>
+            <pre id="newtok" class="code"></pre>
+          </div>
+        </div>
+      </div>
     </section>
 {{end}}

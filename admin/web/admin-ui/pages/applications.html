@@ -3,8 +3,20 @@
   <div class="section-head"><div><p class="eyebrow">Compute</p><h2>Jobs &amp; Functions</h2><p>Run scripts, ZIP projects and binaries without creating a VPS.</p></div><button class="primary" id="application-new" type="button">＋ Add application</button></div>
   <p class="muted" id="application-runtime-status"></p>
   <div id="application-message" class="message" role="status" aria-live="polite"></div>
-  <div class="panel"><div class="toolbar"><strong>Applications</strong><input type="search" id="application-search" placeholder="Search applications…" aria-label="Search applications"></div><div class="table-wrap"><table id="applications-table"></table></div></div>
-  <div class="panel"><div class="section-head"><h2>Run history</h2><button class="small-btn" id="application-refresh" type="button">Refresh</button></div><div class="table-wrap"><table id="application-runs-table"></table></div></div>
+  <div class="settings-layout">
+    <nav class="settings-nav" aria-label="Jobs sections">
+      <a href="#apps-list" data-settings-link aria-controls="apps-list" aria-current="location"><strong>Applications</strong><span>Jobs and HTTP functions</span></a>
+      <a href="#apps-runs" data-settings-link aria-controls="apps-runs"><strong>Run history</strong><span>Recent invocations</span></a>
+    </nav>
+    <div class="settings-content">
+      <div class="panel settings-section" id="apps-list" data-settings-panel aria-labelledby="apps-heading-list">
+        <div class="toolbar"><strong id="apps-heading-list">Applications</strong><input type="search" id="application-search" placeholder="Search applications…" aria-label="Search applications"></div><div class="table-wrap"><table id="applications-table"></table></div>
+      </div>
+      <div class="panel settings-section" id="apps-runs" data-settings-panel aria-labelledby="apps-heading-runs" hidden>
+        <div class="section-head"><h2 id="apps-heading-runs" tabindex="-1">Run history</h2><button class="small-btn" id="application-refresh" type="button">Refresh</button></div><div class="table-wrap"><table id="application-runs-table"></table></div>
+      </div>
+    </div>
+  </div>
 </section>
 <dialog class="terminal-dialog form-dialog" id="application-create-dialog" aria-labelledby="application-create-title">
   <form id="application-create-form"><div class="section-head"><h2 id="application-create-title">Add application</h2><button class="secondary" type="button" data-app-close>Close</button></div>
@@ -37,4 +49,3 @@
 <dialog class="terminal-dialog form-dialog" id="application-versions-dialog" aria-labelledby="application-versions-title"><div class="section-head"><h2 id="application-versions-title">Application versions</h2><button class="secondary" type="button" data-app-close>Close</button></div><div class="table-wrap"><table id="application-versions-table"></table></div><p class="message" id="application-versions-message" role="status"></p></dialog>
 <dialog class="terminal-dialog form-dialog" id="application-webhook-dialog" aria-labelledby="application-webhook-title"><div class="section-head"><h2 id="application-webhook-title">Webhook trigger</h2><button class="secondary" type="button" data-app-close>Close</button></div><p class="muted">POST the event body to this URL. Send the secret in the X-CloFix-Webhook-Key header.</p><pre id="application-webhook-details" class="log-view"></pre><p class="message" id="application-webhook-message" role="status"></p><div class="inline-fields"><button id="application-webhook-enable" type="button" class="primary">Create / rotate secret</button><button id="application-webhook-disable" type="button" class="secondary">Disable webhook</button></div></dialog>
 {{end}}
-

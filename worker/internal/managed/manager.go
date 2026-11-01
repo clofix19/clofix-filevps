@@ -240,15 +240,30 @@ func (m *Manager) installDeployment(a *record) error {
 			return fmt.Errorf("deployment ZIP contains an unsafe path")
 		}
 		if file.FileInfo().IsDir() {
-			if err := os.MkdirAll(target, 0755); err != nil { return err }
+			if err := os.MkdirAll(target, 0755); err != nil {
+				return err
+			}
 			continue
 		}
-		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil { return err }
-		in, err := file.Open(); if err != nil { return err }
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return err
+		}
+		in, err := file.Open()
+		if err != nil {
+			return err
+		}
 		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-		if err == nil { _, err = io.Copy(out, in); closeErr := out.Close(); if err == nil { err = closeErr } }
+		if err == nil {
+			_, err = io.Copy(out, in)
+			closeErr := out.Close()
+			if err == nil {
+				err = closeErr
+			}
+		}
 		_ = in.Close()
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -305,7 +320,7 @@ func (m *Manager) start(a *record) error {
 	if err := os.WriteFile(dnsPath, []byte("nameserver 1.1.1.1\nnameserver 8.8.8.8\n"), 0644); err != nil {
 		return fail(err)
 	}
-	envValues := map[string]string{"HOME": "/data", "DATA_DIR": "/data", "UPTIME_KUMA_PORT": "8080", "UPTIME_KUMA_HOST": "0.0.0.0", "UPTIME_KUMA_DATA_DIR": "/data", "NODE_ENV": "production", "CLOFIX_ENTRY": a.Spec.Deployment.Entry}
+	envValues := map[string]string{"HOME": "/data", "DATA_DIR": "/data", "UPTIME_KUMA_PORT": "8080", "UPTIME_KUMA_HOST": "0.0.0.0", "UPTIME_KUMA_DATA_DIR": "/data", "NODE_ENV": "production", "JENKINS_HOME": "/data", "CLOFIX_ENTRY": a.Spec.Deployment.Entry}
 	if a.Spec.Deployment.Runtime == "wordpress" {
 		envValues["CLOFIX_WORDPRESS_BUNDLED"] = "1"
 	}
@@ -344,8 +359,23 @@ func (m *Manager) start(a *record) error {
 	}
 	a.PID = cmd.Process.Pid
 	_ = logWriter.Close()
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	// Let fx-init finish namespace/root setup before moving the veth into its netns.
+	// If it exited early, report that cause instead of `ip link ... netns <pid>: No such process`.
+	select {
+	case werr := <-done:
+		return fail(fmt.Errorf("init exited before network setup (%v); see %s", werr, filepath.Join(m.path(id), "app.log")))
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err = m.Network.SetupManaged(id, a.PID, a.Spec.Address); err != nil {
+		return fail(err)
+	}
+	if err = m.gateway(a); err != nil {
+		return fail(err)
+	}
 	go func() {
-		err := cmd.Wait()
+		err := <-done
 		m.Lock()
 		defer m.Unlock()
 		if m.apps[id] != a || a.PID != cmd.Process.Pid {
@@ -361,12 +391,6 @@ func (m *Manager) start(a *record) error {
 			_ = m.save(a)
 		}
 	}()
-	if err = m.Network.SetupManaged(id, a.PID, a.Spec.Address); err != nil {
-		return fail(err)
-	}
-	if err = m.gateway(a); err != nil {
-		return fail(err)
-	}
 	a.Status.State = "RUNNING"
 	return m.save(a)
 }

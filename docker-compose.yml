@@ -50,6 +50,9 @@ services:
     ports:
       - "8080:8080"   # Admin UI + API
       - "8443:8443"   # Worker API (mTLS)
+      - "127.0.0.1:53:53/udp" # CloFix zone DNS (clofix.internal)
+      - "127.0.0.1:53:53/tcp"
+      - "127.0.0.1:80:80" # Host HTTP for clofix.internal names
       - "127.0.0.1:18080:18080/tcp" # Local NLB application endpoint
     volumes:
       - ctldata:/data   # CA key and certificates

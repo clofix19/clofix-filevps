@@ -53,7 +53,7 @@ The pool uses replication placement `000` (one copy) to maximize capacity. If a 
 
 ## Library and managed apps
 
-`/services` has Quick Apps (persistent sandboxes) and VPS software installs. Quick Apps include Adminer and ZIP web deployments: static HTML, PHP, Node.js/Next.js and WordPress. A deploy can attach an existing managed database. Apps use CloFix namespaces and cgroup v2, not a customer VPS. Uptime Kuma stays unready until a verified Node/app archive is supplied on the worker (`CLOFIX_UPTIME_KUMA_DIR`); the UI does not npm-install unverified sources. See [managed apps](docs/managed-apps.md).
+`/services` has Quick Apps (persistent sandboxes) and VPS software installs. Quick Apps include Adminer, Uptime Kuma, Jenkins, and ZIP web deployments: static HTML, PHP, Node.js/Next.js and WordPress. A deploy can attach an existing managed database. Apps use CloFix namespaces and cgroup v2, not a customer VPS. The worker template builder downloads official Uptime Kuma and Jenkins archives and verifies their SHA-256 checksums. See [managed apps](docs/managed-apps.md).
 
 Jobs & Functions (`/applications`) run scheduled or invoked workloads on workers that advertise serverless runtimes. See [serverless](docs/serverless.md).
 

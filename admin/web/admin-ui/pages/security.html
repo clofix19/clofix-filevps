@@ -1,16 +1,41 @@
 {{define "content"}}
 <section class="page active" id="page-security">
-      <div class="section-head"><div><p class="eyebrow">Security</p><h2>Security overview</h2><p>Per-VPS protection, SSH access, deletion safeguards, WAF state, and exposed custom ports.</p></div></div>
+      <div class="section-head"><div><p class="eyebrow">Security</p><h2>Security overview</h2><p>Per-VPS protection, SSH access, deletion safeguards, WAF state, and exposed custom ports. Packet filtering for worker and VPS inbound CIDRs is on <a href="/firewall">Firewall</a>. The WAF stays HTTP-only.</p></div></div>
       <div class="security-loading" id="security-loading" role="status" aria-live="polite">Loading VPS and worker security status…</div>
       <div class="security-empty" id="security-empty" hidden><strong>No VPS instances yet</strong><p>Create a VPS to manage its security controls here.</p><a class="primary" href="/instances?create=1">Create FileVPS</a></div>
-      <div class="cards"><div class="stat"><div class="stat-label">Protection Mode enabled</div><div class="stat-value" id="security-protected">—</div><div class="stat-note">Read-only guest root</div></div><div class="stat"><div class="stat-label">Protection Mode disabled</div><div class="stat-value" id="security-unprotected">—</div><div class="stat-note">Review these VPSs</div></div><div class="stat"><div class="stat-label">SSH Login Block enabled</div><div class="stat-value" id="security-ssh-blocked">—</div><div class="stat-note">Blocks new SSH logins</div></div><div class="stat"><div class="stat-label">Delete Protection enabled</div><div class="stat-value" id="security-delete-protected">—</div><div class="stat-note">Guards admin and worker deletion</div></div><div class="stat"><div class="stat-label">OWASP CRS WAF installed</div><div class="stat-value" id="security-waf">—</div><div class="stat-note">HTTP/HTTPS through guest Nginx</div></div><div class="stat"><div class="stat-label">Custom port forwards</div><div class="stat-value" id="security-forwards">—</div><div class="stat-note">Additional host exposure</div></div><div class="stat"><div class="stat-label">Active workers</div><div class="stat-value" id="security-workers">—</div><div class="stat-note">Workers reporting capacity</div></div></div>
-      <div class="panel"><div class="section-head"><div><h2>Per-VPS security controls</h2><p>Manage a VPS to change its individual settings. SSH policy changes restart a running VPS.</p></div></div><div class="table-wrap"><table id="security-instances"></table></div><div class="message" id="security-message" role="status" aria-live="polite"></div></div>
-      <div class="security-feature-grid">
-        <article class="security-feature"><span class="security-feature-icon">◉</span><div><strong>Protection Mode</strong><p>Mounts the persistent guest root read-only. It does not block running processes or network traffic.</p></div></article>
-        <article class="security-feature"><span class="security-feature-icon">⌁</span><div><strong>SSH Login Block</strong><p>Blocks new SSH connections when enabled. Existing SSH sessions may remain until disconnected.</p></div></article>
-        <article class="security-feature"><span class="security-feature-icon">▣</span><div><strong>VPS Delete Protection</strong><p>Prevents deletion through CloFix APIs and worker operations. Host administrators with direct storage access can still remove data.</p></div></article>
-        <article class="security-feature"><span class="security-feature-icon">⬡</span><div><strong>OWASP CRS WAF</strong><p>Inspects HTTP/HTTPS requests served by this VPS through Nginx. Direct SSH, database ports, and traffic bypassing Nginx are outside its scope.</p></div></article>
+      <div class="settings-layout">
+        <nav class="settings-nav" aria-label="Security sections">
+          <a href="#security-overview" data-settings-link aria-controls="security-overview" aria-current="location"><strong>Overview</strong><span>Coverage across the fleet</span></a>
+          <a href="#security-vps" data-settings-link aria-controls="security-vps"><strong>VPS controls</strong><span>Protection, SSH and WAF</span></a>
+          <a href="#security-port-forwards" data-settings-link aria-controls="security-port-forwards"><strong>Port forwards</strong><span>Custom host exposure</span></a>
+          <a href="#security-guide" data-settings-link aria-controls="security-guide"><strong>Guide</strong><span>What each control does</span></a>
+        </nav>
+        <div class="settings-content">
+          <div class="settings-section" id="security-overview" data-settings-panel aria-labelledby="security-heading-overview">
+            <h2 id="security-heading-overview" class="visually-hidden" tabindex="-1">Overview</h2>
+            <div class="cards"><div class="stat"><div class="stat-label">Protection Mode enabled</div><div class="stat-value" id="security-protected">—</div><div class="stat-note">Read-only guest root</div></div><div class="stat"><div class="stat-label">Protection Mode disabled</div><div class="stat-value" id="security-unprotected">—</div><div class="stat-note">Review these VPSs</div></div><div class="stat"><div class="stat-label">SSH Login Block enabled</div><div class="stat-value" id="security-ssh-blocked">—</div><div class="stat-note">Blocks new SSH logins</div></div><div class="stat"><div class="stat-label">Delete Protection enabled</div><div class="stat-value" id="security-delete-protected">—</div><div class="stat-note">Guards admin and worker deletion</div></div><div class="stat"><div class="stat-label">OWASP CRS WAF installed</div><div class="stat-value" id="security-waf">—</div><div class="stat-note">HTTP/HTTPS through guest Nginx</div></div><div class="stat"><div class="stat-label">Custom port forwards</div><div class="stat-value" id="security-forwards">—</div><div class="stat-note">Additional host exposure</div></div><div class="stat"><div class="stat-label">Active workers</div><div class="stat-value" id="security-workers">—</div><div class="stat-note">Workers reporting capacity</div></div></div>
+          </div>
+          <div class="panel settings-section" id="security-vps" data-settings-panel aria-labelledby="security-heading-vps" hidden>
+            <div class="section-head"><div><h2 id="security-heading-vps" tabindex="-1">Per-VPS security controls</h2><p>Manage a VPS to change its individual settings. SSH policy changes restart a running VPS.</p></div></div>
+            <div class="table-wrap"><table id="security-instances"></table></div>
+            <div class="message" id="security-message" role="status" aria-live="polite"></div>
+          </div>
+          <div class="panel settings-section" id="security-port-forwards" data-settings-panel aria-labelledby="security-heading-ports" hidden>
+            <div class="section-head"><div><h2 id="security-heading-ports" tabindex="-1">Custom port forwards</h2><p>Additional guest ports exposed on host ports. Default SSH, HTTP, and HTTPS mappings are managed by CloFix.</p></div></div>
+            <p class="security-note">Review each forwarded port and remove mappings that are not needed. A port forward exposes that guest service; the WAF only protects HTTP/HTTPS requests routed through Nginx.</p>
+            <div class="table-wrap"><table id="security-ports"></table></div>
+          </div>
+          <div class="settings-section" id="security-guide" data-settings-panel aria-labelledby="security-heading-guide" hidden>
+            <h2 id="security-heading-guide" class="visually-hidden" tabindex="-1">Guide</h2>
+            <div class="security-feature-grid">
+              <article class="security-feature"><span class="security-feature-icon">◉</span><div><strong>Protection Mode</strong><p>Mounts the persistent guest root read-only. It does not block running processes or network traffic.</p></div></article>
+              <article class="security-feature"><span class="security-feature-icon">⌁</span><div><strong>SSH Login Block</strong><p>Blocks new SSH connections when enabled. Existing SSH sessions may remain until disconnected.</p></div></article>
+              <article class="security-feature"><span class="security-feature-icon">▣</span><div><strong>VPS Delete Protection</strong><p>Prevents deletion through CloFix APIs and worker operations. Host administrators with direct storage access can still remove data.</p></div></article>
+              <article class="security-feature"><span class="security-feature-icon">⬡</span><div><strong>OWASP CRS WAF</strong><p>Inspects HTTP/HTTPS requests served by this VPS through Nginx. Direct SSH, database ports, and traffic bypassing Nginx are outside its scope.</p></div></article>
+              <article class="security-feature"><span class="security-feature-icon">▣</span><div><strong>Worker and VPS firewall</strong><p>Packet filter for CloFix published ports and DNATed guest ports. Source CIDR allow and deny lives on the <a href="/firewall">Firewall</a> page. It does not replace the HTTP WAF.</p></div></article>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="panel"><div class="section-head"><div><h2>Custom port forwards</h2><p>Additional guest ports exposed on host ports. Default SSH, HTTP, and HTTPS mappings are managed by CloFix.</p></div></div><p class="security-note">Review each forwarded port and remove mappings that are not needed. A port forward exposes that guest service; the WAF only protects HTTP/HTTPS requests routed through Nginx.</p><div class="table-wrap"><table id="security-ports"></table></div></div>
     </section>
 {{end}}

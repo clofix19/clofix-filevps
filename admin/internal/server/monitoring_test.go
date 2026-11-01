@@ -135,6 +135,42 @@ func TestMonitoringValidationAndUI(t *testing.T) {
 	}
 }
 
+func TestAlertChannelTypesAndPayloads(t *testing.T) {
+	t.Setenv("CLOFIX_DATA_DIR", t.TempDir())
+	s, _ := newSrv(t)
+	h := s.AdminHandler()
+	ok := []struct{ kind, url string }{
+		{"google-chat", "https://chat.googleapis.com/v1/spaces/example/messages?key=test&token=test"},
+		{"discord", "https://discord.com/api/webhooks/example/test"},
+		{"teams", "https://contoso.webhook.office.com/webhookb2/example/IncomingWebhook/test/id"},
+		{"slack", "https://hooks.slack.com/services/example/test"},
+	}
+	for _, test := range ok {
+		raw, _ := json.Marshal(alertChannel{Name: test.kind, Type: test.kind, Webhook: test.url, Enabled: true})
+		if w := do(h, "POST", "/api/monitoring/channels", string(raw), tok); w.Code != 200 {
+			t.Fatal(test.kind, w.Body.String())
+		}
+	}
+	for _, body := range []string{
+		`{"name":"bad","type":"google-chat","webhook":"https://hooks.slack.com/services/T00/B00/xxx"}`,
+		`{"name":"bad","type":"discord","webhook":"https://evil.example/api/webhooks/1/x"}`,
+		`{"name":"bad","type":"teams","webhook":"https://evil.example/webhook"}`,
+		`{"name":"bad","type":"telegram","webhook":"https://api.telegram.org/botx/sendMessage"}`,
+	} {
+		if w := do(h, "POST", "/api/monitoring/channels", body, tok); w.Code != 400 {
+			t.Fatal(body, w.Code, w.Body.String())
+		}
+	}
+	payload := alertWebhookPayload("discord", "CloFix log alert: down", map[string]any{"event": "DOWN"})
+	if payload["content"] != "CloFix log alert: down" || payload["text"] != nil || payload["event"] != nil {
+		t.Fatal(payload)
+	}
+	chat := alertWebhookPayload("google-chat", "hello", map[string]any{"event": "DOWN"})
+	if chat["text"] != "hello" || chat["event"] != nil {
+		t.Fatal(chat)
+	}
+}
+
 func TestPingMonitorValidation(t *testing.T) {
 	t.Setenv("CLOFIX_DATA_DIR", t.TempDir())
 	s, _ := newSrv(t)

@@ -50,6 +50,8 @@ func main() {
 	go srv.RunHealthScheduler(context.Background())
 	go srv.RunLicenseScheduler(context.Background())
 	go srv.RunDatabaseScheduler(context.Background())
+	go srv.ServeDNS(env("CLOFIX_DNS_LISTEN", ":53"))
+	go srv.ServeHTTPNames(env("CLOFIX_HTTP_LISTEN", ":80"))
 	srv.LogDir = env("CLOFIX_LOG_DIR", "/worker-logs/instances")
 
 	go func() {

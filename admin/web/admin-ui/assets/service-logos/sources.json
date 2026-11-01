@@ -111,6 +111,10 @@
     "file": "uptime-kuma.svg",
     "source": "https://uptime.kuma.pet/img/icon.svg"
   },
+  "jenkins": {
+    "file": "jenkins.svg",
+    "source": "https://www.jenkins.io/images/logos/jenkins/jenkins.svg"
+  },
   "supervisor": {
     "file": "supervisor.png",
     "source": "https://raw.githubusercontent.com/Supervisor/supervisor/main/supervisor/ui/images/icon.png"

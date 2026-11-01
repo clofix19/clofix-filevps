@@ -47,6 +47,8 @@ var iamPermissionSet = map[string]bool{
 	"pricing:read": true, "pricing:manage": true,
 	"billing:read": true, "billing:manage": true,
 	"dns:read": true, "dns:manage": true,
+	"vpc:read": true, "vpc:manage": true,
+	"logs:read": true, "logs:manage": true,
 }
 
 func iamPermissionCatalog() []string {
@@ -109,6 +111,10 @@ func permissionResource(path string) string {
 		return "databases"
 	case strings.HasPrefix(path, "/api/license"):
 		return "license"
+	case strings.HasPrefix(path, "/api/logs"):
+		return "logs"
+	case strings.HasPrefix(path, "/api/firewall"):
+		return "security"
 	case strings.HasPrefix(path, "/api/monitoring"):
 		return "health-checks"
 	case strings.HasPrefix(path, "/api/load-balancers"):
@@ -125,6 +131,8 @@ func permissionResource(path string) string {
 		return "billing"
 	case strings.HasPrefix(path, "/api/dns"):
 		return "dns"
+	case strings.HasPrefix(path, "/api/vpcs"):
+		return "vpc"
 	case strings.HasPrefix(path, "/api/iam"):
 		return "iam"
 	case path == "/api/ca.pem":
@@ -133,7 +141,7 @@ func permissionResource(path string) string {
 		return "workers"
 	case strings.HasPrefix(path, "/api/volumes"):
 		return "volumes"
-	case strings.HasPrefix(path, "/api/storage"):
+	case strings.HasPrefix(path, "/api/storage"), strings.HasPrefix(path, "/api/efs"):
 		return "storage"
 	case strings.HasPrefix(path, "/api/ssh-keys"):
 		return "instances"

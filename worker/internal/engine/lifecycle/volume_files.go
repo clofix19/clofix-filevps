@@ -1,6 +1,8 @@
 package lifecycle
 
 import (
+	"archive/zip"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -12,7 +14,11 @@ import (
 	"github.com/clofix/filevps/worker/pkg/proto"
 )
 
-const maxVolumeFileBytes = 4 << 20
+const (
+	maxVolumeFileBytes    = 4 << 20
+	maxVolumeArchiveFiles = 2000
+	maxVolumeArchiveBytes = 64 << 20
+)
 
 func volumePathParts(name string, allowRoot bool) ([]string, error) {
 	if name == "" && allowRoot {
@@ -64,7 +70,7 @@ func (e *Engine) ManageVolumeFile(req proto.VolumeFileRequest) (proto.VolumeFile
 	if err := e.ensureVolumeMounted(req.VolumeID); err != nil {
 		return proto.VolumeFileResult{}, err
 	}
-	parts, err := volumePathParts(req.Path, req.Action == "list")
+	parts, err := volumePathParts(req.Path, req.Action == "list" || req.Action == "archive")
 	if err != nil {
 		return proto.VolumeFileResult{}, err
 	}
@@ -185,9 +191,143 @@ func (e *Engine) ManageVolumeFile(req proto.VolumeFileRequest) (proto.VolumeFile
 			return proto.VolumeFileResult{}, err
 		}
 		return proto.VolumeFileResult{}, nil
+	case "archive":
+		return archiveVolumeFolder(rootFD, parts)
+	case "move":
+		destParts, destErr := volumePathParts(req.Dest, false)
+		if destErr != nil {
+			return proto.VolumeFileResult{}, destErr
+		}
+		srcPath := strings.Join(parts, "/")
+		destPath := strings.Join(destParts, "/")
+		if srcPath == destPath {
+			return proto.VolumeFileResult{}, errors.New("destination must be different from the source")
+		}
+		if strings.HasPrefix(destPath+"/", srcPath+"/") {
+			return proto.VolumeFileResult{}, errors.New("cannot move a folder into itself")
+		}
+		srcParent, srcName, err := openVolumeParent(rootFD, parts)
+		if err != nil {
+			return proto.VolumeFileResult{}, err
+		}
+		defer syscall.Close(srcParent)
+		destParent, destName, err := openVolumeParent(rootFD, destParts)
+		if err != nil {
+			return proto.VolumeFileResult{}, err
+		}
+		defer syscall.Close(destParent)
+		existing, existErr := syscall.Openat(destParent, destName, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
+		if existErr == nil {
+			_ = syscall.Close(existing)
+			return proto.VolumeFileResult{}, errors.New("destination already exists")
+		}
+		if !errors.Is(existErr, syscall.ENOENT) {
+			return proto.VolumeFileResult{}, fmt.Errorf("check destination: %w", existErr)
+		}
+		if err := syscall.Renameat(srcParent, srcName, destParent, destName); err != nil {
+			return proto.VolumeFileResult{}, fmt.Errorf("move volume path: %w", err)
+		}
+		return proto.VolumeFileResult{}, nil
 	default:
 		return proto.VolumeFileResult{}, errors.New("unsupported volume file action")
 	}
+}
+
+func archiveVolumeFolder(rootFD int, parts []string) (proto.VolumeFileResult, error) {
+	fd, err := openVolumeDir(rootFD, parts)
+	if err != nil {
+		return proto.VolumeFileResult{}, err
+	}
+	defer syscall.Close(fd)
+	base := "volume"
+	if len(parts) > 0 {
+		base = parts[len(parts)-1]
+	}
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	if _, err := zw.Create(base + "/"); err != nil {
+		_ = zw.Close()
+		return proto.VolumeFileResult{}, err
+	}
+	var files, total int64
+	if err := addVolumeZip(fd, base, zw, &files, &total); err != nil {
+		_ = zw.Close()
+		return proto.VolumeFileResult{}, err
+	}
+	if err := zw.Close(); err != nil {
+		return proto.VolumeFileResult{}, err
+	}
+	return proto.VolumeFileResult{Content: buf.Bytes()}, nil
+}
+
+func addVolumeZip(dirFD int, zipName string, zw *zip.Writer, files, total *int64) error {
+	dup, err := syscall.Dup(dirFD)
+	if err != nil {
+		return err
+	}
+	dir := os.NewFile(uintptr(dup), fmt.Sprintf("/proc/self/fd/%d", dup))
+	defer dir.Close()
+	entries, err := dir.ReadDir(-1)
+	if err != nil {
+		return err
+	}
+	if len(entries) > maxVolumeArchiveFiles {
+		return errors.New("folder contains over 2,000 items; download files individually")
+	}
+	for _, item := range entries {
+		info, err := item.Info()
+		if err != nil {
+			continue
+		}
+		name := item.Name()
+		childZip := name
+		if zipName != "" {
+			childZip = zipName + "/" + name
+		}
+		if item.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		if item.IsDir() {
+			if _, err := zw.Create(childZip + "/"); err != nil {
+				return err
+			}
+			childFD, err := syscall.Openat(dirFD, name, syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
+			if err != nil {
+				return fmt.Errorf("open volume folder %q: %w", name, err)
+			}
+			walkErr := addVolumeZip(childFD, childZip, zw, files, total)
+			_ = syscall.Close(childFD)
+			if walkErr != nil {
+				return walkErr
+			}
+			continue
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		*files++
+		*total += info.Size()
+		if *files > maxVolumeArchiveFiles || *total > maxVolumeArchiveBytes {
+			return errors.New("folder is too large to zip; download files individually")
+		}
+		ffd, err := syscall.Openat(dirFD, name, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
+		if err != nil {
+			return fmt.Errorf("open volume file %q: %w", name, err)
+		}
+		f := os.NewFile(uintptr(ffd), name)
+		h := &zip.FileHeader{Name: childZip, Method: zip.Deflate, Modified: info.ModTime()}
+		fw, headerErr := zw.CreateHeader(h)
+		if headerErr != nil {
+			f.Close()
+			return headerErr
+		}
+		_, copyErr := io.Copy(fw, f)
+		f.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+	}
+	return nil
 }
 
 func removeVolumeEntry(parentFD int, name string, recursive bool) error {

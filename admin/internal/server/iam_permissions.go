@@ -29,6 +29,8 @@ func iamPermissionDetails() map[string]iamPermissionDetail {
 		"pricing":        {"Pricing & Plans", "Product catalog prices, resource unit rates, discounts, payment-gateway configuration, currency/tax and billing-notification flags. Manage creates and edits catalog prices. Changing a catalog price does not rewrite active subscription amounts."},
 		"billing":        {"Billing & Payments", "Customer invoices, wallets, recorded payments, subscriptions, refunds, credits and revenue totals. Manage records bookkeeping entries. Card charges are not processed until a gateway processor is connected."},
 		"dns":            {"DNS Service", "Controller DNS zone and records auto-created from VPS, load balancer, database, managed app and worker inventory. Manage edits the zone and manual records. The controller does not listen on port 53 or publish public DNS."},
+		"vpc":            {"VPC", "Private IP blocks on the FileVPS bridge 10.231.0.0/16. The default block cannot be deleted. Manage creates, edits and deletes extra subnets. VPS, databases and managed apps use the default VPC unless another block is selected."},
+		"logs":           {"Log Service", "Central live tails for VPS, load balancer, database, Library and worker logs. Manage adds custom paths, downloads tails and configures keyword/level alerts that notify Settings channels."},
 		"platform":       {"Platform", "Controller-level API scope and fallback for platform endpoints. Does not grant access to other resource scopes."},
 	}
 	for key, resource := range resources {

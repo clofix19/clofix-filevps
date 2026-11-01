@@ -72,6 +72,30 @@ type Engine struct {
 	serviceCPUSamples map[string]serviceCPUSample
 	s3Mu              sync.Mutex
 	s3Mounts          map[string]*s3MountProcess
+	efsMu             sync.Mutex
+	efsMounts         map[string]*s3MountProcess
+	dnsMu             sync.Mutex
+	dnsHosts          []proto.DNSHost
+	fwMu              sync.Mutex
+	hostFW            proto.FirewallSpec
+	vpsFW             map[string]proto.FirewallSpec
+}
+
+func (e *Engine) SetDNSHosts(hosts []proto.DNSHost) {
+	e.dnsMu.Lock()
+	e.dnsHosts = append([]proto.DNSHost(nil), hosts...)
+	e.dnsMu.Unlock()
+	e.mu.Lock()
+	ids := make([]string, 0, len(e.meta))
+	for id := range e.meta {
+		ids = append(ids, id)
+	}
+	e.mu.Unlock()
+	for _, id := range ids {
+		if m, err := e.get(id); err == nil && isMounted(e.merged(id)) {
+			_ = e.configureHostname(m)
+		}
+	}
 }
 
 type cpuSample struct {
@@ -104,7 +128,7 @@ func New(cfg config.Config) *Engine {
 	return &Engine{
 		StateDir: st, LogDir: envOr("CLOFIX_LOG_DIR", "/var/log/clofix-filevps"), Cfg: cfg,
 		Images: image.New(filepath.Join(st, "images", "cache"), shift),
-		CG:     cgroups.New(), Network: network.New(), meta: map[string]*Meta{}, cpuSamples: map[string]cpuSample{}, netSamples: map[string]netSample{}, diskSamples: map[string]diskSample{}, serviceCPUSamples: map[string]serviceCPUSample{}, s3Mounts: map[string]*s3MountProcess{},
+		CG:     cgroups.New(), Network: network.New(), meta: map[string]*Meta{}, cpuSamples: map[string]cpuSample{}, netSamples: map[string]netSample{}, diskSamples: map[string]diskSample{}, serviceCPUSamples: map[string]serviceCPUSample{}, s3Mounts: map[string]*s3MountProcess{}, efsMounts: map[string]*s3MountProcess{},
 	}
 }
 
@@ -265,6 +289,10 @@ func (e *Engine) configureSSHFiles(id string, spec proto.InstanceSpec, owner int
 }
 
 func sshdAuthConfig(spec proto.InstanceSpec) string {
+	brand := "Banner /etc/issue.net\nPrintMotd yes\n"
+	if protectionEnabled(spec) {
+		brand += "ForceCommand /etc/clofix-protected-shell\n"
+	}
 	if spec.PasswordAuth {
 		body := "UsePAM yes\nPermitRootLogin yes\nPasswordAuthentication yes\nKbdInteractiveAuthentication yes\n"
 		if spec.SSHAuthorizedKey != "" {
@@ -272,9 +300,9 @@ func sshdAuthConfig(spec proto.InstanceSpec) string {
 		} else {
 			body += "PubkeyAuthentication no\n"
 		}
-		return body
+		return body + brand
 	}
-	return "UsePAM no\nPermitRootLogin prohibit-password\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPubkeyAuthentication yes\nAuthenticationMethods publickey\n"
+	return "UsePAM no\nPermitRootLogin prohibit-password\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPubkeyAuthentication yes\nAuthenticationMethods publickey\n" + brand
 }
 
 func (e *Engine) updatePasswordAuth(id string, enabled bool) error {
@@ -457,7 +485,7 @@ func (e *Engine) Create(id string, spec proto.InstanceSpec) error {
 		spec.BackupID = ""
 		// Backups contain only the writable root layer; host mounts and port assignments
 		// are deliberately not copied into the new guest.
-		spec.StorageMounts, spec.S3MountPath, spec.S3ConnectionID = nil, "", ""
+		spec.StorageMounts, spec.S3MountPath, spec.S3ConnectionID, spec.EFSMounts = nil, "", "", nil
 	}
 	if err := e.configureSSHFiles(id, spec, owner); err != nil {
 		return err
@@ -547,6 +575,15 @@ func (e *Engine) configureHostname(m *Meta) error {
 		return fmt.Errorf("write /etc/hostname: %w", err)
 	}
 	hosts := "127.0.0.1\tlocalhost\n127.0.1.1\t" + host + "\n::1\tlocalhost ip6-localhost ip6-loopback\n"
+	e.dnsMu.Lock()
+	extra := append([]proto.DNSHost(nil), e.dnsHosts...)
+	e.dnsMu.Unlock()
+	for _, rec := range extra {
+		if rec.Name == "" || rec.IP == "" {
+			continue
+		}
+		hosts += rec.IP + "\t" + rec.Name + "\n"
+	}
 	hostsPath := filepath.Join(root, "etc", "hosts")
 	if err := os.WriteFile(hostsPath, []byte(hosts), 0o644); err != nil {
 		return fmt.Errorf("write /etc/hosts: %w", err)
@@ -554,6 +591,43 @@ func (e *Engine) configureHostname(m *Meta) error {
 	for _, p := range []string{hostnamePath, hostsPath} {
 		if err := os.Lchown(p, owner, owner); err != nil {
 			return fmt.Errorf("set hostname file ownership: %w", err)
+		}
+	}
+	return nil
+}
+
+func (e *Engine) configureGuestBrand(m *Meta) error {
+	host := guestHostname(m)
+	root := e.merged(m.ID)
+	etc := filepath.Join(root, "etc")
+	if err := os.MkdirAll(etc, 0o755); err != nil {
+		return err
+	}
+	owner := e.guestOwner(m)
+	motd := "CloFix FileVPS\nHostname: " + host + "\nInstance: " + m.ID + "\n"
+	issue := "CloFix FileVPS · " + host + "\n"
+	if protectionEnabled(m.Spec) {
+		motd = "CloFix Security\nProtection Mode is enabled.\nGuest root is read-only. Commands are not available over SSH.\nDisable Protection Mode in CloFix Admin to open a shell.\n"
+		issue = "CloFix Security · Protection Mode\n"
+	}
+	release := "NAME=CloFix FileVPS\nVERSION=0.1.0\n"
+	files := []struct {
+		name string
+		body string
+		mode os.FileMode
+	}{
+		{"motd", motd, 0o644},
+		{"issue.net", issue, 0o644},
+		{"clofix-release", release, 0o644},
+		{"clofix-protected-shell", "#!/bin/sh\ncat /etc/motd\nexit 0\n", 0o755},
+	}
+	for _, f := range files {
+		path := filepath.Join(etc, f.name)
+		if err := os.WriteFile(path, []byte(f.body), f.mode); err != nil {
+			return fmt.Errorf("write /etc/%s: %w", f.name, err)
+		}
+		if err := os.Lchown(path, owner, owner); err != nil {
+			return fmt.Errorf("set /etc/%s ownership: %w", f.name, err)
 		}
 	}
 	return nil
@@ -677,6 +751,9 @@ func (e *Engine) Start(id string) error {
 	if err := e.configureHostname(m); err != nil {
 		return fail(fmt.Errorf("configure hostname: %w", err))
 	}
+	if err := e.configureGuestBrand(m); err != nil {
+		return fail(fmt.Errorf("configure guest brand: %w", err))
+	}
 	if err := e.configureDNS(m); err != nil {
 		return fail(fmt.Errorf("configure DNS: %w", err))
 	}
@@ -718,6 +795,15 @@ func (e *Engine) Start(id string) error {
 			return fail(err)
 		}
 		args = append(args, "--bind-mount", s3HostPath, m.S3MountPath)
+	}
+	for _, mount := range m.Spec.EFSMounts {
+		if mount.GuestPath == "" {
+			continue
+		}
+		if err := e.ensureEFSHost(mount.ID); err != nil {
+			return fail(err)
+		}
+		args = append(args, "--bind-mount", efsHostPath(e.StateDir, mount.ID), mount.GuestPath)
 	}
 	for _, mount := range m.Spec.StorageMounts {
 		if mount.GuestPath == "" {
@@ -792,6 +878,7 @@ func (e *Engine) Start(id string) error {
 			e.CG.Remove(id)
 			return fail(fmt.Errorf("network setup: %w", err))
 		}
+		e.applyRememberedVPSFirewall(id, m.Spec.IPAddress)
 	}
 	select {
 	case werr := <-done: // exited immediately: setup failed
@@ -862,6 +949,12 @@ func (e *Engine) Delete(id string) error {
 	if m.Spec.DeleteProtection {
 		return errors.New("VPS Delete Protection is enabled; disable it before deleting")
 	}
+	efsIDs := make([]string, 0, len(m.Spec.EFSMounts))
+	for _, mount := range m.Spec.EFSMounts {
+		if mount.ID != "" {
+			efsIDs = append(efsIDs, mount.ID)
+		}
+	}
 	if err := e.Stop(id); err != nil {
 		return err
 	}
@@ -875,6 +968,11 @@ func (e *Engine) Delete(id string) error {
 	e.mu.Lock()
 	delete(e.meta, id)
 	e.mu.Unlock()
+	for _, eid := range efsIDs {
+		if !e.localEFSUsers(eid) {
+			e.stopEFSHost(eid)
+		}
+	}
 	return nil
 }
 
@@ -923,6 +1021,16 @@ func (e *Engine) Apply(op proto.Operation) error {
 			return errors.New("port update requires instance spec")
 		}
 		return e.UpdatePorts(op.InstanceID, op.Spec.PortMappings)
+	case proto.ActionUpdateFirewall:
+		if op.Firewall == nil {
+			return errors.New("firewall update requires spec")
+		}
+		return e.UpdateFirewall(*op.Firewall)
+	case proto.ActionUpdateEFS:
+		if op.EFS == nil {
+			return errors.New("EFS update requires share")
+		}
+		return e.UpdateEFS(op.InstanceID, *op.EFS)
 	case proto.ActionUpdateResources:
 		if op.Spec == nil {
 			return errors.New("resource update requires instance spec")
@@ -1004,6 +1112,11 @@ func (e *Engine) UpdateStorageMounts(id string, mounts []proto.StorageMount) err
 	for _, mount := range mounts {
 		if !validID.MatchString(mount.ID) || (mount.GuestPath != "" && !validStorageGuestPath(mount.GuestPath)) || seenIDs[mount.ID] || (mount.GuestPath != "" && seenPaths[mount.GuestPath]) || (mount.GuestPath != "" && pathsOverlap(mount.GuestPath, m.Spec.S3MountPath)) {
 			return errors.New("invalid or duplicate storage mount")
+		}
+		for _, efs := range m.Spec.EFSMounts {
+			if mount.GuestPath != "" && pathsOverlap(mount.GuestPath, efs.GuestPath) {
+				return errors.New("storage mount paths cannot overlap EFS")
+			}
 		}
 		seenIDs[mount.ID] = true
 		if mount.GuestPath != "" {
@@ -2381,6 +2494,73 @@ func serviceProcessNames(service string) []string {
 		return []string{service, "php-fpm", "php-fpm8.3", "php-fpm8.4"}
 	}
 	return []string{strings.ToLower(service)}
+}
+
+func (e *Engine) rememberFirewall(spec proto.FirewallSpec) {
+	e.fwMu.Lock()
+	defer e.fwMu.Unlock()
+	if spec.Scope == "host" {
+		e.hostFW = spec
+		return
+	}
+	if e.vpsFW == nil {
+		e.vpsFW = map[string]proto.FirewallSpec{}
+	}
+	e.vpsFW[spec.InstanceID] = spec
+}
+
+func (e *Engine) applyRememberedVPSFirewall(id, guestIP string) {
+	e.fwMu.Lock()
+	spec, ok := e.vpsFW[id]
+	e.fwMu.Unlock()
+	if !ok {
+		return
+	}
+	spec.GuestIP = guestIP
+	if err := e.UpdateFirewall(spec); err != nil {
+		log.Printf("firewall start %s: %v", id, err)
+	}
+}
+
+func (e *Engine) ApplyFirewalls(specs []proto.FirewallSpec) {
+	for _, spec := range specs {
+		if err := e.UpdateFirewall(spec); err != nil {
+			log.Printf("firewall apply: %v", err)
+		}
+	}
+}
+
+func (e *Engine) UpdateFirewall(spec proto.FirewallSpec) error {
+	host := spec.Scope == "host" || spec.InstanceID == ""
+	if err := proto.NormalizeFirewallSpec(&spec, host); err != nil {
+		return err
+	}
+	if !host && spec.InstanceID == "" {
+		return errors.New("instance id required")
+	}
+	if host {
+		e.rememberFirewall(spec)
+		return e.Network.SyncHostFirewall(spec.Restrict, spec.Rules)
+	}
+	e.mu.Lock()
+	m, ok := e.meta[spec.InstanceID]
+	guestIP := spec.GuestIP
+	running := false
+	if ok && m.Spec.IPAddress != "" {
+		guestIP = m.Spec.IPAddress
+		running = m.State == proto.StateRunning
+	}
+	e.mu.Unlock()
+	if guestIP == "" {
+		e.rememberFirewall(spec)
+		return nil
+	}
+	spec.GuestIP = guestIP
+	e.rememberFirewall(spec)
+	if !ok || !running {
+		return nil
+	}
+	return e.Network.SyncVPSFirewall(spec.InstanceID, guestIP, spec.Restrict, spec.Rules)
 }
 
 func (e *Engine) UpdatePorts(id string, mappings []proto.PortMapping) error {

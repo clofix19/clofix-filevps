@@ -28,6 +28,7 @@ type WebDeployment struct {
 var ManagedTemplates = []ManagedTemplate{
 	{"adminer", "Adminer", "Browser-based database management", 256},
 	{"uptime-kuma", "Uptime Kuma", "Website monitoring and status dashboards", 512},
+	{"jenkins", "Jenkins", "Automation server for CI/CD jobs and pipelines", 1024},
 	{"web-static", "Static website", "Upload a ZIP containing HTML, CSS, JavaScript and assets", 128},
 	{"web-php", "PHP website", "Upload a ZIP containing a PHP application", 256},
 	{"web-nodejs", "Node.js application", "Production ZIP with package.json and node_modules", 512},
@@ -37,13 +38,14 @@ var ManagedTemplates = []ManagedTemplate{
 var managedID = regexp.MustCompile(`^ma-[a-f0-9]{16}$`)
 
 type ManagedSpec struct {
-	ID          string  `json:"id"`
-	Template    string  `json:"template"`
-	RAMMB       int64   `json:"ram_mb"`
-	CPU         float64 `json:"cpu"`
-	Address     string  `json:"address"`
-	Port        int     `json:"port"`
-	GatewayHash string  `json:"gateway_hash"`
+	ID          string        `json:"id"`
+	Template    string        `json:"template"`
+	RAMMB       int64         `json:"ram_mb"`
+	CPU         float64       `json:"cpu"`
+	Address     string        `json:"address"`
+	VPCID       string        `json:"vpc_id,omitempty"`
+	Port        int           `json:"port"`
+	GatewayHash string        `json:"gateway_hash"`
 	Deployment  WebDeployment `json:"deployment,omitempty"`
 }
 

@@ -133,6 +133,7 @@ func (s *Server) deployManagedApp(w http.ResponseWriter, r *http.Request) {
 		Database         string            `json:"database"`
 		DatabaseUser     string            `json:"database_user"`
 		DatabasePassword string            `json:"database_password"`
+		VPCID            string            `json:"vpc_id"`
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 24<<20)).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" || len(in.Name) > 80 {
 		fail(w, 400, "application name is required (max 80 characters)")
@@ -204,6 +205,15 @@ func (s *Server) deployManagedApp(w http.ResponseWriter, r *http.Request) {
 	if in.CPU == 0 {
 		in.CPU = 1
 	}
+	vpc, err := s.lookupVPC(in.VPCID)
+	if err != nil {
+		fail(w, 400, err.Error())
+		return
+	}
+	if !vpc.Default {
+		fail(w, 409, "managed apps can only use the default VPC; extra blocks cannot keep the 10.231.128.x port mapping")
+		return
+	}
 	password := randHex(24)
 	credential, err := s.encryptApplicationSecrets(map[string]string{"username": "client", "password": password})
 	if err != nil {
@@ -217,7 +227,7 @@ func (s *Server) deployManagedApp(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, "managed application limit reached")
 		return
 	}
-	spec := proto.ManagedSpec{ID: "ma-" + randHex(8), Template: in.Template, RAMMB: in.RAMMB, CPU: in.CPU, GatewayHash: hashToken(password), Port: 25000, Address: "10.231.128.2", Deployment: proto.WebDeployment{Runtime: in.Runtime, Entry: strings.TrimSpace(in.Entry), Artifact: in.Artifact, Env: in.Env}}
+	spec := proto.ManagedSpec{ID: "ma-" + randHex(8), Template: in.Template, RAMMB: in.RAMMB, CPU: in.CPU, GatewayHash: hashToken(password), Port: 25000, Address: "10.231.128.2", VPCID: vpc.ID, Deployment: proto.WebDeployment{Runtime: in.Runtime, Entry: strings.TrimSpace(in.Entry), Artifact: in.Artifact, Env: in.Env}}
 	if err = proto.ValidateManaged(spec); err != nil {
 		fail(w, 400, err.Error())
 		return

@@ -1,61 +1,138 @@
 {{define "content"}}
 <section class="page active" id="page-home">
-  <div class="section-head">
-    <div><p class="eyebrow">Overview</p><h2>Cloud dashboard</h2><p>Live VPS, worker, resource, and security status. Charts build a rolling history while this page is open.</p></div>
-    <a class="primary" href="/instances?create=1">＋ Create FileVPS</a>
+  <div class="section-head home-console-head">
+    <div><h2>Console Home</h2></div>
+    <div class="row-actions">
+      <button class="secondary" id="home-reset-layout" type="button">Reset layout</button>
+      <details class="home-add-widgets" id="home-add-widgets"><summary class="secondary">Add widgets</summary><div id="home-add-list"></div></details>
+      <a class="primary" href="/instances?create=1">＋ Create FileVPS</a>
+    </div>
   </div>
   <div class="home-loading" id="home-loading" role="status" aria-live="polite">Loading VPS and worker overview…</div>
   <div class="home-empty" id="home-empty" hidden><strong>No infrastructure yet</strong><p>Enroll a worker, then create your first FileVPS.</p><a class="primary" href="/workers">Enroll worker</a></div>
-  <section class="metric-group" aria-labelledby="home-compute-heading">
-    <h3 class="metric-group-title" id="home-compute-heading">Compute</h3>
-    <div class="cards">
-      <div class="stat"><div class="stat-label">Total VPS</div><div class="stat-value" id="home-total">—</div><div class="stat-note">All provisioned instances</div></div>
-      <div class="stat"><div class="stat-label">Running VPS</div><div class="stat-value" id="home-running">—</div><div class="stat-note">Currently active</div></div>
-      <a class="stat stat-link" id="home-failed-link" href="/instances?state=FAILED" aria-label="View failed VPS instances"><div class="stat-label">Needs attention</div><div class="stat-value" id="home-failed">—</div><div class="stat-note" id="home-failed-note">Failed instances</div></a>
-      <div class="stat"><div class="stat-label">Connected workers</div><div class="stat-value" id="home-workers">—</div><div class="stat-note">Active / enrolled</div></div>
-      <div class="stat"><div class="stat-label">Guest RAM</div><div class="stat-value" id="home-ram">—</div><div class="stat-note">Used / allocated across running VPSs</div><div class="meter" role="progressbar" id="home-ram-meter" aria-label="Guest RAM utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-ram-bar"></div></div></div>
-      <div class="stat"><div class="stat-label">Guest CPU</div><div class="stat-value" id="home-cpu">—</div><div class="stat-note">Used / allocated vCPU</div><div class="meter" role="progressbar" id="home-cpu-meter" aria-label="Guest CPU utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-cpu-bar"></div></div></div>
-      <div class="stat"><div class="stat-label">Guest swap</div><div class="stat-value" id="home-swap">—</div><div class="stat-note">Used / configured limit</div><div class="meter" role="progressbar" id="home-swap-meter" aria-label="Guest swap utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-swap-bar"></div></div></div>
-      <div class="stat"><div class="stat-label">Pending placement</div><div class="stat-value" id="home-pending">—</div><div class="stat-note">VPSs in PENDING state; current scheduler does not queue rejected requests</div></div>
+
+  <div class="home-widgets">
+    <div class="home-col">
+      <article class="home-widget" data-home-widget="recent" aria-labelledby="home-recent-title">
+        <div class="home-widget-head"><h3 id="home-recent-title">Recently visited</h3><button class="home-widget-hide" type="button" data-hide-widget="recent" aria-label="Hide recently visited">⋯</button></div>
+        <div class="home-recent" id="home-recent-list"></div>
+        <a class="home-widget-foot" href="/instances">View FileVPS</a>
+      </article>
+
+      <article class="home-widget" data-home-widget="usage" aria-labelledby="home-usage-title">
+        <div class="home-widget-head"><h3 id="home-usage-title">Resource usage</h3><button class="home-widget-hide" type="button" data-hide-widget="usage" aria-label="Hide resource usage">⋯</button></div>
+        <div class="chart-toolbar"><div class="chart-ranges" role="group" aria-label="Chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="6h" aria-pressed="false">6h</button><button type="button" data-chart-range="1d" aria-pressed="false">1d</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button><button type="button" data-chart-range="custom" aria-pressed="false">Custom</button></div><div class="chart-custom" hidden><label>From <input type="datetime-local" data-chart-from></label><label>To <input type="datetime-local" data-chart-to></label><button type="button" class="small-btn" data-chart-custom-apply>Apply</button></div></div>
+        <div class="home-usage-grid">
+          <div>
+            <div class="home-usage-label">Guest CPU</div>
+            <div class="home-usage-value" id="home-cpu">—</div>
+            <div class="meter" role="progressbar" id="home-cpu-meter" aria-label="Guest CPU utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-cpu-bar"></div></div>
+            <svg id="chart-cpu" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS CPU usage and allocated capacity chart"></svg>
+            <div class="chart-current" id="chart-cpu-current">—</div>
+          </div>
+          <div>
+            <div class="home-usage-label">Guest RAM</div>
+            <div class="home-usage-value" id="home-ram">—</div>
+            <div class="meter" role="progressbar" id="home-ram-meter" aria-label="Guest RAM utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-ram-bar"></div></div>
+            <svg id="chart-memory" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS memory usage and allocated capacity chart"></svg>
+            <div class="chart-current" id="chart-memory-current">—</div>
+          </div>
+        </div>
+      </article>
+
+      <article class="home-widget" data-home-widget="compute" aria-labelledby="home-compute-heading">
+        <div class="home-widget-head"><h3 id="home-compute-heading">Compute</h3><button class="home-widget-hide" type="button" data-hide-widget="compute" aria-label="Hide compute">⋯</button></div>
+        <div class="cards home-compact-cards">
+          <div class="stat"><div class="stat-label">Total VPS</div><div class="stat-value" id="home-total">—</div><div class="stat-note">All provisioned instances</div></div>
+          <div class="stat"><div class="stat-label">Running VPS</div><div class="stat-value" id="home-running">—</div><div class="stat-note">Currently active</div></div>
+          <div class="stat"><div class="stat-label">Guest swap</div><div class="stat-value" id="home-swap">—</div><div class="stat-note">Used / configured limit</div><div class="meter" role="progressbar" id="home-swap-meter" aria-label="Guest swap utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-swap-bar"></div></div></div>
+        </div>
+      </article>
+
+      <article class="home-widget" data-home-widget="host" aria-labelledby="home-host-heading">
+        <div class="home-widget-head"><h3 id="home-host-heading">Host capacity</h3><button class="home-widget-hide" type="button" data-hide-widget="host" aria-label="Hide host capacity">⋯</button></div>
+        <div class="cards home-compact-cards">
+          <div class="stat"><div class="stat-label">Worker RAM</div><div class="stat-value" id="home-host-ram">—</div><div class="stat-note">Available / total across active workers</div><div class="meter" role="progressbar" id="home-host-ram-meter" aria-label="Worker RAM utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-host-ram-bar"></div></div></div>
+          <div class="stat"><div class="stat-label">Worker disk</div><div class="stat-value" id="home-host-disk">—</div><div class="stat-note">Available / total across active workers</div><div class="meter" role="progressbar" id="home-host-disk-meter" aria-label="Worker disk utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-host-disk-bar"></div></div></div>
+          <div class="stat"><div class="stat-label">Host swap</div><div class="stat-value" id="home-host-swap">—</div><div class="stat-note">Used / total on active workers</div><div class="meter" role="progressbar" id="home-host-swap-meter" aria-label="Host swap utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-host-swap-bar"></div></div></div>
+          <div class="stat"><div class="stat-label">Memory PSI</div><div class="stat-value" id="home-memory-psi">—</div><div class="stat-note">Highest worker pressure</div></div>
+          <div class="stat"><div class="stat-label">License usage</div><div class="stat-value" id="home-license">Unavailable</div><div class="stat-note">Requires a license usage endpoint</div></div>
+          <div class="stat"><div class="stat-label">Host CPU</div><div class="stat-note">Core-weighted across active workers</div><div class="meter" role="progressbar" id="home-host-cpu-meter" aria-label="Host CPU utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-host-cpu-bar"></div></div></div>
+        </div>
+      </article>
+
+      <article class="home-widget" data-home-widget="fleet" aria-labelledby="home-heading-fleet">
+        <div class="home-widget-head"><h3 id="home-heading-fleet">VPS fleet</h3><a class="small-btn" href="/instances">All VPS</a><button class="home-widget-hide" type="button" data-hide-widget="fleet" aria-label="Hide fleet">⋯</button></div>
+        <div class="table-wrap"><table id="home-vps-table"></table></div>
+      </article>
     </div>
-  </section>
-  <section class="metric-group" aria-labelledby="home-network-heading">
-    <h3 class="metric-group-title" id="home-network-heading">Network</h3>
-    <div class="cards">
-      <div class="stat"><div class="stat-label">VPS Network IN</div><div class="stat-value" id="home-net-in">—</div><div class="stat-note" id="home-net-in-note">Received by running guests</div></div>
-      <div class="stat"><div class="stat-label">VPS Network OUT</div><div class="stat-value" id="home-net-out">—</div><div class="stat-note" id="home-net-out-note">Sent by running guests</div></div>
-      <div class="stat"><div class="stat-label">VPS bandwidth</div><div class="stat-value" id="home-net-bw">—</div><div class="stat-note" id="home-net-bw-note">IN + OUT across running VPS</div></div>
-      <div class="stat"><div class="stat-label">Worker Network IN</div><div class="stat-value" id="home-host-net-in">—</div><div class="stat-note" id="home-host-net-in-note">Host uplink receive</div></div>
-      <div class="stat"><div class="stat-label">Worker Network OUT</div><div class="stat-value" id="home-host-net-out">—</div><div class="stat-note" id="home-host-net-out-note">Host uplink transmit</div></div>
-      <div class="stat"><div class="stat-label">Worker bandwidth</div><div class="stat-value" id="home-host-net-bw">—</div><div class="stat-note" id="home-host-net-bw-note">IN + OUT on worker uplink NICs</div></div>
+
+    <div class="home-col">
+      <article class="home-widget" data-home-widget="security" aria-labelledby="home-security-title">
+        <div class="home-widget-head"><h3 id="home-security-title">Security</h3><button class="home-widget-hide" type="button" data-hide-widget="security" aria-label="Hide security">⋯</button></div>
+        <p class="muted visually-hidden" id="home-security-note">Protection Mode and HTTP WAF are separate layers</p>
+        <dl class="home-facts">
+          <div><dt>Coverage</dt><dd id="home-security">—</dd></div>
+          <div><dt>Failed VPS</dt><dd><a id="home-failed-link" href="/instances?state=FAILED"><span id="home-failed">—</span></a></dd></div>
+          <div><dt>Pending</dt><dd id="home-pending">—</dd></div>
+        </dl>
+        <p class="muted visually-hidden" id="home-failed-note">Failed instances</p>
+        <a class="home-widget-foot" href="/security">Go to Security</a>
+      </article>
+
+      <article class="home-widget" data-home-widget="welcome" aria-labelledby="home-welcome-title">
+        <div class="home-widget-head"><h3 id="home-welcome-title">Get started</h3><button class="home-widget-hide" type="button" data-hide-widget="welcome" aria-label="Hide get started">⋯</button></div>
+        <ul class="home-welcome">
+          <li><a href="/workers"><strong>Enroll a worker</strong><span>Connect a Linux host to run FileVPS</span></a></li>
+          <li><a href="/instances?create=1"><strong>Create a FileVPS</strong><span>Launch a Linux instance on a worker</span></a></li>
+          <li><a href="/services"><strong>Deploy from Library</strong><span>Quick Apps, Jenkins, and VPS software</span></a></li>
+          <li><a href="/settings"><strong>Review settings</strong><span>Defaults, pricing, and license</span></a></li>
+        </ul>
+      </article>
+
+      <article class="home-widget" data-home-widget="health" aria-labelledby="home-health-title">
+        <div class="home-widget-head"><h3 id="home-health-title">Fleet health</h3><button class="home-widget-hide" type="button" data-hide-widget="health" aria-label="Hide fleet health">⋯</button></div>
+        <dl class="home-facts">
+          <div><dt>Workers</dt><dd id="home-workers">—</dd></div>
+          <div><dt>Host CPU</dt><dd id="home-host-cpu">—</dd></div>
+          <div><dt>ZRAM</dt><dd><span class="badge" id="home-zram-state">—</span></dd></div>
+        </dl>
+        <p class="muted" id="home-zram">Waiting for worker data</p>
+        <div class="meter" role="progressbar" id="home-zram-meter" aria-label="ZRAM logical capacity used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-zram-bar"></div></div>
+        <a class="home-widget-foot" href="/health-checks">Go to Health Checks</a>
+      </article>
+
+      <article class="home-widget" data-home-widget="network" aria-labelledby="home-network-heading">
+        <div class="home-widget-head"><h3 id="home-network-heading">Network</h3><button class="home-widget-hide" type="button" data-hide-widget="network" aria-label="Hide network">⋯</button></div>
+        <div class="cards home-compact-cards">
+          <div class="stat"><div class="stat-label">VPS IN</div><div class="stat-value" id="home-net-in">—</div><div class="stat-note" id="home-net-in-note">Received</div></div>
+          <div class="stat"><div class="stat-label">VPS OUT</div><div class="stat-value" id="home-net-out">—</div><div class="stat-note" id="home-net-out-note">Sent</div></div>
+          <div class="stat"><div class="stat-label">VPS bandwidth</div><div class="stat-value" id="home-net-bw">—</div><div class="stat-note" id="home-net-bw-note">IN + OUT</div></div>
+          <div class="stat"><div class="stat-label">Worker IN</div><div class="stat-value" id="home-host-net-in">—</div><div class="stat-note" id="home-host-net-in-note">Uplink receive</div></div>
+          <div class="stat"><div class="stat-label">Worker OUT</div><div class="stat-value" id="home-host-net-out">—</div><div class="stat-note" id="home-host-net-out-note">Uplink transmit</div></div>
+          <div class="stat"><div class="stat-label">Worker bandwidth</div><div class="stat-value" id="home-host-net-bw">—</div><div class="stat-note" id="home-host-net-bw-note">IN + OUT</div></div>
+        </div>
+        <details class="home-more"><summary>Network charts</summary><div class="chart-toolbar"><div class="chart-ranges" role="group" aria-label="Chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="6h" aria-pressed="false">6h</button><button type="button" data-chart-range="1d" aria-pressed="false">1d</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button><button type="button" data-chart-range="custom" aria-pressed="false">Custom</button></div><div class="chart-custom" hidden><label>From <input type="datetime-local" data-chart-from></label><label>To <input type="datetime-local" data-chart-to></label><button type="button" class="small-btn" data-chart-custom-apply>Apply</button></div></div>
+        <div class="chart-grid home-mini-charts">
+          <article class="chart-panel"><div class="chart-title">VPS network</div><div class="chart-current" id="chart-net-current">—</div><svg id="chart-net" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS network IN and OUT chart"></svg></article>
+          <article class="chart-panel"><div class="chart-title">VPS bandwidth</div><div class="chart-current" id="chart-bw-current">—</div><svg id="chart-bw" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS bandwidth chart"></svg></article>
+          <article class="chart-panel"><div class="chart-title">Worker network</div><div class="chart-current" id="chart-host-net-current">—</div><svg id="chart-host-net" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live worker network IN and OUT chart"></svg></article>
+          <article class="chart-panel"><div class="chart-title">Worker bandwidth</div><div class="chart-current" id="chart-host-bw-current">—</div><svg id="chart-host-bw" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live worker bandwidth chart"></svg></article>
+        </div>
+        </details>
+      </article>
+
+      <article class="home-widget" data-home-widget="workers" aria-labelledby="home-heading-workers">
+        <div class="home-widget-head"><h3 id="home-heading-workers">Worker capacity</h3><a class="small-btn" href="/workers">All workers</a><button class="home-widget-hide" type="button" data-hide-widget="workers" aria-label="Hide workers">⋯</button></div>
+        <div class="table-wrap"><table id="home-worker-table"></table></div>
+      </article>
+
+      <article class="home-widget" data-home-widget="activity" aria-labelledby="home-heading-activity">
+        <div class="home-widget-head"><h3 id="home-heading-activity">Recent activity</h3><span class="badge" id="home-activity-state">Unavailable</span><button class="home-widget-hide" type="button" data-hide-widget="activity" aria-label="Hide activity">⋯</button></div>
+        <p class="muted" id="home-activity-empty">Audit events are recorded, but no read endpoint is available. Required endpoint: <code>GET /api/audit?limit=10</code>.</p>
+        <ol class="activity-list" id="home-activity-list" hidden></ol>
+      </article>
     </div>
-  </section>
-  <section class="metric-group" aria-labelledby="home-host-heading">
-    <h3 class="metric-group-title" id="home-host-heading">Host capacity</h3>
-    <div class="cards">
-      <div class="stat"><div class="stat-label">Worker RAM</div><div class="stat-value" id="home-host-ram">—</div><div class="stat-note">Available / total across active workers</div><div class="meter" role="progressbar" id="home-host-ram-meter" aria-label="Worker RAM utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-host-ram-bar"></div></div></div>
-      <div class="stat"><div class="stat-label">Host CPU utilization</div><div class="stat-value" id="home-host-cpu">—</div><div class="stat-note">Core-weighted across active workers</div><div class="meter" role="progressbar" id="home-host-cpu-meter" aria-label="Host CPU utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-host-cpu-bar"></div></div></div>
-      <div class="stat"><div class="stat-label">Worker disk</div><div class="stat-value" id="home-host-disk">—</div><div class="stat-note">Available / total across active workers</div><div class="meter" role="progressbar" id="home-host-disk-meter" aria-label="Worker disk utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-host-disk-bar"></div></div></div>
-      <div class="stat"><div class="stat-label">Host swap</div><div class="stat-value" id="home-host-swap">—</div><div class="stat-note">Used / total on active workers</div><div class="meter" role="progressbar" id="home-host-swap-meter" aria-label="Host swap utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-host-swap-bar"></div></div></div>
-      <div class="stat"><div class="stat-label">ZRAM</div><div class="stat-value"><span class="badge" id="home-zram-state">—</span></div><div class="stat-note" id="home-zram">Waiting for worker data</div><div class="meter" role="progressbar" id="home-zram-meter" aria-label="ZRAM logical capacity used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-zram-bar"></div></div></div>
-      <div class="stat"><div class="stat-label">Memory PSI by worker</div><div class="stat-value" id="home-memory-psi">—</div><div class="stat-note">See per-worker pressure below</div></div>
-      <div class="stat"><div class="stat-label">Security coverage</div><div class="stat-value" id="home-security">—</div><div class="stat-note" id="home-security-note">Protection Mode and HTTP WAF are separate layers</div></div>
-      <div class="stat"><div class="stat-label">License usage</div><div class="stat-value" id="home-license">Unavailable</div><div class="stat-note">Requires a license usage endpoint</div></div>
-    </div>
-  </section>
-  <div class="chart-grid">
-    <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">VPS CPU usage</div><div class="chart-subtitle">Estimated usage and allocated capacity · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-cpu-current">—</div><div class="chart-ranges" role="group" aria-label="CPU chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button></div></div></div><svg id="chart-cpu" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS CPU usage and allocated capacity chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>Used vCPU</span><span><i class="legend-dot blue"></i>Allocated vCPU</span></div></article>
-    <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">VPS memory usage</div><div class="chart-subtitle">Guest cgroup RAM usage and allocated limit · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-memory-current">—</div><div class="chart-ranges" role="group" aria-label="Memory chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button></div></div></div><svg id="chart-memory" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS memory usage and allocated capacity chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>Used RAM</span><span><i class="legend-dot blue"></i>Allocated RAM</span></div></article>
-    <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">VPS network</div><div class="chart-subtitle">Guest IN and OUT rates · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-net-current">—</div><div class="chart-ranges" role="group" aria-label="VPS network chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button></div></div></div><svg id="chart-net" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS network IN and OUT chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>IN</span><span><i class="legend-dot amber"></i>OUT</span></div></article>
-    <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">VPS bandwidth</div><div class="chart-subtitle">Combined guest IN + OUT · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-bw-current">—</div><div class="chart-ranges" role="group" aria-label="VPS bandwidth chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button></div></div></div><svg id="chart-bw" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS bandwidth chart"></svg><div class="chart-legend"><span><i class="legend-dot blue"></i>Bandwidth</span></div></article>
-    <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Worker network</div><div class="chart-subtitle">Host uplink IN and OUT · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-host-net-current">—</div><div class="chart-ranges" role="group" aria-label="Worker network chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button></div></div></div><svg id="chart-host-net" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live worker network IN and OUT chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>IN</span><span><i class="legend-dot amber"></i>OUT</span></div></article>
-    <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Worker bandwidth</div><div class="chart-subtitle">Combined host uplink IN + OUT · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-host-bw-current">—</div><div class="chart-ranges" role="group" aria-label="Worker bandwidth chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button></div></div></div><svg id="chart-host-bw" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live worker bandwidth chart"></svg><div class="chart-legend"><span><i class="legend-dot blue"></i>Bandwidth</span></div></article>
   </div>
-  <div class="dashboard-grid">
-    <div class="panel"><div class="section-head"><div><h2>VPS fleet</h2><p>Current state, placement, and live resource usage.</p></div><a class="small-btn" href="/instances">All VPS</a></div><div class="table-wrap"><table id="home-vps-table"></table></div></div>
-    <div class="panel"><div class="section-head"><div><h2>Worker capacity</h2><p>Available host resources and worker memory pressure (PSI).</p></div><a class="small-btn" href="/workers">All workers</a></div><div class="table-wrap"><table id="home-worker-table"></table></div></div>
-  </div>
-  <div class="panel"><div class="section-head"><div><h2>Recent activity</h2><p>Last 10 controller audit events</p></div><span class="badge" id="home-activity-state">Unavailable</span></div><p class="muted" id="home-activity-empty">Audit events are recorded, but no read endpoint is available. Required endpoint: <code>GET /api/audit?limit=10</code>.</p><ol class="activity-list" id="home-activity-list" hidden></ol></div>
-  <div class="panel"><div class="section-head"><div><h2>Overview data availability</h2><p>Identity, licensing, and audit values are not fabricated.</p></div></div><ul class="endpoint-list"><li>Recent audit events: <code>GET /api/audit?limit=10</code></li><li>Username, role, MFA status: <code>GET /api/session</code></li><li>Worker and VPS license quotas: <code>GET /api/license/usage</code></li><li>Queued placement requests: <code>GET /api/placement/queue</code> plus a real waiting-queue implementation; today no-capacity requests are rejected.</li></ul><p class="muted">Logout clears this browser's admin token. The current token authentication has no server-side identity or MFA state.</p></div>
 </section>
 {{end}}

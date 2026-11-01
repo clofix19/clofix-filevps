@@ -40,17 +40,126 @@ type loadBalancer struct {
 	Min           int                `json:"min_vps"`
 	Max           int                `json:"max_vps"`
 	TargetCPU     float64            `json:"target_cpu"`
+	TargetRPS     float64            `json:"target_rps,omitempty"`
 	HealthPath    string             `json:"health_path"`
+	EFSID         string             `json:"efs_id,omitempty"`
+	EFSPath       string             `json:"efs_path,omitempty"`
 	Spec          proto.InstanceSpec `json:"spec"`
 	Instances     []string           `json:"instances"`
 	Deleting      bool               `json:"deleting"`
 	Error         string             `json:"error,omitempty"`
 	LastScale     time.Time          `json:"last_scale"`
+	ScaleReason   string             `json:"scale_reason,omitempty"`
 	Healthy       map[string]string  `json:"healthy"`
+	InFlight      int                `json:"in_flight"`
+	Hits1m        int                `json:"hits_1m"`
+	AvgLatencyMS  float64            `json:"avg_latency_ms"`
 	sequence      uint64
 	active        map[string]int
 	latency       map[string]time.Duration
+	hits          *hitMinute
 }
+
+// hitMinute is a 60-second sliding window of ALB proxy completions.
+type hitMinute struct {
+	sec  [60]int
+	base int64
+}
+
+func (h *hitMinute) add(now time.Time) {
+	if h == nil {
+		return
+	}
+	h.rotate(now.Unix())
+	idx := int(now.Unix() - h.base)
+	if idx >= 0 && idx < 60 {
+		h.sec[idx]++
+	}
+}
+
+func (h *hitMinute) count(now time.Time) int {
+	if h == nil {
+		return 0
+	}
+	h.rotate(now.Unix())
+	n := 0
+	for _, v := range h.sec {
+		n += v
+	}
+	return n
+}
+
+func (h *hitMinute) rotate(now int64) {
+	if h.base == 0 {
+		h.base = now
+		return
+	}
+	delta := now - h.base
+	if delta <= 0 {
+		return
+	}
+	if delta >= 60 {
+		for i := range h.sec {
+			h.sec[i] = 0
+		}
+		h.base = now
+		return
+	}
+	var next [60]int
+	for i := int(delta); i < 60; i++ {
+		next[i-int(delta)] = h.sec[i]
+	}
+	h.sec = next
+	h.base += delta
+}
+
+func (b *loadBalancer) ensureHits() {
+	if b.hits == nil {
+		b.hits = &hitMinute{}
+	}
+}
+
+func (b *loadBalancer) refreshLive() {
+	if b == nil {
+		return
+	}
+	inFlight := 0
+	for _, n := range b.active {
+		inFlight += n
+	}
+	b.InFlight = inFlight
+	if b.Mode == "nlb" {
+		b.Hits1m = 0
+	} else {
+		b.ensureHits()
+		b.Hits1m = b.hits.count(time.Now())
+	}
+	var sum time.Duration
+	n := 0
+	for _, d := range b.latency {
+		if d > 0 {
+			sum += d
+			n++
+		}
+	}
+	if n > 0 {
+		b.AvgLatencyMS = float64(sum/time.Duration(n)) / float64(time.Millisecond)
+	} else {
+		b.AvgLatencyMS = 0
+	}
+}
+
+func (b *loadBalancer) efsGuestPath() string {
+	if b == nil {
+		return "/var/www/html"
+	}
+	p := strings.TrimSpace(b.EFSPath)
+	if p == "" {
+		return "/var/www/html"
+	}
+	return p
+}
+
 type loadBalancerStore struct {
 	sync.Mutex
 	Network   nlbSettings `json:"network"`
@@ -73,6 +182,7 @@ func loadBalancers(dir string) *loadBalancerStore {
 		b.Healthy = map[string]string{}
 		b.active = map[string]int{}
 		b.latency = map[string]time.Duration{}
+		b.InFlight, b.Hits1m, b.AvgLatencyMS = 0, 0, 0
 	}
 	return d
 }
@@ -80,7 +190,18 @@ func (d *loadBalancerStore) save() error {
 	if e := os.MkdirAll(filepath.Dir(d.file), 0700); e != nil {
 		return e
 	}
+	type liveSnap struct{ in, hits int; lat float64 }
+	live := map[string]liveSnap{}
+	for id, b := range d.Items {
+		live[id] = liveSnap{b.InFlight, b.Hits1m, b.AvgLatencyMS}
+		b.InFlight, b.Hits1m, b.AvgLatencyMS = 0, 0, 0
+	}
 	raw, e := json.Marshal(d)
+	for id, b := range d.Items {
+		if snap, ok := live[id]; ok {
+			b.InFlight, b.Hits1m, b.AvgLatencyMS = snap.in, snap.hits, snap.lat
+		}
+	}
 	if e != nil {
 		return e
 	}
@@ -110,6 +231,7 @@ func (s *Server) listLoadBalancers(w http.ResponseWriter, r *http.Request) {
 	defer d.Unlock()
 	out := []*loadBalancer{}
 	for _, b := range d.Items {
+		b.refreshLive()
 		out = append(out, b)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -151,11 +273,40 @@ func (s *Server) saveLoadBalancer(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "name, supported algorithm, 1 ≤ min ≤ max ≤ 100 and target CPU 10–95 are required")
 		return
 	}
+	if b.TargetRPS < 0 || b.TargetRPS > 1_000_000 {
+		fail(w, 400, "target requests per VPS must be 0 (CPU only) or up to 1000000")
+		return
+	}
+	if b.Mode == "nlb" {
+		b.TargetRPS = 0
+	}
 	if p, e := s.licensedPlan(); e != nil {
 		fail(w, 403, e.Error())
 		return
 	} else if b.Max > p.MaxVPS {
 		fail(w, 403, "maximum VPS exceeds the licensed VPS quota")
+		return
+	}
+	b.EFSID = strings.TrimSpace(b.EFSID)
+	b.EFSPath = strings.TrimSpace(b.EFSPath)
+	if b.EFSID != "" {
+		if !apiInstanceID.MatchString(b.EFSID) {
+			fail(w, 400, "invalid EFS share id")
+			return
+		}
+		s.efs.Lock()
+		_, ok := s.efs.Shares[b.EFSID]
+		s.efs.Unlock()
+		if !ok {
+			fail(w, 400, "EFS share not found")
+			return
+		}
+		if b.EFSPath == "" {
+			b.EFSPath = "/var/www/html"
+		}
+	}
+	if b.EFSPath != "" && (!validS3MountPath(b.EFSPath) || strings.Contains(b.EFSPath, "..")) {
+		fail(w, 400, "EFS guest path must be a clean absolute path")
 		return
 	}
 	if b.HealthPath == "" {
@@ -255,13 +406,16 @@ func (s *Server) saveLoadBalancer(w http.ResponseWriter, r *http.Request) {
 	b.Healthy = map[string]string{}
 	b.active = map[string]int{}
 	b.latency = map[string]time.Duration{}
+	b.hits = &hitMinute{}
 	if old != nil {
 		b.Instances = old.Instances
 		b.Healthy = old.Healthy
 		b.BackendStatus = old.BackendStatus
 		b.active = old.active
 		b.latency = old.latency
+		b.hits = old.hits
 		b.LastScale = old.LastScale
+		b.ScaleReason = old.ScaleReason
 	} else {
 		b.ID = "lb-" + randHex(16)
 	}
@@ -279,6 +433,7 @@ func (s *Server) saveLoadBalancer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Store.Audit("admin", "load-balancer.save", b.ID, "ok")
+	b.refreshLive()
 	writeJSON(w, 200, &b)
 }
 func (s *Server) deleteLoadBalancer(w http.ResponseWriter, r *http.Request) {
@@ -407,6 +562,11 @@ func (s *Server) reconcileLoadBalancers() {
 				}
 				continue
 			}
+			if b.EFSID != "" && i.State != proto.StateDeleting {
+				if e := s.attachEFSShare(b.EFSID, iid, b.efsGuestPath()); e != nil {
+					b.Error = e.Error()
+				}
+			}
 			if i.State != proto.StateRunning {
 				pending = true
 				continue
@@ -515,12 +675,35 @@ func (s *Server) reconcileLoadBalancers() {
 		desired := len(ids)
 		if desired < b.Min {
 			desired = b.Min
+			b.ScaleReason = "below minimum"
 		} else if !pending && running == len(ids) && metrics == running && running > 0 && time.Since(b.LastScale) >= 2*time.Minute {
 			avg := cpu / float64(metrics)
-			if avg > b.TargetCPU && desired < b.Max {
+			hitsPerReplica := 0.0
+			if b.Mode != "nlb" && b.TargetRPS > 0 && running > 0 {
+				b.ensureHits()
+				hitsPerReplica = float64(b.hits.count(time.Now())) / float64(running)
+			}
+			highCPU := avg > b.TargetCPU
+			highHits := b.Mode != "nlb" && b.TargetRPS > 0 && hitsPerReplica > b.TargetRPS
+			lowCPU := avg < b.TargetCPU*0.5
+			lowHits := b.TargetRPS <= 0 || b.Mode == "nlb" || hitsPerReplica < b.TargetRPS*0.5
+			if (highCPU || highHits) && desired < b.Max {
 				desired++
-			} else if avg < b.TargetCPU*0.5 && desired > b.Min && len(b.Healthy) == running {
+				switch {
+				case highCPU && highHits:
+					b.ScaleReason = "CPU or hits above target"
+				case highHits:
+					b.ScaleReason = "hits above target"
+				default:
+					b.ScaleReason = "CPU above target"
+				}
+			} else if lowCPU && lowHits && desired > b.Min && len(b.Healthy) == running {
 				desired--
+				if b.TargetRPS > 0 && b.Mode != "nlb" {
+					b.ScaleReason = "CPU and hits below half target"
+				} else {
+					b.ScaleReason = "CPU below half target"
+				}
 			}
 		}
 		// One operation per pass bounds resource reservation and allows heartbeat feedback.
@@ -531,6 +714,11 @@ func (s *Server) reconcileLoadBalancers() {
 			} else {
 				b.Instances = append(b.Instances, iid)
 				b.LastScale = time.Now()
+				if b.EFSID != "" {
+					if e := s.attachEFSShare(b.EFSID, iid, b.efsGuestPath()); e != nil {
+						b.Error = e.Error()
+					}
+				}
 			}
 		} else if desired < len(ids) {
 			iid := ids[len(ids)-1]
@@ -613,6 +801,8 @@ func (s *Server) proxyLoadBalancer(w http.ResponseWriter, r *http.Request) {
 	iid := ids[index]
 	target, _ := url.Parse(b.Healthy[iid])
 	b.active[iid]++
+	b.ensureHits()
+	b.hits.add(time.Now())
 	d.Unlock()
 	start := time.Now()
 	defer func() {
@@ -689,6 +879,9 @@ func (s *Server) routeALBDomain(next http.Handler) http.Handler {
 			}
 		}
 		d.Unlock()
+		if id == "" {
+			id, _ = s.namedLoadBalancer(host)
+		}
 		if id == "" {
 			next.ServeHTTP(w, r)
 			return

@@ -6,14 +6,74 @@ command -v debootstrap >/dev/null || { echo 'Install debootstrap first.' >&2; ex
 STATE=${CLOFIX_STATE_DIR:-/var/lib/clofix-filevps}
 ROOT="$STATE/managed-templates"
 ARCH=$(dpkg --print-architecture)
-case "$ARCH" in amd64) MIRROR=http://archive.ubuntu.com/ubuntu ;; *) MIRROR=http://ports.ubuntu.com/ubuntu-ports ;; esac
+case "$ARCH" in amd64) MIRROR=http://archive.ubuntu.com/ubuntu; NODE_ARCH=x64 ;; arm64) MIRROR=http://ports.ubuntu.com/ubuntu-ports; NODE_ARCH=arm64 ;; *) MIRROR=http://ports.ubuntu.com/ubuntu-ports; NODE_ARCH=$ARCH ;; esac
 mkdir -p "$ROOT"
-for app in ${CLOFIX_MANAGED_TEMPLATES:-adminer uptime-kuma web-static web-php web-nodejs web-nextjs web-wordpress}; do
+fetch() {
+  dest=$1 url=$2
+  if command -v curl >/dev/null 2>&1; then curl -fsSL -o "$dest" "$url"
+  elif command -v wget >/dev/null 2>&1; then wget -q -O "$dest" "$url"
+  else echo 'Install curl or wget to download official Quick App archives.' >&2; return 1
+  fi
+}
+prepare_official_node() {
+  sums=$(mktemp)
+  archive=$(mktemp)
+  fetch "$sums" https://nodejs.org/dist/latest-v22.x/SHASUMS256.txt || { rm -f "$sums" "$archive"; return 1; }
+  name=$(awk -v arch="$NODE_ARCH" '$2 ~ ("^node-v.+-linux-" arch "[.]tar[.]xz$") { print $2; exit }' "$sums")
+  hash=$(awk -v file="$name" '$2 == file { print $1; exit }' "$sums")
+  [ -n "$name" ] && [ -n "$hash" ] || { rm -f "$sums" "$archive"; return 1; }
+  fetch "$archive" "https://nodejs.org/dist/latest-v22.x/$name" || { rm -f "$sums" "$archive"; return 1; }
+  command -v xz >/dev/null 2>&1 || { echo 'Install xz-utils to unpack official Node.js archives.' >&2; rm -f "$sums" "$archive"; return 1; }
+  echo "$hash  $archive" | sha256sum -c - >/dev/null || { rm -f "$sums" "$archive"; return 1; }
+  CLOFIX_NODE_ARCHIVE=$archive
+  CLOFIX_NODE_SHA256=$hash
+  rm -f "$sums"
+}
+prepare_uptime_kuma() {
+  if [ -n "${CLOFIX_UPTIME_KUMA_DIR:-}" ]; then
+    [ -f "$CLOFIX_UPTIME_KUMA_DIR/server/server.js" ] || return 1
+    if [ -z "${CLOFIX_NODE_ARCHIVE:-}" ] || [ -z "${CLOFIX_NODE_SHA256:-}" ]; then
+      prepare_official_node || return 1
+    fi
+    return 0
+  fi
+  version=${CLOFIX_UPTIME_KUMA_VERSION:-2.5.8}
+  hash=${CLOFIX_UPTIME_KUMA_SHA256:-04752491d5b9e726c392df5fca3a89b01f77cc8100bc13d17e2bc0f798d77e92}
+  archive=$(mktemp)
+  fetch "$archive" "https://github.com/louislam/uptime-kuma/releases/download/${version}/dist.tar.gz" || { rm -f "$archive"; return 1; }
+  echo "$hash  $archive" | sha256sum -c - >/dev/null || { rm -f "$archive"; return 1; }
+  work=$(mktemp -d)
+  tar -xf "$archive" -C "$work"
+  rm -f "$archive"
+  if [ -f "$work/server/server.js" ]; then CLOFIX_UPTIME_KUMA_DIR=$work
+  elif [ -f "$work/dist/server/server.js" ]; then CLOFIX_UPTIME_KUMA_DIR=$work/dist
+  else
+    inner=$(find "$work" -mindepth 1 -maxdepth 2 -type f -name server.js -path '*/server/server.js' -print -quit)
+    [ -n "$inner" ] || { rm -rf "$work"; return 1; }
+    CLOFIX_UPTIME_KUMA_DIR=$(dirname "$(dirname "$inner")")
+  fi
+  prepare_official_node || { rm -rf "$work"; return 1; }
+}
+prepare_jenkins_war() {
+  version=${CLOFIX_JENKINS_VERSION:-latest}
+  war=$(mktemp)
+  sums=$(mktemp)
+  fetch "$war" "https://get.jenkins.io/war-stable/${version}/jenkins.war" || { rm -f "$war" "$sums"; return 1; }
+  fetch "$sums" "https://get.jenkins.io/war-stable/${version}/jenkins.war.sha256" || { rm -f "$war" "$sums"; return 1; }
+  hash=$(awk '{ print $1; exit }' "$sums")
+  echo "$hash  $war" | sha256sum -c - >/dev/null || { rm -f "$war" "$sums"; return 1; }
+  CLOFIX_JENKINS_WAR=$war
+  rm -f "$sums"
+}
+for app in ${CLOFIX_MANAGED_TEMPLATES:-adminer uptime-kuma jenkins web-static web-php web-nodejs web-nextjs web-wordpress}; do
   case "$app" in
     adminer) packages=ca-certificates,nginx,php-fpm,php-cli,php-mysql,php-pgsql,php-sqlite3,adminer ;;
     uptime-kuma)
-      [ -n "${CLOFIX_UPTIME_KUMA_DIR:-}" ] && [ -n "${CLOFIX_NODE_ARCHIVE:-}" ] && [ -n "${CLOFIX_NODE_SHA256:-}" ] || { echo 'Skipping uptime-kuma: provide a prepared application directory and verified compatible Node.js Linux archive/SHA256.'; continue; }
-      packages=ca-certificates ;;
+      prepare_uptime_kuma || { echo 'Skipping uptime-kuma: could not download the official dist archive and verified Node.js Linux runtime.'; continue; }
+      packages=ca-certificates,python3,build-essential ;;
+    jenkins)
+      prepare_jenkins_war || { echo 'Skipping jenkins: could not download the official LTS war and SHA-256.'; continue; }
+      packages=ca-certificates,default-jre-headless,fontconfig,fonts-dejavu-core ;;
     web-static) packages=ca-certificates,nginx ;;
     web-php) packages=ca-certificates,nginx,php-fpm,php-cli,php-mysql,php-pgsql,php-sqlite3 ;;
     web-nodejs|web-nextjs) packages=ca-certificates,nodejs,npm ;;
@@ -21,7 +81,8 @@ for app in ${CLOFIX_MANAGED_TEMPLATES:-adminer uptime-kuma web-static web-php we
     *) echo "Unknown template: $app" >&2; exit 1 ;;
   esac
   target="$ROOT/$app"
-  if [ -e "$target" ]; then echo "Keeping existing template: $target"; continue; fi
+  if [ -x "$target/app/start" ]; then echo "Keeping existing template: $target"; continue; fi
+  if [ -e "$target" ]; then echo "Replacing incomplete template: $target"; rm -rf "$target"; fi
   staging="$ROOT/.building-$app-$$"
   trap 'if [ -n "${staging:-}" ] && [ -d "$staging" ]; then rm -rf "$staging"; fi' EXIT HUP INT TERM
   debootstrap --components=main,universe --variant=minbase --include=ca-certificates noble "$staging" "$MIRROR"
@@ -149,17 +210,30 @@ exec /usr/sbin/nginx -c /app/nginx.conf -p /tmp -g 'daemon off;'
 START
       ;;
     uptime-kuma)
-      test -d "$CLOFIX_UPTIME_KUMA_DIR/node_modules"
       test -f "$CLOFIX_UPTIME_KUMA_DIR/server/server.js"
-      test -f "$CLOFIX_UPTIME_KUMA_DIR/dist/index.html"
       printf '%s  %s\n' "$CLOFIX_NODE_SHA256" "$CLOFIX_NODE_ARCHIVE" | sha256sum -c -
       tar -xf "$CLOFIX_NODE_ARCHIVE" --strip-components=1 -C "$staging/usr/local"
       cp -R "$CLOFIX_UPTIME_KUMA_DIR/." "$staging/app/"
+      if [ ! -d "$staging/app/node_modules" ] && [ -f "$staging/app/package.json" ]; then
+        chroot "$staging" /usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin npm ci --omit=dev
+      fi
+      test -f "$staging/app/server/server.js"
       cat > "$staging/app/start" <<'START'
 #!/bin/sh
 set -eu
 cd /app
 exec /usr/local/bin/node server/server.js
+START
+      ;;
+    jenkins)
+      test -f "$CLOFIX_JENKINS_WAR"
+      cp "$CLOFIX_JENKINS_WAR" "$staging/app/jenkins.war"
+      cat > "$staging/app/start" <<'START'
+#!/bin/sh
+set -eu
+export JENKINS_HOME=${JENKINS_HOME:-/data}
+mkdir -p "$JENKINS_HOME"
+exec /usr/bin/java -Djava.awt.headless=true -jar /app/jenkins.war --httpPort=8080 --httpListenAddress=0.0.0.0
 START
       ;;
   esac

@@ -1,7 +1,23 @@
 {{define "content"}}
 <section class="page active" id="page-backups">
   <div class="section-head"><div><p class="eyebrow">Storage</p><h2>VPS backups</h2><p>Worker-local snapshots of a stopped VPS writable root filesystem. Restore a backup as a new VPS with its own SSH key and resource limits.</p></div><div class="row-actions"><button class="primary" id="restore-open" type="button">Run backup as a new VPS</button><button class="secondary" id="backups-refresh" type="button">Refresh</button></div></div>
-  <div class="panel"><div class="table-wrap"><table id="backups-table"></table></div><div class="message" id="backups-message" role="status" aria-live="polite"></div></div>
+  <div class="settings-layout">
+    <nav class="settings-nav" aria-label="Backup sections">
+      <a href="#backups-list" data-settings-link aria-controls="backups-list" aria-current="location"><strong>Backups</strong><span>Snapshots and restore</span></a>
+      <a href="#backups-scope" data-settings-link aria-controls="backups-scope"><strong>Scope</strong><span>What a backup includes</span></a>
+    </nav>
+    <div class="settings-content">
+      <div class="panel settings-section" id="backups-list" data-settings-panel aria-labelledby="backups-heading-list">
+        <h2 id="backups-heading-list" tabindex="-1">Backups</h2>
+        <div class="table-wrap"><table id="backups-table"></table></div>
+        <div class="message" id="backups-message" role="status" aria-live="polite"></div>
+      </div>
+      <div class="panel backup-note settings-section" id="backups-scope" data-settings-panel aria-labelledby="backups-heading-scope" hidden>
+        <h2 id="backups-heading-scope" tabindex="-1">Backup scope</h2>
+        <p>Snapshot size is the compressed archive size. Disk allocation is placement accounting and does not enforce a disk quota. Persistent volumes and S3 mounts are not included. Create backups only while the VPS is stopped; restore currently requires the original worker and its cached base image.</p>
+      </div>
+    </div>
+  </div>
   <dialog class="terminal-dialog form-dialog" id="restore-dialog" aria-labelledby="restore-title"><div class="section-head"><div><p class="eyebrow">Recovery</p><h2 id="restore-title">Run backup as a new VPS</h2><p>Choose the backup and set the new VPS resources and SSH key.</p></div><button class="secondary" id="restore-close" type="button">Close</button></div>
     <div class="form-grid">
       <div class="form-field"><label for="restore-backup">Backup</label><select id="restore-backup"><option value="">Select a ready backup</option></select></div>
@@ -14,6 +30,5 @@
     </div>
     <div class="inline-fields" style="margin-top:14px"><button class="primary" id="restore-run" type="button">Run as new VPS</button><span id="restore-message" class="message" role="status" aria-live="polite"></span></div>
   </dialog>
-  <div class="panel backup-note"><strong>Backup scope</strong><p>Snapshot size is the compressed archive size. Disk allocation is placement accounting and does not enforce a disk quota. Persistent volumes and S3 mounts are not included. Create backups only while the VPS is stopped; restore currently requires the original worker and its cached base image.</p></div>
 </section>
 {{end}}

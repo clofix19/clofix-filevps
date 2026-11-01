@@ -15,11 +15,13 @@ const (
 	ActionRestart                = "restart"
 	ActionDelete                 = "delete"
 	ActionUpdatePorts            = "update-ports"
+	ActionUpdateFirewall         = "update-firewall"
 	ActionUpdateProtection       = "update-protection"
 	ActionUpdateSSHLogin         = "update-ssh-login"
 	ActionUpdateDeleteProtection = "update-delete-protection"
 	ActionUpdateWAF              = "update-waf"
 	ActionUpdateS3Mount          = "update-s3-mount"
+	ActionUpdateEFS              = "update-efs"
 	ActionUpdateResources        = "update-resources"
 	ActionUpdateStorageMounts    = "update-storage-mounts"
 	ActionCreateVolume           = "create-volume"
@@ -89,6 +91,7 @@ type InstanceSpec struct {
 	Hostname         string          `json:"hostname"`
 	Init             []string        `json:"init,omitempty"`
 	IPAddress        string          `json:"ip_address,omitempty"`
+	VPCID            string          `json:"vpc_id,omitempty"`
 	SSHPort          int             `json:"ssh_port,omitempty"`
 	SSHAuthorizedKey string          `json:"ssh_authorized_key,omitempty"`
 	PasswordAuth     bool            `json:"password_auth,omitempty"`
@@ -100,6 +103,7 @@ type InstanceSpec struct {
 	S3MountPath      string          `json:"s3_mount_path,omitempty"`
 	S3ConnectionID   string          `json:"s3_connection_id,omitempty"`
 	StorageMounts    []StorageMount  `json:"storage_mounts,omitempty"`
+	EFSMounts        []StorageMount  `json:"efs_mounts,omitempty"`
 	BackupID         string          `json:"backup_id,omitempty"`
 }
 
@@ -112,8 +116,9 @@ type StorageMount struct {
 
 type VolumeFileRequest struct {
 	VolumeID  string `json:"volume_id"`
-	Action    string `json:"action"` // list|read|write|mkdir|delete
-	Path      string `json:"path"`   // relative to the volume root; empty only for list root
+	Action    string `json:"action"` // list|read|write|mkdir|delete|archive|move
+	Path      string `json:"path"`   // relative to the volume root; empty only for list/archive root
+	Dest      string `json:"dest,omitempty"`
 	Content   []byte `json:"content,omitempty"`
 	Recursive bool   `json:"recursive,omitempty"`
 }
@@ -144,10 +149,39 @@ type S3Mount struct {
 	GuestPath    string `json:"guest_path"`
 }
 
+type EFSShare struct {
+	ID           string `json:"id"`
+	GuestPath    string `json:"guest_path,omitempty"`
+	Endpoint     string `json:"endpoint"`
+	Bucket       string `json:"bucket"`
+	Region       string `json:"region,omitempty"`
+	Prefix       string `json:"prefix,omitempty"`
+	AccessKey    string `json:"access_key,omitempty"`
+	SecretKey    string `json:"secret_key,omitempty"`
+	ConnectionID string `json:"connection_id,omitempty"`
+	Detach       bool   `json:"detach,omitempty"`
+}
+
 type PortMapping struct {
 	Protocol  string `json:"protocol"`
 	GuestPort int    `json:"guest_port"`
 	HostPort  int    `json:"host_port"`
+}
+
+type FirewallRule struct {
+	Action   string `json:"action"`
+	Protocol string `json:"protocol"`
+	Port     int    `json:"port,omitempty"`
+	PortEnd  int    `json:"port_end,omitempty"`
+	Source   string `json:"source"`
+}
+
+type FirewallSpec struct {
+	Scope      string         `json:"scope"`
+	InstanceID string         `json:"instance_id,omitempty"`
+	GuestIP    string         `json:"guest_ip,omitempty"`
+	Restrict   bool           `json:"restrict"`
+	Rules      []FirewallRule `json:"rules,omitempty"`
 }
 
 type Operation struct {
@@ -172,6 +206,8 @@ type Operation struct {
 	WAFCategory   string             `json:"waf_category,omitempty"`
 	WAFEnabled    bool               `json:"waf_enabled,omitempty"`
 	RootPassword  string             `json:"root_password,omitempty"`
+	Firewall      *FirewallSpec      `json:"firewall,omitempty"`
+	EFS           *EFSShare          `json:"efs,omitempty"`
 }
 
 type OpResult struct {
@@ -231,7 +267,22 @@ type Heartbeat struct {
 	Instances         []InstanceStatus     `json:"instances"`
 	Volumes           []WorkerVolumeStatus `json:"volumes,omitempty"`
 	Backups           []BackupInfo         `json:"backups,omitempty"`
+	LogTails          []LogTail            `json:"log_tails,omitempty"`
 	Results           []OpResult           `json:"results"`
+}
+
+type LogSourceSpec struct {
+	ID         string `json:"id"`
+	Kind       string `json:"kind"`
+	ResourceID string `json:"resource_id"`
+	Path       string `json:"path"`
+}
+
+type LogTail struct {
+	ID    string `json:"id"`
+	Text  string `json:"text,omitempty"`
+	Error string `json:"error,omitempty"`
+	Bytes int    `json:"bytes,omitempty"`
 }
 
 // BackupInfo describes a worker-local snapshot. It intentionally excludes SSH keys and mount credentials.
@@ -256,7 +307,16 @@ type WorkerVolumeStatus struct {
 }
 
 type HeartbeatResponse struct {
-	DatabaseAcknowledged []string    `json:"database_acknowledged,omitempty"`
-	Operations           []Operation `json:"operations"`
-	S3MasterAddress      string      `json:"s3_master_address,omitempty"`
+	DatabaseAcknowledged []string        `json:"database_acknowledged,omitempty"`
+	Operations           []Operation     `json:"operations"`
+	S3MasterAddress      string          `json:"s3_master_address,omitempty"`
+	DNSHosts             []DNSHost       `json:"dns_hosts,omitempty"`
+	LogSources           []LogSourceSpec `json:"log_sources,omitempty"`
+	Firewalls            []FirewallSpec  `json:"firewalls,omitempty"`
+	EFSShares            []EFSShare      `json:"efs_shares,omitempty"`
+}
+
+type DNSHost struct {
+	Name string `json:"name"`
+	IP   string `json:"ip"`
 }

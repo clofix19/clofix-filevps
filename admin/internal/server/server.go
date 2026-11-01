@@ -54,7 +54,11 @@ type Server struct {
 	databaseTransfers map[string]bool
 	billing           *billingStore
 	dns               *dnsStore
+	vpcs              *vpcStore
 	sshKeys           *sshKeyStore
+	logs              *logStore
+	firewall          *firewallStore
+	efs               *efsStore
 
 	placeMu         sync.Mutex
 	failMu          sync.Mutex
@@ -78,7 +82,7 @@ func New(s store.Store, ca *pki.CA, adminToken, uiDir string) *Server {
 	if dataDir == "" {
 		dataDir = "/var/lib/clofix-controller"
 	}
-	server := &Server{license: loadControllerLicense(dataDir), monitoring: loadMonitoring(dataDir), balancers: loadBalancers(dataDir), applications: loadServerless(dataDir), billing: loadBilling(dataDir), dns: loadDNS(dataDir), sshKeys: loadSSHKeys(dataDir), Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), S3MasterAddress: os.Getenv("CLOFIX_S3_MASTER_ADDRESS"), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}, backups: map[string]proto.BackupInfo{}}
+	server := &Server{license: loadControllerLicense(dataDir), monitoring: loadMonitoring(dataDir), balancers: loadBalancers(dataDir), applications: loadServerless(dataDir), billing: loadBilling(dataDir), dns: loadDNS(dataDir), vpcs: loadVPCs(dataDir), sshKeys: loadSSHKeys(dataDir), logs: loadLogs(dataDir), firewall: loadFirewall(dataDir), efs: loadEFS(dataDir), Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), S3MasterAddress: os.Getenv("CLOFIX_S3_MASTER_ADDRESS"), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}, backups: map[string]proto.BackupInfo{}}
 	server.initDatabases(dataDir)
 	return server
 }
@@ -107,12 +111,16 @@ func (s *Server) AdminHandler() http.Handler {
 	mux := http.NewServeMux()
 	s.licenseRoutes(mux)
 	s.monitoringRoutes(mux)
+	s.logRoutes(mux)
+	s.firewallRoutes(mux)
+	s.efsRoutes(mux)
 	s.loadBalancerRoutes(mux)
 	s.applicationRoutes(mux)
 	s.managedRoutes(mux)
 	s.databaseRoutes(mux)
 	s.billingRoutes(mux)
 	s.dnsRoutes(mux)
+	s.vpcRoutes(mux)
 	s.sshKeyRoutes(mux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /api/ca.pem", func(w http.ResponseWriter, r *http.Request) {
@@ -155,6 +163,8 @@ func (s *Server) AdminHandler() http.Handler {
 	mux.HandleFunc("PUT /api/volumes/{id}/file", s.auth(s.writeVolumeFile))
 	mux.HandleFunc("DELETE /api/volumes/{id}/file", s.auth(s.deleteVolumeFile))
 	mux.HandleFunc("POST /api/volumes/{id}/folder", s.auth(s.createVolumeFolder))
+	mux.HandleFunc("GET /api/volumes/{id}/archive", s.auth(s.archiveVolumeFolder))
+	mux.HandleFunc("POST /api/volumes/{id}/move", s.auth(s.moveVolumeObject))
 	mux.HandleFunc("POST /api/instances/{id}/resources", s.auth(s.updateInstanceResources))
 	mux.HandleFunc("GET /api/storage/s3", s.auth(s.getS3Config))
 	mux.HandleFunc("PUT /api/storage/s3", s.auth(s.saveS3Config))
@@ -167,6 +177,8 @@ func (s *Server) AdminHandler() http.Handler {
 	mux.HandleFunc("PUT /api/storage/connections/{id}/object", s.auth(s.putS3Object))
 	mux.HandleFunc("DELETE /api/storage/connections/{id}/object", s.auth(s.deleteS3Object))
 	mux.HandleFunc("POST /api/storage/connections/{id}/folders", s.auth(s.createS3Folder))
+	mux.HandleFunc("GET /api/storage/connections/{id}/archive", s.auth(s.archiveS3Folder))
+	mux.HandleFunc("POST /api/storage/connections/{id}/move", s.auth(s.moveS3Object))
 	mux.HandleFunc("POST /api/instances/{id}/s3-mount", s.auth(s.mountS3))
 	mux.HandleFunc("DELETE /api/instances/{id}/s3-mount", s.auth(s.unmountS3))
 	mux.HandleFunc("POST /api/instances/{id}/ports", s.auth(s.addPortMapping))
@@ -308,7 +320,7 @@ func (s *Server) uiHandler() http.Handler {
 func uiPage(route string) (page, title, instanceID string, ok bool) {
 	switch route {
 	case "/":
-		return "home", "Overview", "", true
+		return "home", "Console Home", "", true
 	case "/instances":
 		return "instances", "FileVPS", "", true
 	case "/health-checks":
@@ -337,8 +349,16 @@ func uiPage(route string) (page, title, instanceID string, ok bool) {
 		return "billing", "Billing & Payments", "", true
 	case "/dns":
 		return "dns", "DNS Service", "", true
+	case "/vpc":
+		return "vpc", "VPC", "", true
 	case "/iam":
 		return "iam", "Identity and Access Management", "", true
+	case "/logs":
+		return "logs", "Log Service", "", true
+	case "/firewall":
+		return "firewall", "Firewall", "", true
+	case "/efs":
+		return "efs", "EFS", "", true
 	}
 	parts := strings.Split(strings.TrimPrefix(route, "/"), "/")
 	if len(parts) == 2 && parts[0] == "load-balancers" && regexp.MustCompile(`^lb-[0-9a-f]{32}$`).MatchString(parts[1]) {
@@ -797,6 +817,12 @@ func (s *Server) attachVolume(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	for _, m := range inst.Spec.EFSMounts {
+		if storagePathsConflict(m.GuestPath, in.GuestPath) {
+			fail(w, http.StatusConflict, "storage mount paths cannot overlap EFS")
+			return
+		}
+	}
 	prevInst, prevVol := inst, v
 	inst.Spec.StorageMounts = append(inst.Spec.StorageMounts, proto.StorageMount{ID: v.ID, GuestPath: in.GuestPath})
 	v.State = "ATTACHING"
@@ -901,8 +927,11 @@ func validVolumeRelativePath(name string, allowRoot bool) bool {
 }
 
 func (s *Server) requestVolumeFile(r *http.Request, volumeID string, request proto.VolumeFileRequest) (proto.VolumeFileResult, int, string) {
-	if !apiInstanceID.MatchString(volumeID) || !validVolumeRelativePath(request.Path, request.Action == "list") {
+	if !apiInstanceID.MatchString(volumeID) || !validVolumeRelativePath(request.Path, request.Action == "list" || request.Action == "archive") {
 		return proto.VolumeFileResult{}, http.StatusBadRequest, "invalid volume path"
+	}
+	if request.Action == "move" && !validVolumeRelativePath(request.Dest, false) {
+		return proto.VolumeFileResult{}, http.StatusBadRequest, "invalid volume destination path"
 	}
 	volume, err := s.Store.GetVolume(volumeID)
 	if err != nil {
@@ -1042,6 +1071,45 @@ func (s *Server) deleteVolumeFile(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Store.Audit("admin", "volume.file.delete", r.PathValue("id"), name)
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "path": name})
+}
+
+func (s *Server) archiveVolumeFolder(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("path")
+	result, code, message := s.requestVolumeFile(r, r.PathValue("id"), proto.VolumeFileRequest{VolumeID: r.PathValue("id"), Action: "archive", Path: name})
+	if code != http.StatusOK {
+		fail(w, code, message)
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+efsArchiveName(name)+`"`)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(result.Content)
+}
+
+func (s *Server) moveVolumeObject(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		From   string `json:"from"`
+		To     string `json:"to"`
+		Folder bool   `json:"folder"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&in); err != nil {
+		fail(w, http.StatusBadRequest, "from and to paths are required")
+		return
+	}
+	dest, err := efsMoveDest(in.From, in.To, in.Folder)
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	src := strings.Trim(in.From, "/")
+	_, code, message := s.requestVolumeFile(r, r.PathValue("id"), proto.VolumeFileRequest{VolumeID: r.PathValue("id"), Action: "move", Path: src, Dest: dest})
+	if code != http.StatusOK {
+		fail(w, code, message)
+		return
+	}
+	s.Store.Audit("admin", "volume.file.move", r.PathValue("id"), src+" -> "+dest)
+	writeJSON(w, http.StatusOK, map[string]any{"moved": true, "from": src, "to": dest})
 }
 
 func (s *Server) completeVolumeFileResult(workerID string, result proto.OpResult) {
@@ -1277,6 +1345,10 @@ func (s *Server) deleteS3Connection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if s.efsUsesConnection(id) {
+		fail(w, http.StatusConflict, "detach or delete EFS shares using this connection first")
+		return
+	}
 	if err := s.S3.DeleteConnection(id); err != nil {
 		if os.IsNotExist(err) {
 			fail(w, http.StatusNotFound, "S3 connection not found")
@@ -1447,6 +1519,54 @@ func (s *Server) deleteS3Object(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "key": key})
 }
 
+func (s *Server) archiveS3Folder(w http.ResponseWriter, r *http.Request) {
+	prefix := r.URL.Query().Get("prefix")
+	if !validS3ObjectKey(prefix, true) {
+		fail(w, http.StatusBadRequest, "invalid bucket prefix")
+		return
+	}
+	c := s.s3Connection(w, r)
+	if c.ID == "" {
+		return
+	}
+	writeObjectArchive(w, c, prefix, "s3")
+}
+
+func (s *Server) moveS3Object(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		From   string `json:"from"`
+		To     string `json:"to"`
+		Folder bool   `json:"folder"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&in); err != nil {
+		fail(w, http.StatusBadRequest, "from and to paths are required")
+		return
+	}
+	if strings.HasSuffix(strings.TrimSpace(in.From), "/") {
+		in.Folder = true
+	}
+	dest, err := efsMoveDest(in.From, in.To, in.Folder)
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	src := strings.Trim(in.From, "/")
+	if !validS3ObjectKey(src, false) {
+		fail(w, http.StatusBadRequest, "invalid object key")
+		return
+	}
+	c := s.s3Connection(w, r)
+	if c.ID == "" {
+		return
+	}
+	if code, moveErr := moveObjectPrefix(c, src, dest, in.Folder); moveErr != nil {
+		fail(w, code, moveErr.Error())
+		return
+	}
+	s.Store.Audit("admin", "storage.s3.object.move", c.ID, src+" -> "+dest)
+	writeJSON(w, http.StatusOK, map[string]any{"moved": true, "from": src, "to": dest})
+}
+
 func (s *Server) getS3Config(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.S3.Public())
 }
@@ -1539,6 +1659,12 @@ func (s *Server) mountS3(w http.ResponseWriter, r *http.Request) {
 	for _, mount := range inst.Spec.StorageMounts {
 		if mount.GuestPath != "" && storagePathsConflict(mount.GuestPath, in.GuestPath) {
 			fail(w, http.StatusConflict, "S3 and local storage mount paths cannot overlap")
+			return
+		}
+	}
+	for _, mount := range inst.Spec.EFSMounts {
+		if storagePathsConflict(mount.GuestPath, in.GuestPath) {
+			fail(w, http.StatusConflict, "S3 and EFS mount paths cannot overlap")
 			return
 		}
 	}
@@ -2040,22 +2166,6 @@ func validSSHPublicKey(key string) bool {
 	}
 }
 
-func reserveNetwork(spec *proto.InstanceSpec, instances []store.Instance) bool {
-	usedIPs, usedPorts := map[string]bool{}, map[int]bool{}
-	for _, instance := range instances {
-		usedIPs[instance.Spec.IPAddress] = true
-		usedPorts[instance.Spec.SSHPort] = true
-	}
-	for slot := 0; slot < sshPortCount; slot++ {
-		ip, port := fmt.Sprintf("10.231.0.%d", slot+2), sshPortBase+slot
-		if !usedIPs[ip] && !usedPorts[port] {
-			spec.IPAddress, spec.SSHPort = ip, port
-			return true
-		}
-	}
-	return false
-}
-
 func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 	if r.Context().Value(quotaLockKey{}) != true {
 		s.quotaMu.Lock()
@@ -2175,7 +2285,11 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	instances, _ := s.Store.ListInstances()
-	if !reserveNetwork(&sp, instances) {
+	if _, err = s.resolveVPCID(sp.VPCID); err != nil {
+		fail(w, 400, err.Error())
+		return
+	}
+	if !s.reserveNetwork(&sp, instances) {
 		fail(w, http.StatusServiceUnavailable, "SSH port range is full (100 VPS limit in this development setup)")
 		return
 	}
@@ -2298,7 +2412,7 @@ func (s *Server) retryInstance(w http.ResponseWriter, r *http.Request) {
 	}
 	if inst.Spec.IPAddress == "" || inst.Spec.SSHPort == 0 {
 		instances, _ := s.Store.ListInstances()
-		if !reserveNetwork(&inst.Spec, instances) {
+		if !s.reserveNetwork(&inst.Spec, instances) {
 			fail(w, http.StatusServiceUnavailable, "SSH port range is full")
 			return
 		}
@@ -2582,6 +2696,8 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 		}
 		switch {
 		case res.OK && parts[1] == proto.ActionDelete:
+			s.firewall.dropInstance(inst.ID)
+			s.dropEFSInstance(inst.ID)
 			s.Store.DeleteInstance(inst.ID)
 			s.usageMu.Lock()
 			delete(s.usage, inst.ID)
@@ -2603,6 +2719,11 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 				inst.Error = ""
 				_ = s.Store.SaveInstance(inst)
 			}
+		case res.OK && parts[1] == proto.ActionUpdateFirewall:
+			if strings.HasPrefix(inst.Error, "firewall update failed:") {
+				inst.Error = ""
+				_ = s.Store.SaveInstance(inst)
+			}
 		case res.OK && strings.HasPrefix(parts[1], proto.ActionUpdateWAF+"-"):
 			if strings.HasPrefix(inst.Error, "WAF update failed:") {
 				inst.Error = ""
@@ -2617,6 +2738,8 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 				inst.Error = "service uninstall failed: " + res.Error
 			} else if parts[1] == proto.ActionUpdatePorts {
 				inst.Error = "port mapping update failed: " + res.Error
+			} else if parts[1] == proto.ActionUpdateFirewall {
+				inst.Error = "firewall update failed: " + res.Error
 			} else if strings.HasPrefix(parts[1], proto.ActionUpdateWAF+"-") {
 				// The operation ID carries the requested category/value so a failed
 				// guest config reload can restore the last controller-known setting.
@@ -2638,8 +2761,10 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 		}
 		s.Store.Audit(id, "op."+parts[1], inst.ID, map[bool]string{true: "ok", false: "failed"}[res.OK])
 	}
+	s.cacheWorkerLogTails(hb.LogTails)
+	s.evaluateAutoLogTails(id)
 	ops, _ := s.Store.TakeOps(id)
 	databaseOps, acknowledged := s.databaseHeartbeat(id, hb.DatabaseResults, hb.DatabaseStatuses)
 	ops = append(ops, databaseOps...)
-	writeJSON(w, 200, proto.HeartbeatResponse{Operations: ops, DatabaseAcknowledged: acknowledged, S3MasterAddress: s.S3MasterAddress})
+	writeJSON(w, 200, proto.HeartbeatResponse{Operations: ops, DatabaseAcknowledged: acknowledged, S3MasterAddress: s.S3MasterAddress, DNSHosts: s.dnsHostEntries(), LogSources: s.logSourcesForWorker(id), Firewalls: s.firewallsForWorker(id), EFSShares: s.efsSharesForWorker(id)})
 }

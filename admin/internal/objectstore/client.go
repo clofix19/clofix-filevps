@@ -280,6 +280,119 @@ func (c *s3Client) PutReader(key, contentType string, body io.Reader, size int64
 	}
 	return c.check(resp)
 }
+func (c *s3Client) Head(key string) (bool, error) {
+	root := strings.Trim(c.cfg.Prefix, "/")
+	if root != "" {
+		root += "/"
+	}
+	resp, err := c.request(http.MethodHead, root+strings.TrimLeft(key, "/"), nil, nil, nil)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return true, nil
+	}
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	return false, fmt.Errorf("S3 head failed HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+}
+
+func encodeCopySource(bucket, key string) string {
+	parts := strings.Split(strings.Trim(key, "/"), "/")
+	for i, part := range parts {
+		parts[i] = awsEscape(part)
+	}
+	return "/" + awsEscape(bucket) + "/" + strings.Join(parts, "/")
+}
+
+func (c *s3Client) Copy(src, dest string) error {
+	root := strings.Trim(c.cfg.Prefix, "/")
+	if root != "" {
+		root += "/"
+	}
+	srcKey := root + strings.TrimLeft(src, "/")
+	destKey := root + strings.TrimLeft(dest, "/")
+	resp, err := c.request(http.MethodPut, destKey, nil, nil, map[string]string{
+		"x-amz-copy-source": encodeCopySource(c.cfg.Bucket, srcKey),
+	})
+	if err != nil {
+		return err
+	}
+	return c.check(resp)
+}
+
+func (c *s3Client) ListAll(prefix string) ([]Entry, error) {
+	root := strings.Trim(c.cfg.Prefix, "/")
+	if root != "" {
+		root += "/"
+	}
+	full := root + strings.TrimLeft(prefix, "/")
+	if prefix != "" && !strings.HasSuffix(full, "/") {
+		full += "/"
+	}
+	out := []Entry{}
+	cursor := ""
+	for {
+		q := url.Values{"list-type": {"2"}, "prefix": {full}}
+		if cursor != "" {
+			q.Set("continuation-token", cursor)
+		}
+		resp, err := c.request(http.MethodGet, "", q, nil, nil)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusNotFound && bytes.Contains(b, []byte("<Code>NoSuchBucket</Code>")) {
+				return []Entry{}, nil
+			}
+			return nil, fmt.Errorf("S3 list failed HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		}
+		var page struct {
+			Contents []struct {
+				Key      string `xml:"Key"`
+				Size     int64  `xml:"Size"`
+				Modified string `xml:"LastModified"`
+			} `xml:"Contents"`
+			Truncated bool   `xml:"IsTruncated"`
+			Next      string `xml:"NextContinuationToken"`
+		}
+		decErr := xml.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&page)
+		resp.Body.Close()
+		if decErr != nil {
+			return nil, decErr
+		}
+		for _, item := range page.Contents {
+			rel := strings.TrimPrefix(item.Key, root)
+			if rel == "" || rel == strings.TrimLeft(prefix, "/") {
+				continue
+			}
+			out = append(out, Entry{
+				Key: rel, Name: path.Base(strings.TrimSuffix(rel, "/")),
+				Folder: strings.HasSuffix(rel, "/"), Size: item.Size, Modified: item.Modified,
+			})
+		}
+		if !page.Truncated {
+			break
+		}
+		cursor = page.Next
+		if cursor == "" {
+			return nil, errors.New("S3 pagination token missing")
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Folder != out[j].Folder {
+			return out[i].Folder
+		}
+		return strings.ToLower(out[i].Key) < strings.ToLower(out[j].Key)
+	})
+	return out, nil
+}
+
 func (c *s3Client) Delete(key string) error {
 	root := strings.Trim(c.cfg.Prefix, "/")
 	if root != "" {
@@ -344,6 +457,9 @@ func (c *s3Client) DeleteFolder(prefix string) error {
 }
 
 func List(c Config, prefix, cursor string) (Listing, error) { return client(c).List(prefix, cursor) }
+func ListAll(c Config, prefix string) ([]Entry, error)      { return client(c).ListAll(prefix) }
+func Head(c Config, key string) (bool, error)               { return client(c).Head(key) }
+func Copy(c Config, src, dest string) error                 { return client(c).Copy(src, dest) }
 func Get(c Config, key string) ([]byte, string, error)      { return client(c).Get(key) }
 func Open(c Config, key string) (*http.Response, error)     { return client(c).Open(key) }
 func Put(c Config, key, contentType string, b []byte) error {

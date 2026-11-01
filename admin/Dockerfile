@@ -12,5 +12,5 @@ FROM alpine:3.20
 WORKDIR /app
 COPY --from=build /out/clofix-controller /usr/local/bin/clofix-controller
 COPY admin/web ./web
-EXPOSE 8080 8443
+EXPOSE 8080 8443 53 80
 CMD ["clofix-controller"]

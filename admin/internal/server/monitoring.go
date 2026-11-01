@@ -135,8 +135,8 @@ func validMonitorHTTP(raw string) bool {
 }
 func (s *Server) saveAlertChannel(w http.ResponseWriter, r *http.Request) {
 	var c alertChannel
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&c) != nil || strings.TrimSpace(c.Name) == "" || len(c.Name) > 80 || (c.Type != "slack" && c.Type != "webhook") {
-		fail(w, 400, "name and channel type (slack or webhook) required")
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&c) != nil || strings.TrimSpace(c.Name) == "" || len(c.Name) > 80 || !validAlertChannelType(c.Type) {
+		fail(w, 400, "name and channel type (slack, google-chat, discord, teams or webhook) required")
 		return
 	}
 	d := s.monitoring
@@ -155,12 +155,9 @@ func (s *Server) saveAlertChannel(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "valid HTTP/HTTPS webhook URL required, without user credentials or fragment")
 		return
 	}
-	if c.Type == "slack" {
-		u, _ := url.Parse(c.Webhook)
-		if u.Scheme != "https" || (u.Hostname() != "hooks.slack.com" && u.Hostname() != "hooks.slack-gov.com") || u.Port() != "" || !strings.HasPrefix(u.Path, "/services/") {
-			fail(w, 400, "use an official Slack incoming webhook URL")
-			return
-		}
+	if err := validateAlertWebhook(c.Type, c.Webhook); err != nil {
+		fail(w, 400, err.Error())
+		return
 	}
 	if !exists {
 		if len(d.Channels) >= 20 {
@@ -274,15 +271,76 @@ func (s *Server) deleteMonitoringResource(w http.ResponseWriter, r *http.Request
 }
 func sendHealthAlert(ctx context.Context, c alertChannel, event healthEvent) string {
 	message := fmt.Sprintf("CloFix health alert: %s is %s (%s)", event.Name, event.Status, event.At.UTC().Format(time.RFC3339))
-	payload := map[string]any{"text": message}
-	if c.Type == "webhook" {
-		payload["event"] = event.Status
-		payload["monitor_id"] = event.MonitorID
-		payload["name"] = event.Name
-		payload["timestamp"] = event.At
-		payload["event_id"] = event.ID
+	extra := map[string]any{"event": event.Status, "monitor_id": event.MonitorID, "name": event.Name, "timestamp": event.At, "event_id": event.ID}
+	return sendWebhookAlert(ctx, c, message, extra)
+}
+
+func validAlertChannelType(kind string) bool {
+	switch kind {
+	case "slack", "google-chat", "discord", "teams", "webhook":
+		return true
 	}
-	raw, _ := json.Marshal(payload)
+	return false
+}
+
+func officialHTTPSWebhook(raw string) (*url.URL, bool) {
+	u, err := url.Parse(raw)
+	return u, err == nil && u.Scheme == "https" && u.Hostname() != "" && u.Port() == "" && u.User == nil && u.Fragment == ""
+}
+
+func validateAlertWebhook(kind, raw string) error {
+	switch kind {
+	case "webhook":
+		return nil
+	case "slack":
+		u, ok := officialHTTPSWebhook(raw)
+		if !ok || (u.Hostname() != "hooks.slack.com" && u.Hostname() != "hooks.slack-gov.com") || !strings.HasPrefix(u.Path, "/services/") {
+			return errString("use an official Slack incoming webhook URL")
+		}
+	case "google-chat":
+		u, ok := officialHTTPSWebhook(raw)
+		if !ok || u.Hostname() != "chat.googleapis.com" || !strings.HasPrefix(u.Path, "/v1/spaces/") || !strings.Contains(u.Path, "/messages") {
+			return errString("use an official Google Chat incoming webhook URL")
+		}
+	case "discord":
+		u, ok := officialHTTPSWebhook(raw)
+		host := ""
+		if ok {
+			host = u.Hostname()
+		}
+		if !ok || (host != "discord.com" && host != "discordapp.com" && !strings.HasSuffix(host, ".discord.com")) || !strings.HasPrefix(u.Path, "/api/webhooks/") {
+			return errString("use an official Discord incoming webhook URL")
+		}
+	case "teams":
+		u, ok := officialHTTPSWebhook(raw)
+		host := ""
+		if ok {
+			host = u.Hostname()
+		}
+		if !ok || !(host == "outlook.office.com" || strings.HasSuffix(host, ".webhook.office.com") || strings.HasSuffix(host, ".webhook.office365.com")) || !strings.Contains(u.Path, "/webhook") {
+			return errString("use an official Microsoft Teams incoming webhook URL")
+		}
+	default:
+		return errString("unsupported channel type")
+	}
+	return nil
+}
+
+func alertWebhookPayload(kind, text string, extra map[string]any) map[string]any {
+	if kind == "discord" {
+		return map[string]any{"content": text}
+	}
+	payload := map[string]any{"text": text}
+	if kind == "webhook" {
+		for k, v := range extra {
+			payload[k] = v
+		}
+	}
+	return payload
+}
+
+func sendWebhookAlert(ctx context.Context, c alertChannel, text string, extra map[string]any) string {
+	raw, _ := json.Marshal(alertWebhookPayload(c.Type, text, extra))
 	req, e := http.NewRequestWithContext(ctx, "POST", c.Webhook, bytes.NewReader(raw))
 	if e != nil {
 		return "invalid webhook configuration"

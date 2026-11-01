@@ -3,13 +3,43 @@
  <div class="section-head"><div><p class="eyebrow">Networking</p><h2>Load Balancers</h2><p>Distribute TCP or HTTP traffic across healthy VPS instances and scale between your minimum and maximum.</p></div><button class="primary" id="lb-new">＋ Create load balancer</button></div>
  <p class="muted">Manage the allocated NLB IP pool in <a href="/settings#settings-nlb">Settings → NLB network settings</a>.</p>
  <div class="message" id="lb-message" role="status" aria-live="polite"></div>
- <div class="panel" id="lb-list"><div class="table-wrap"><table id="lb-table"></table></div></div>
- <div id="lb-detail" hidden>
- <div class="section-head"><a href="/load-balancers">← All load balancers</a><button class="secondary" id="lb-detail-edit">Modify load balancer</button></div>
- <div class="panel"><h2 id="lb-detail-name"></h2><div class="form-grid" id="lb-detail-summary"></div><p><a id="lb-detail-url" target="_blank" rel="noopener"></a> <button class="small-btn" id="lb-copy-url">Copy URL</button></p><p id="lb-detail-status" role="status"></p></div>
- <div class="panel"><h3>Backend VPS instances</h3><div class="table-wrap"><table id="lb-backends"></table></div></div>
+ <div class="settings-layout">
+  <nav class="settings-nav" aria-label="Load balancer sections">
+   <a href="#lb-overview" data-settings-link aria-controls="lb-overview" aria-current="location"><strong>Load balancers</strong><span>List and selected balancer</span></a>
+   <a href="#lb-notes" data-settings-link aria-controls="lb-notes"><strong>How it works</strong><span>Ownership and traffic notes</span></a>
+  </nav>
+  <div class="settings-content">
+   <div class="settings-section" id="lb-overview" data-settings-panel aria-labelledby="lb-heading-overview">
+    <h2 id="lb-heading-overview" class="visually-hidden" tabindex="-1">Load balancers</h2>
+    <div class="panel" id="lb-list"><div class="table-wrap"><table id="lb-table"></table></div></div>
+    <div id="lb-detail" hidden>
+     <div class="section-head"><a href="/load-balancers">← All load balancers</a><button class="secondary" id="lb-detail-edit">Modify load balancer</button></div>
+     <div class="panel"><h2 id="lb-detail-name"></h2><p><a id="lb-detail-url" target="_blank" rel="noopener"></a> <button class="small-btn" id="lb-copy-url">Copy URL</button></p><p id="lb-detail-status" role="status"></p></div>
+     <div class="cards">
+      <div class="stat"><div class="stat-label">Replicas</div><div class="stat-value" id="lb-stat-replicas">—</div><div class="stat-note" id="lb-stat-replicas-note">Healthy / current · max</div></div>
+      <div class="stat"><div class="stat-label">Hits · 60s</div><div class="stat-value" id="lb-stat-hits">—</div><div class="stat-note" id="lb-stat-hits-note">ALB requests and in-flight</div></div>
+      <div class="stat"><div class="stat-label">Average CPU</div><div class="stat-value" id="lb-stat-cpu">—</div><div class="stat-note" id="lb-stat-cpu-note">Per allocated core</div></div>
+      <div class="stat"><div class="stat-label">Average latency</div><div class="stat-value" id="lb-stat-latency">—</div><div class="stat-note" id="lb-stat-latency-note">ALB reverse-proxy EWMA</div></div>
+      <div class="stat"><div class="stat-label">Last scale</div><div class="stat-value" id="lb-stat-scale">—</div><div class="stat-note" id="lb-stat-scale-note">Reason</div></div>
+     </div>
+     <div class="chart-toolbar"><div class="chart-ranges" role="group" aria-label="Chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="6h" aria-pressed="false">6h</button><button type="button" data-chart-range="1d" aria-pressed="false">1d</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button><button type="button" data-chart-range="custom" aria-pressed="false">Custom</button></div><div class="chart-custom" hidden><label>From <input type="datetime-local" data-chart-from></label><label>To <input type="datetime-local" data-chart-to></label><button type="button" class="small-btn" data-chart-custom-apply>Apply</button></div></div>
+     <div class="chart-grid">
+      <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Replicas</div><div class="chart-subtitle">Current, minimum and maximum VPS · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-lb-replicas-current">—</div></div></div><svg id="chart-lb-replicas" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Load balancer replica count chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>Replicas</span><span><i class="legend-dot blue"></i>Minimum</span><span><i class="legend-dot amber"></i>Maximum</span></div></article>
+      <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Hits</div><div class="chart-subtitle">ALB requests in the last 60 seconds · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-lb-hits-current">—</div></div></div><svg id="chart-lb-hits" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Load balancer hits chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>Hits / 60s</span></div></article>
+      <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Average CPU</div><div class="chart-subtitle">Per allocated core versus target · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-lb-cpu-current">—</div></div></div><svg id="chart-lb-cpu" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Load balancer CPU chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>Average CPU</span><span><i class="legend-dot blue"></i>Target</span></div></article>
+      <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Average latency</div><div class="chart-subtitle">ALB reverse-proxy milliseconds · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-lb-latency-current">—</div></div></div><svg id="chart-lb-latency" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Load balancer latency chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>Latency ms</span></div></article>
+     </div>
+     <div class="panel"><h3>Settings</h3><div class="form-grid" id="lb-detail-summary"></div></div>
+     <div class="panel"><h3>Backend VPS instances</h3><div class="table-wrap"><table id="lb-backends"></table></div></div>
+    </div>
+   </div>
+   <div class="panel settings-section" id="lb-notes" data-settings-panel aria-labelledby="lb-heading-notes" hidden>
+    <h2 id="lb-heading-notes" tabindex="-1">How it works</h2>
+    <p class="muted">Each balancer is the replica pool. It creates and owns backend VPS instances between the minimum and maximum, like pods. The selected backup must run your application on the configured backend port. NLB forwards TCP without terminating TLS and scales on CPU only. ALB can also scale on request hits. The public endpoint forwards application traffic without a controller login.</p>
+    <p class="muted">Save an EFS share ID and guest path on the balancer. Every backend VPS — the first members and later scale-out — mounts that share at the path you set (default <code>/var/www/html</code>). The balancer does not create the share; pick one from Storage → EFS.</p>
+   </div>
+  </div>
  </div>
- <p class="muted">Each balancer creates and owns its backend VPS instances. The selected backup must run your application on the configured backend port. NLB forwards TCP without terminating TLS. The public endpoint forwards application traffic without a controller login.</p>
 </section>
 <dialog class="terminal-dialog form-dialog" id="lb-dialog" aria-labelledby="lb-title">
 <form id="lb-form"><div class="section-head"><h2 id="lb-title">Create load balancer</h2><button class="secondary" type="button" id="lb-close">Close</button></div>
@@ -22,18 +52,21 @@
  <div class="form-field form-span" data-lb-type="http" hidden><label for="lb-domains">ALB custom domains · optional</label><textarea id="lb-domains" rows="2" placeholder="app.example.com"></textarea><small class="muted">One hostname per line. Point DNS to this controller; HTTPS requires a TLS ingress/certificate. Without domains, use the generated /lb/ URL.</small></div>
  <div class="form-field" data-lb-type="http" hidden><label for="lb-slug">Application URL name (optional)</label><input id="lb-slug" pattern="[a-z0-9][a-z0-9-]{0,62}" maxlength="63" placeholder="my-app"><small class="muted">Application URL: /lb/my-app/ · leave blank to use the LB ID. Names starting with lb- are reserved.</small></div>
  <div class="form-field"><label for="lb-algorithm">Balancing algorithm</label><select id="lb-algorithm"><option value="round_robin">Round robin</option><option value="least_connections">Least connections</option><option value="least_response_time">Least response time</option><option value="ip_hash">Client IP hash</option><option value="uri_hash">URI hash</option><option value="random">Random</option><option value="power_of_two">Power of two choices</option></select></div>
- <div class="form-field"><label for="lb-min">Minimum VPS</label><input id="lb-min" type="number" min="1" max="100" value="1" required></div>
+ <div class="form-field"><label for="lb-min">Minimum VPS</label><input id="lb-min" type="number" min="1" max="100" value="2" required></div>
  <div class="form-field"><label for="lb-max">Maximum VPS</label><input id="lb-max" type="number" min="1" max="100" value="3" required></div>
  <div class="form-field"><label for="lb-target">Target CPU per allocated core (%)</label><input id="lb-target" type="number" min="10" max="95" value="70" required></div>
+ <div class="form-field" data-lb-type="http" hidden><label for="lb-target-rps">Target requests per VPS / 60s</label><input id="lb-target-rps" type="number" min="0" max="1000000" value="0" step="1"><small class="muted">0 keeps CPU-only scaling. Scale out when hits per replica exceed this value.</small></div>
  <div class="form-field" data-lb-type="http" hidden><label for="lb-health">Health check path</label><input id="lb-health" value="/" required></div>
  <div class="form-field form-span"><label for="lb-backup">VPS image · saved backup</label><select id="lb-backup" required><option value="">Select a ready VPS backup…</option></select><small class="muted" id="lb-backup-note">Backups from the Backups page. New VPS instances restore on the backup's source worker.</small></div>
+ <div class="form-field"><label for="lb-efs">EFS share · shared web root</label><select id="lb-efs"><option value="">None · do not auto-mount</option></select></div>
+ <div class="form-field"><label for="lb-efs-path">EFS guest path</label><input id="lb-efs-path" value="/var/www/html" placeholder="/var/www/html"><small class="muted">Members mount the selected share here. Change it to remount existing and new VPS.</small></div>
  <div class="form-field"><label for="lb-ram">RAM per VPS (MiB)</label><input id="lb-ram" type="number" min="32" value="512" required></div>
  <div class="form-field"><label for="lb-cpu">CPU cores per VPS</label><input id="lb-cpu" type="number" min="0.1" step="0.1" value="1" required></div>
  <div class="form-field"><label for="lb-disk">Disk per VPS (MiB)</label><input id="lb-disk" type="number" min="1" value="4096" required></div>
  <div class="form-field"><label for="lb-swap">Swap per VPS (MiB)</label><input id="lb-swap" type="number" min="0" value="0" required><small class="muted">0 disables guest swap. A positive value reserves host swap for each VPS, in addition to existing allocations.</small></div>
  <div class="form-field form-span"><label for="lb-ssh">SSH public key</label><textarea id="lb-ssh" rows="3" required spellcheck="false"></textarea></div>
 </div>
-<p class="muted">Settings for the backup and resources apply to newly created VPS instances. CPU above target adds one VPS; below half target removes one after a two-minute cooldown. Lowering maximum removes excess VPS instances. Deleting a balancer deletes all VPS instances it owns.</p>
+<p class="muted">Settings for the backup and resources apply to newly created VPS instances. CPU or ALB hits above target add one VPS; both below half target remove one after a two-minute cooldown. Lowering maximum removes excess VPS instances. Deleting a balancer deletes all VPS instances it owns.</p>
 <p class="message" id="lb-save-status" role="status" aria-live="polite"></p><p class="error" id="lb-error" role="alert"></p><button class="primary" id="lb-save" type="submit">Save load balancer</button>
 </form></dialog>
 {{end}}

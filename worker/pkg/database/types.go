@@ -36,6 +36,7 @@ type Project struct {
 	DiskMB  int64   `json:"disk_mb"`
 	Port    int     `json:"port"`
 	Host    string  `json:"host"`
+	VPCID   string  `json:"vpc_id,omitempty"`
 }
 
 func (p Project) Validate() error {

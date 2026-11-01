@@ -96,3 +96,15 @@ func TestJavaApplicationServersInLibrary(t *testing.T) {
 		}
 	}
 }
+func TestJenkinsManagedTemplate(t *testing.T) {
+	found := false
+	for _, template := range proto.ManagedTemplates {
+		if template.ID == "jenkins" && template.RAMMB >= 1024 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("Jenkins Quick App template missing")
+	}
+}

@@ -341,6 +341,7 @@ func (s *Server) createDatabaseProject(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Name     string     `json:"name"`
 		WorkerID string     `json:"worker_id"`
+		VPCID    string     `json:"vpc_id"`
 		Spec     db.Project `json:"spec"`
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" || len(in.Name) > 80 {
@@ -349,6 +350,15 @@ func (s *Server) createDatabaseProject(w http.ResponseWriter, r *http.Request) {
 	}
 	in.Spec.ID = "dbp-" + randHex(16)
 	in.Spec.Port = 26000
+	if in.VPCID != "" {
+		in.Spec.VPCID = in.VPCID
+	}
+	vpcID, vpcErr := s.resolveVPCID(in.Spec.VPCID)
+	if vpcErr != nil {
+		fail(w, 400, vpcErr.Error())
+		return
+	}
+	in.Spec.VPCID = vpcID
 	if e := in.Spec.Validate(); e != nil {
 		fail(w, 400, e.Error())
 		return

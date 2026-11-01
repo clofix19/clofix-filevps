@@ -3,7 +3,7 @@
 The Library at `/services` has two sections: Quick Apps deploy persistent managed
 sandboxes; VPS software installs packages into an existing VPS.
 
-Quick Apps includes Adminer, Uptime Kuma, and managed
+Quick Apps includes Adminer, Uptime Kuma, Jenkins, and managed
 web deployments: Static website, PHP website, Node.js, Next.js, and WordPress.
 The client chooses an app, names it, and presses Deploy. CloFix selects a prepared
 worker, generates login credentials, creates persistent storage and publishes an
@@ -26,8 +26,8 @@ desired state is running; crashed apps retry at most once every 30 seconds.
 The client controls Open app, Login, Start/Stop, Restart, Logs, Data export and
 Delete from the Library. Login credentials are encrypted on the controller and
 only their SHA-256 hash is kept in the worker's gateway metadata. Apps may still
-have their own first-time setup, such as Uptime Kuma's administrator account or
-Adminer's database login.
+have their own first-time setup, such as Uptime Kuma's administrator account,
+Jenkins' setup wizard, or Adminer's database login.
 
 ## Prepare worker templates
 
@@ -54,25 +54,24 @@ endpoint; CloFix does not expose private host or RFC1918 database addresses to
 managed app namespaces.
 
 This prepares Adminer from Ubuntu packages. It uses Nginx and PHP-FPM, not PHP's
-development HTTP server. Templates are published atomically after preparation;
-existing templates are preserved. Package daemons are prevented from starting
-inside the provisioning chroot.
+development HTTP server. The default run also downloads the official Uptime Kuma
+release archive and Jenkins LTS war, plus the official Node.js Linux runtime, and
+verifies each SHA-256 before publishing the template. Templates are published
+atomically after preparation; existing templates are preserved. Package daemons
+are prevented from starting inside the provisioning chroot.
 
-For Uptime Kuma, supply a compatible, prepared application directory containing
-`server/server.js`, production `node_modules`, and built `dist/index.html`. Native
-Node modules must match the worker architecture and guest OS. Also supply a
-compatible Linux Node.js runtime archive and verified SHA-256:
+To rebuild only those apps after an earlier skip:
 
 ```sh
-sudo env CLOFIX_MANAGED_TEMPLATES=uptime-kuma \
-  CLOFIX_UPTIME_KUMA_DIR=/path/to/prepared/uptime-kuma \
-  CLOFIX_NODE_ARCHIVE=/path/to/node-linux-arm64.tar.xz \
-  CLOFIX_NODE_SHA256=YOUR_VERIFIED_SHA256 \
+sudo env CLOFIX_MANAGED_TEMPLATES='uptime-kuma jenkins' \
   ./scripts/build-managed-templates.sh
 ```
 
-Missing Uptime Kuma inputs cause that template to be skipped, not
-advertised as ready. Preparation happens once per worker, not per client deploy.
+Optional overrides still accept a prepared Uptime Kuma directory
+(`CLOFIX_UPTIME_KUMA_DIR`) and a pinned Node archive/SHA-256. A failed download
+skips that template instead of advertising it as ready. Preparation happens once
+per worker, not per client deploy.
+
 The default state location is `/var/lib/clofix-filevps`; `CLOFIX_STATE_DIR` must be
 consistent between provisioning and the worker service. Templates live under
 `managed-templates/`, while app data/metadata lives under `managed-apps/`.
