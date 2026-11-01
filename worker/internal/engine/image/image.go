@@ -101,6 +101,9 @@ func (m *Manager) Ensure(ref proto.ImageRef) (string, error) {
 			valid = strings.EqualFold(mf.SHA256, ref.SHA256)
 		}
 		if valid {
+			if err := EnsureStickyTmp(root); err != nil {
+				return "", err
+			}
 			return root, nil // cache hit
 		}
 	}
@@ -157,7 +160,25 @@ func (m *Manager) Ensure(ref proto.ImageRef) (string, error) {
 	if err := os.Rename(filepath.Join(tmp, "manifest.json"), filepath.Join(dir, "manifest.json")); err != nil {
 		return "", err
 	}
+	if err := EnsureStickyTmp(root); err != nil {
+		return "", err
+	}
 	return root, nil
+}
+
+// EnsureStickyTmp sets 1777 on /tmp and /var/tmp so unprivileged guest users can
+// use them. Ubuntu images sometimes extract those directories as 0755.
+func EnsureStickyTmp(root string) error {
+	for _, rel := range []string{"tmp", filepath.Join("var", "tmp")} {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			return err
+		}
+		if err := os.Chmod(p, 0o1777); err != nil {
+			return fmt.Errorf("set %s mode 1777: %w", rel, err)
+		}
+	}
+	return nil
 }
 
 func (m *Manager) download(url, dest string) (string, error) {

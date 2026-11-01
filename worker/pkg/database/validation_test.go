@@ -37,6 +37,14 @@ func TestUploadFormatAndExpansionLimits(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+func TestEngineIncludesRedis(t *testing.T) {
+	if !Engine("redis") || !Engine("mysql") || Engine("sqlite") {
+		t.Fatal("engine allowlist")
+	}
+	if Name("redis") == nil {
+		t.Fatal("redis remains a reserved logical name")
+	}
+}
 func TestProjectRejectsInvalidResourceNumbers(t *testing.T) {
 	p := Project{ID: "dbp-" + strings.Repeat("a", 32), Engine: "mysql", RAMMB: 512, CPU: 1, DiskMB: 1024, Port: 26000}
 	for _, cpu := range []float64{math.NaN(), math.Inf(1), math.Inf(-1), 0, -1, 129} {

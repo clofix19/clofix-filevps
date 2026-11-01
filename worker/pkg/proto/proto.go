@@ -195,6 +195,7 @@ type ServiceStatus struct {
 	CPUPercent  float64 `json:"cpu_percent"`
 	MemoryBytes uint64  `json:"memory_bytes"`
 	SwapBytes   uint64  `json:"swap_bytes"`
+	ListenPorts []int   `json:"listen_ports,omitempty"`
 	Logs        string  `json:"logs,omitempty"`
 }
 
@@ -205,6 +206,10 @@ type InstanceMetrics struct {
 	SwapCurrentBytes   uint64                `json:"swap_current_bytes"`
 	SwapLimitBytes     uint64                `json:"swap_limit_bytes"`
 	DiskUsageBytes     uint64                `json:"disk_usage_bytes"`
+	NetRxBytes         uint64                `json:"net_rx_bytes,omitempty"`
+	NetTxBytes         uint64                `json:"net_tx_bytes,omitempty"`
+	NetRxBps           uint64                `json:"net_rx_bps,omitempty"`
+	NetTxBps           uint64                `json:"net_tx_bps,omitempty"`
 	StorageVolumes     []StorageVolumeMetric `json:"storage_volumes,omitempty"`
 }
 

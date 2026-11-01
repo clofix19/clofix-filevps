@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"sort"
@@ -37,6 +38,8 @@ type managedApp struct {
 func safeManaged(a managedApp) managedApp {
 	a.Credential = nil
 	a.Spec.GatewayHash = ""
+	a.Spec.Deployment.Artifact = nil
+	a.Spec.Deployment.Env = nil
 	a.Pending = ""
 	a.Logs = ""
 	return a
@@ -97,14 +100,41 @@ func managedAppURL(host string, port int) string {
 	}
 	return scheme + "://" + net.JoinHostPort(host, strconv.Itoa(port)) + "/"
 }
+
+func databaseURL(engine, host string, port int, name, user, password string) string {
+	u := url.URL{Host: net.JoinHostPort(host, strconv.Itoa(port)), Path: "/" + name, User: url.UserPassword(user, password)}
+	switch engine {
+	case "postgresql":
+		u.Scheme = "postgres"
+	case "mongodb":
+		u.Scheme = "mongodb"
+	case "redis":
+		u.Scheme = "rediss"
+		u.Path = "/0"
+		q := u.Query()
+		q.Set("prefix", name)
+		u.RawQuery = q.Encode()
+	default:
+		u.Scheme = "mysql"
+	}
+	return u.String()
+}
 func (s *Server) deployManagedApp(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Name     string  `json:"name"`
-		Template string  `json:"template"`
-		RAMMB    int64   `json:"ram_mb"`
-		CPU      float64 `json:"cpu"`
+		Name             string            `json:"name"`
+		Template         string            `json:"template"`
+		RAMMB            int64             `json:"ram_mb"`
+		CPU              float64           `json:"cpu"`
+		Runtime          string            `json:"runtime"`
+		Entry            string            `json:"entry"`
+		Artifact         []byte            `json:"artifact"`
+		Env              map[string]string `json:"env"`
+		DatabaseProject  string            `json:"database_project"`
+		Database         string            `json:"database"`
+		DatabaseUser     string            `json:"database_user"`
+		DatabasePassword string            `json:"database_password"`
 	}
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" || len(in.Name) > 80 {
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 24<<20)).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" || len(in.Name) > 80 {
 		fail(w, 400, "application name is required (max 80 characters)")
 		return
 	}
@@ -117,6 +147,56 @@ func (s *Server) deployManagedApp(w http.ResponseWriter, r *http.Request) {
 	if template == nil {
 		fail(w, 400, "unknown managed app template")
 		return
+	}
+	if in.Runtime != "" {
+		expected := "web-" + in.Runtime
+		if in.Runtime == "nodejs" || in.Runtime == "nextjs" || in.Runtime == "wordpress" || in.Runtime == "php" || in.Runtime == "static" {
+			if in.Template != expected {
+				fail(w, 400, "runtime does not match the selected web application type")
+				return
+			}
+		}
+		if len(in.Artifact) == 0 || len(in.Artifact) > 16<<20 {
+			fail(w, 400, "upload a ZIP file no larger than 16 MiB")
+			return
+		}
+		for key, value := range in.Env {
+			if !regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`).MatchString(key) || len(value) > 4096 {
+				fail(w, 400, "invalid application environment setting")
+				return
+			}
+		}
+		if in.DatabaseProject != "" || in.Database != "" || in.DatabaseUser != "" || in.DatabasePassword != "" {
+			if in.DatabaseProject == "" || in.Database == "" || in.DatabaseUser == "" || in.DatabasePassword == "" {
+				fail(w, 400, "select a managed database and provide its existing user and password")
+				return
+			}
+			s.databases.Lock()
+			project, ok := s.databases.Projects[in.DatabaseProject]
+			s.databases.Unlock()
+			if !ok || !canAccessApplication(r, project.Owner) || project.State != "READY" || !project.Databases[in.Database] || project.Users[in.DatabaseUser] == nil {
+				fail(w, 400, "selected managed database, database, or user is unavailable")
+				return
+			}
+			if len(in.DatabasePassword) < 16 || len(in.DatabasePassword) > 128 || strings.ContainsAny(in.DatabasePassword, "\x00\r\n") {
+				fail(w, 400, "database password must be 16-128 characters")
+				return
+			}
+			if in.Env == nil {
+				in.Env = map[string]string{}
+			}
+			in.Env["DB_ENGINE"] = project.Spec.Engine
+			in.Env["DB_HOST"] = project.Spec.Host
+			in.Env["DB_PORT"] = strconv.Itoa(project.Spec.Port)
+			in.Env["DB_NAME"] = in.Database
+			in.Env["DB_USER"] = in.DatabaseUser
+			in.Env["DB_PASSWORD"] = in.DatabasePassword
+			in.Env["DATABASE_URL"] = databaseURL(project.Spec.Engine, project.Spec.Host, project.Spec.Port, in.Database, in.DatabaseUser, in.DatabasePassword)
+			if project.Spec.Engine == "redis" {
+				in.Env["REDIS_URL"] = in.Env["DATABASE_URL"]
+				in.Env["REDIS_PREFIX"] = in.Database
+			}
+		}
 	}
 	if in.RAMMB == 0 {
 		in.RAMMB = template.RAMMB
@@ -137,7 +217,7 @@ func (s *Server) deployManagedApp(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, "managed application limit reached")
 		return
 	}
-	spec := proto.ManagedSpec{ID: "ma-" + randHex(8), Template: in.Template, RAMMB: in.RAMMB, CPU: in.CPU, GatewayHash: hashToken(password), Port: 25000, Address: "10.231.128.2"}
+	spec := proto.ManagedSpec{ID: "ma-" + randHex(8), Template: in.Template, RAMMB: in.RAMMB, CPU: in.CPU, GatewayHash: hashToken(password), Port: 25000, Address: "10.231.128.2", Deployment: proto.WebDeployment{Runtime: in.Runtime, Entry: strings.TrimSpace(in.Entry), Artifact: in.Artifact, Env: in.Env}}
 	if err = proto.ValidateManaged(spec); err != nil {
 		fail(w, 400, err.Error())
 		return

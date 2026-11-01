@@ -37,6 +37,12 @@ func names(id string) (string, string) {
 	return "cfh" + s, "cfp" + s
 }
 
+// HostInterface is the host-side veth name for an instance.
+func HostInterface(id string) string {
+	host, _ := names(id)
+	return host
+}
+
 func firewall() error {
 	if _, err := command("nft", "list", "table", "ip", "clofix"); err == nil {
 		return nil

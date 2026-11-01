@@ -44,6 +44,10 @@ type Capacity struct {
 	PSIMemSome10   float64 `json:"psi_mem_some10"` // percent 0..100
 	PSICPUSome10   float64 `json:"psi_cpu_some10"`
 	PSIIOSome10    float64 `json:"psi_io_some10"`
+	NetRxBytes     uint64  `json:"net_rx_bytes,omitempty"`
+	NetTxBytes     uint64  `json:"net_tx_bytes,omitempty"`
+	NetRxBps       uint64  `json:"net_rx_bps,omitempty"`
+	NetTxBps       uint64  `json:"net_tx_bps,omitempty"`
 }
 
 // GPUDevice is inventory only. Placement and guest assignment are not implemented.

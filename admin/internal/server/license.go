@@ -34,6 +34,8 @@ type licensePlan struct {
 	MaxIAMGroups            *int `json:"max_iam_groups,omitempty"`
 	MaxIAMPolicies          *int `json:"max_iam_policies,omitempty"`
 	MaxAccessKeys           *int `json:"max_access_keys,omitempty"`
+	MaxDNSZones             *int `json:"max_dns_zones,omitempty"`
+	MaxDNSRecords           *int `json:"max_dns_records,omitempty"`
 
 	ID             string `json:"id"`
 	Name           string `json:"name"`

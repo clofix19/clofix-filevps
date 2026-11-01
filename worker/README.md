@@ -47,7 +47,7 @@ Compose sets `CLOFIX_USER_NS=false` for this local Docker Desktop environment be
 ```text
 clofix-worker run       Run the worker agent and guest engine
 clofix-worker enroll    Enroll with a one-time token (prompted securely)
-clofix-worker fx         Run the guest-engine CLI
+clofix-worker fx         Guest-engine CLI: create|start|exec|delete
 ```
 
 ## Main packages
@@ -65,7 +65,8 @@ The worker uses Linux kernel facilities directly; it does not depend on Docker, 
 
 ## Current limits
 
-- `disk_mb` is used for placement and capacity accounting; per-guest disk quotas are not enforced yet. The worker reports measured writable-layer bytes from the guest's OverlayFS upper directory, which the UI displays as disk usage.
+- `disk_mb` sizes a per-guest loop+ext4 backing image for the OverlayFS upper/work directories when it is at least 64 MB. Guest `df /` shows that size, and writes past it return ENOSPC. Existing guests migrate on the next start. Changing `disk_mb` after the image exists does not resize it.
+- With `user_ns=true`, each instance gets a unique host uid/gid range (`uid_base + index * 65536`) stored as `host_uid` in instance metadata. Guests created before this change are remapped on the next start: overlay upper files in the old shared `uid_base` range move to the new range. Running guests keep the old mapping until they restart. Shared image lower files stay shifted to `uid_base`, so only the first range matches the image; later guests see those files as `nobody` (65534) and rely on `DAC_OVERRIDE`. Bind-mounted volumes still use `uid_base`.
 - RAM, CPU, and swap resource edits recreate the guest cgroup; running guests restart to apply the updated limits. Disk allocation edits only change placement accounting and do not limit writes.
 - AppArmor availability is detected, but guest-specific AppArmor profiles are not applied.
 - Guests share the host kernel. These are containers, not virtual machines with separate kernels.

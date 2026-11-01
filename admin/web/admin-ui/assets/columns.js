@@ -1,21 +1,21 @@
 /* Per-table column preferences, independent of live data refreshes. */
 (() => {
   const defaults = {
-    instances:['VPS','State','Resources','IP address','Actions'],
+    instances:['VPS','State','CPU','RAM','IN','OUT','Bandwidth','Actions'],
     'home-vps-table':['VPS','State','RAM','CPU','Actions'],
     'home-worker-table':['Worker','Status','Free RAM','CPU'],
-    workers:['Worker','Host','Status','Free RAM','CPU utilization','Actions'],
+    workers:['Worker','Host','Status','CPU','RAM','Disk','Actions'],
     'security-instances':['VPS','State','Protection Mode','OWASP CRS WAF','Action'],
     'iam-users-table':['Username','Role','Status','Actions'],
     'iam-groups-table':['Group','Users','Policies','Actions'],
     'iam-policies-table':['Policy','Permissions','Actions'],
     's3-connections-table':['Storage','Provider','Bucket','Action'],
-    'service-table':['Service','Status','CPU','RAM (PSS estimate)','Actions'],
+    'service-table':['Service','Status','Ports','CPU','RAM (PSS estimate)','Actions'],
     'volume-table':['Name','State','Usage / hard limit','Attached VPS','Actions'],
     'backups-table':['Backup','Source VPS','Created','Archive size','Status','Actions']
   };
   document.querySelectorAll('.table-wrap table[id]').forEach(table => {
-    const key = 'cf_table_columns_v1:' + table.id;
+    const key = 'cf_table_columns_v2:' + table.id;
     let saved = null, signature = '', controls;
     try { const value = JSON.parse(localStorage.getItem(key)); if (Array.isArray(value)) saved = value; } catch (_) {}
     const wrap = table.closest('.table-wrap');

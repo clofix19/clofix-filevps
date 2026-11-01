@@ -94,6 +94,29 @@ func TestDatabaseOperationRejectsUnknownInventoryAndReservedUser(t *testing.T) {
 	}
 }
 
+func TestDatabaseFailedProjectRetry(t *testing.T) {
+	s, _ := newSrv(t)
+	projectID := "dbp-" + strings.Repeat("b", 32)
+	s.databases.Lock()
+	project := databaseProjectFixture(projectID)
+	project.State = "FAILED"
+	project.Error = "database engine readiness timed out"
+	s.databases.Projects[projectID] = project
+	s.databases.Unlock()
+	if response := do(s.AdminHandler(), "POST", "/api/databases/projects/"+projectID+"/retry", "", tok); response.Code != 202 {
+		t.Fatalf("retry: %d %s", response.Code, response.Body.String())
+	}
+	s.databases.Lock()
+	retried := s.databases.Projects[projectID]
+	s.databases.Unlock()
+	if retried.State != "PROVISIONING" || retried.Error != "" {
+		t.Fatalf("retry did not requeue: %+v", retried)
+	}
+	if response := do(s.AdminHandler(), "POST", "/api/databases/projects/"+projectID+"/retry", "", tok); response.Code != 409 {
+		t.Fatalf("retry while provisioning: %d %s", response.Code, response.Body.String())
+	}
+}
+
 func databaseProjectFixture(id string) model.Project {
 	return model.Project{Spec: db.Project{ID: id, Engine: "mysql", Version: "8.4", RAMMB: 512, CPU: 1, DiskMB: 512, Port: 26000, Host: "192.0.2.20"}, Owner: "root", Name: "test", WorkerID: "worker", State: "READY", Created: time.Now(), Databases: map[string]bool{"orders": true}, Users: map[string]map[string]string{}}
 }

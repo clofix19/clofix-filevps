@@ -44,6 +44,9 @@ var iamPermissionSet = map[string]bool{
 	"volumes:read": true, "volumes:manage": true, "storage:read": true, "storage:manage": true,
 	"security:read": true, "security:manage": true, "services:read": true, "services:manage": true,
 	"iam:read": true, "iam:manage": true,
+	"pricing:read": true, "pricing:manage": true,
+	"billing:read": true, "billing:manage": true,
+	"dns:read": true, "dns:manage": true,
 }
 
 func iamPermissionCatalog() []string {
@@ -116,6 +119,12 @@ func permissionResource(path string) string {
 		return "backups"
 	case strings.HasPrefix(path, "/api/applications"), strings.HasPrefix(path, "/api/application-runs"), strings.HasPrefix(path, "/api/functions"):
 		return "applications"
+	case strings.HasPrefix(path, "/api/pricing"):
+		return "pricing"
+	case strings.HasPrefix(path, "/api/billing"):
+		return "billing"
+	case strings.HasPrefix(path, "/api/dns"):
+		return "dns"
 	case strings.HasPrefix(path, "/api/iam"):
 		return "iam"
 	case path == "/api/ca.pem":

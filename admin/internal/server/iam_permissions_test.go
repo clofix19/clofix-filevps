@@ -20,6 +20,8 @@ func TestIAMPermissionCatalogCoversResources(t *testing.T) {
 		"/api/volumes/v-1/file": "volumes", "/api/storage/connections/c-1/objects": "storage",
 		"/api/instances/vps-1/waf/logs": "security", "/api/instances/vps-1/install-service": "services",
 		"/api/iam/policies": "iam", "/api/ca.pem": "platform",
+		"/api/pricing/plans": "pricing", "/api/billing/invoices": "billing", "/api/billing/invoices/inv-1/pdf": "billing",
+		"/api/dns": "dns", "/api/dns/records": "dns",
 	}
 	for path, want := range routes {
 		if got := permissionResource(path); got != want {

@@ -13,6 +13,8 @@ FROM ubuntu:24.04 AS builtin-rootfs
 RUN export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y --no-install-recommends tar openssh-server iproute2 \
     && rm -rf /var/lib/apt/lists/* \
     && rm -f /etc/ssh/ssh_host_*_key* \
+    && mkdir -p /tmp /var/tmp \
+    && chmod 1777 /tmp /var/tmp \
     && tar --numeric-owner -czf /tmp/rootfs.tar.gz \
        --exclude=./proc/* --exclude=./sys/* --exclude=./dev/* --exclude=./run/* --exclude=./tmp/* \
        -C / .

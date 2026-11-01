@@ -32,9 +32,14 @@ func newDatabaseBackupKey() ([]byte, error) {
 	return key, err
 }
 
-func (s *Server) createBackupLocked(project model.Project, database string, tables []string, destination, connectionID, scheduleID string, limitMB int64) (model.Backup, model.Job, error) {
+func (s *Server) createBackupLocked(project model.Project, database string, tables []string, scope, destination, connectionID, scheduleID string, limitMB int64) (model.Backup, model.Job, error) {
 	if !project.Databases[database] {
 		return model.Backup{}, model.Job{}, fmt.Errorf("database not found")
+	}
+	// A zero value means the caller wants the automatic capacity derived from
+	// the managed database disk, as used by the backup form and schedules.
+	if limitMB == 0 {
+		limitMB = project.Spec.DiskMB
 	}
 	if destination != "central" && destination != "s3" {
 		return model.Backup{}, model.Job{}, fmt.Errorf("backup destination must be central or s3")
@@ -64,8 +69,8 @@ func (s *Server) createBackupLocked(project model.Project, database string, tabl
 	if err != nil {
 		return model.Backup{}, model.Job{}, err
 	}
-	backup := model.Backup{ID: id, Owner: project.Owner, ProjectID: project.Spec.ID, ProjectSpec: project.Spec, Database: database, Engine: project.Spec.Engine, EngineVersion: project.Spec.Version, Tables: tables, State: "CREATING", Destination: destination, ConnectionID: connectionID, WorkerID: project.WorkerID, EncryptedKey: encrypted, ReservedBytes: limitMB << 20, Created: time.Now().UTC(), ScheduleID: scheduleID}
-	job, err := s.queueDatabase(project, db.Operation{Action: "backup", Database: database, Backup: &db.BackupSpec{ID: id, Tables: tables, Key: key, LimitBytes: backup.ReservedBytes}}, "")
+	backup := model.Backup{ID: id, Owner: project.Owner, ProjectID: project.Spec.ID, ProjectSpec: project.Spec, Database: database, Engine: project.Spec.Engine, EngineVersion: project.Spec.Version, Tables: tables, Scope: scope, State: "CREATING", Destination: destination, ConnectionID: connectionID, WorkerID: project.WorkerID, EncryptedKey: encrypted, ReservedBytes: limitMB << 20, Created: time.Now().UTC(), ScheduleID: scheduleID}
+	job, err := s.queueDatabase(project, db.Operation{Action: "backup", Database: database, Backup: &db.BackupSpec{ID: id, Tables: tables, Scope: scope, Key: key, LimitBytes: backup.ReservedBytes}}, "")
 	if err != nil {
 		return model.Backup{}, model.Job{}, err
 	}
@@ -87,6 +92,7 @@ func (s *Server) createDatabaseBackup(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Database     string   `json:"database"`
 		Tables       []string `json:"tables"`
+		Scope        string   `json:"scope"`
 		Destination  string   `json:"destination"`
 		ConnectionID string   `json:"connection_id"`
 		LimitMB      int64    `json:"limit_mb"`
@@ -95,24 +101,53 @@ func (s *Server) createDatabaseBackup(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "valid database backup request required")
 		return
 	}
-	if err := s.checkStorage(in.LimitMB<<20, false); err != nil {
-		fail(w, 403, err.Error())
+	if in.Scope == "" {
+		in.Scope = "full"
+	}
+	if in.Scope != "full" && in.Scope != "data" && in.Scope != "schema" {
+		fail(w, 400, "backup scope must be full, data or schema")
 		return
 	}
 	d := s.databases
 	d.Lock()
-	defer d.Unlock()
 	project, ok := d.Projects[r.PathValue("id")]
 	if !ok || !canAccessApplication(r, project.Owner) {
+		d.Unlock()
 		fail(w, 404, "project not found")
 		return
 	}
+	if in.Scope == "schema" && project.Spec.Engine == "mongodb" {
+		d.Unlock()
+		fail(w, 400, "MongoDB does not have a separate schema-only backup")
+		return
+	}
+	if project.Spec.Engine == "redis" {
+		d.Unlock()
+		fail(w, 400, "Redis backup is not implemented")
+		return
+	}
 	if project.State != "READY" || s.databaseProjectBusy(project.Spec.ID) {
+		d.Unlock()
 		fail(w, 409, "project is not ready or another job is active")
 		return
 	}
+	// The worker uses the managed database disk allocation as the automatic
+	// upper bound; the user does not need to estimate a dump size.
+	in.LimitMB = project.Spec.DiskMB
+	d.Unlock()
+	if err := s.checkStorage(in.LimitMB<<20, false); err != nil {
+		fail(w, 403, err.Error())
+		return
+	}
+	d.Lock()
+	defer d.Unlock()
+	project, ok = d.Projects[r.PathValue("id")]
+	if !ok || !canAccessApplication(r, project.Owner) || project.State != "READY" || s.databaseProjectBusy(project.Spec.ID) {
+		fail(w, 409, "project changed state while validating backup storage")
+		return
+	}
 	before := s.databaseCheckpoint()
-	backup, job, err := s.createBackupLocked(project, in.Database, in.Tables, in.Destination, in.ConnectionID, "", in.LimitMB)
+	backup, job, err := s.createBackupLocked(project, in.Database, in.Tables, in.Scope, in.Destination, in.ConnectionID, "", in.LimitMB)
 	if err == nil {
 		err = s.saveDatabase(before)
 	}
@@ -173,7 +208,7 @@ func (s *Server) restoreDatabase(w http.ResponseWriter, r *http.Request) {
 			fail(w, 403, "a safety backup is required but the retained-backup license quota is full")
 			return
 		}
-		safety, job, err := s.createBackupLocked(project, in.Database, nil, "central", "", "", project.Spec.DiskMB)
+		safety, job, err := s.createBackupLocked(project, in.Database, nil, "full", "central", "", "", project.Spec.DiskMB)
 		if err != nil {
 			json.Unmarshal(before, d)
 			fail(w, 409, "safety backup could not be queued: "+err.Error())
@@ -477,7 +512,7 @@ func (s *Server) retryDatabaseBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	os.Remove(s.databaseBackupPath(backup.ID))
 	before := s.databaseCheckpoint()
-	job, err := s.queueDatabase(project, db.Operation{Action: "backup", Database: backup.Database, Backup: &db.BackupSpec{ID: backup.ID, Tables: backup.Tables, Key: key, LimitBytes: backup.ReservedBytes}}, "")
+	job, err := s.queueDatabase(project, db.Operation{Action: "backup", Database: backup.Database, Backup: &db.BackupSpec{ID: backup.ID, Tables: backup.Tables, Scope: backup.Scope, Key: key, LimitBytes: backup.ReservedBytes}}, "")
 	if err == nil {
 		backup.Attempts++
 		backup.State = "CREATING"
@@ -585,8 +620,8 @@ func (s *Server) saveDatabaseSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in model.Schedule
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&in) != nil || db.Name(in.Database) != nil || in.Retention < 1 || in.Retention > 365 || in.LimitMB < 16 {
-		fail(w, 400, "valid schedule, retention and reservation required")
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&in) != nil || db.Name(in.Database) != nil || in.Retention < 1 || in.Retention > 365 {
+		fail(w, 400, "valid schedule and retention required")
 		return
 	}
 	if _, err := parseApplicationCron(in.Cron); err != nil {
@@ -611,6 +646,11 @@ func (s *Server) saveDatabaseSchedule(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "project or database not found")
 		return
 	}
+	if project.Spec.Engine == "redis" {
+		fail(w, 400, "Redis backup is not implemented")
+		return
+	}
+	in.LimitMB = project.Spec.DiskMB
 	if in.Destination != "central" && in.Destination != "s3" {
 		fail(w, 400, "destination must be central or s3")
 		return
@@ -683,7 +723,7 @@ func (s *Server) runDatabaseSchedules(now time.Time) {
 		if !ok || project.State != "READY" || s.databaseProjectBusy(project.Spec.ID) || (backupLimit >= 0 && int64(len(d.Backups)+len(d.Uploads)) >= backupLimit) {
 			continue
 		}
-		if _, _, err = s.createBackupLocked(project, schedule.Database, nil, schedule.Destination, schedule.ConnectionID, schedule.ID, schedule.LimitMB); err != nil {
+		if _, _, err = s.createBackupLocked(project, schedule.Database, nil, "full", schedule.Destination, schedule.ConnectionID, schedule.ID, schedule.LimitMB); err != nil {
 			schedule.Error = err.Error()
 		} else {
 			schedule.Error = ""
@@ -701,10 +741,12 @@ func (s *Server) runDatabaseSchedules(now time.Time) {
 			}
 		}
 		sort.Slice(items, func(i, j int) bool { return items[i].Created.After(items[j].Created) })
-		for _, backup := range items[schedule.Retention:] {
-			backup.State = "DELETING_STORAGE"
-			d.Backups[backup.ID] = backup
-			changed = true
+		if len(items) > schedule.Retention {
+			for _, backup := range items[schedule.Retention:] {
+				backup.State = "DELETING_STORAGE"
+				d.Backups[backup.ID] = backup
+				changed = true
+			}
 		}
 	}
 	if changed {

@@ -3,7 +3,8 @@
 The Library at `/services` has two sections: Quick Apps deploy persistent managed
 sandboxes; VPS software installs packages into an existing VPS.
 
-Quick Apps currently includes Adminer, VS Code Web (code-server), and Uptime Kuma.
+Quick Apps includes Adminer, Uptime Kuma, and managed
+web deployments: Static website, PHP website, Node.js, Next.js, and WordPress.
 The client chooses an app, names it, and presses Deploy. CloFix selects a prepared
 worker, generates login credentials, creates persistent storage and publishes an
 application URL. No client VPS or SSH account is created.
@@ -36,20 +37,26 @@ On a supported Linux worker, install `debootstrap`, then run:
 sudo ./scripts/build-managed-templates.sh
 ```
 
+The default command also prepares the five web runtimes. A web deployment is a
+ZIP (maximum 16 MiB) extracted to the app's persistent `/data/app` directory.
+Static sites need `index.html`; PHP apps are served through Nginx/PHP-FPM; Node.js
+and Next.js packages must include their production `node_modules` and, for Next,
+the built `.next` output. Node apps use `server.js` by default, or the optional
+entrypoint supplied in the deployment form. WordPress uses the packaged WordPress
+files when its ZIP contains only themes/plugins; a complete WordPress ZIP is also
+accepted.
+
+Use the deployment form's `NAME=value` environment settings for application
+configuration, including a database URL. Values are sent only to the selected
+worker and are removed from ordinary managed-app API responses. A database must
+be reachable from the application sandbox through the worker's published database
+endpoint; CloFix does not expose private host or RFC1918 database addresses to
+managed app namespaces.
+
 This prepares Adminer from Ubuntu packages. It uses Nginx and PHP-FPM, not PHP's
 development HTTP server. Templates are published atomically after preparation;
 existing templates are preserved. Package daemons are prevented from starting
 inside the provisioning chroot.
-
-For code-server, obtain a verified Linux standalone `.tar.gz` for the worker's
-architecture and its SHA-256 checksum:
-
-```sh
-sudo env CLOFIX_MANAGED_TEMPLATES=code-server \
-  CLOFIX_CODE_SERVER_ARCHIVE=/path/to/code-server-linux-arm64.tar.gz \
-  CLOFIX_CODE_SERVER_SHA256=YOUR_VERIFIED_SHA256 \
-  ./scripts/build-managed-templates.sh
-```
 
 For Uptime Kuma, supply a compatible, prepared application directory containing
 `server/server.js`, production `node_modules`, and built `dist/index.html`. Native
@@ -64,7 +71,7 @@ sudo env CLOFIX_MANAGED_TEMPLATES=uptime-kuma \
   ./scripts/build-managed-templates.sh
 ```
 
-Missing code-server/Uptime Kuma inputs cause those templates to be skipped, not
+Missing Uptime Kuma inputs cause that template to be skipped, not
 advertised as ready. Preparation happens once per worker, not per client deploy.
 The default state location is `/var/lib/clofix-filevps`; `CLOFIX_STATE_DIR` must be
 consistent between provisioning and the worker service. Templates live under

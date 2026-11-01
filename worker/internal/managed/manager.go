@@ -4,6 +4,8 @@
 package managed
 
 import (
+	"archive/zip"
+	"bytes"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -17,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -145,6 +148,17 @@ func (m *Manager) Apply(op proto.Operation) (resultErr error) {
 				return err
 			}
 		}
+		if spec.Deployment.Runtime != "" {
+			if err := m.installDeployment(a); err != nil {
+				return err
+			}
+			// The source ZIP is needed only to create the persistent application
+			// directory. Do not retain it in worker metadata.
+			a.Spec.Deployment.Artifact = nil
+			if err := m.save(a); err != nil {
+				return err
+			}
+		}
 		return m.start(a)
 	}
 	if a == nil {
@@ -194,6 +208,49 @@ func (m *Manager) Apply(op proto.Operation) (resultErr error) {
 		return m.saveDeleted()
 	}
 	return fmt.Errorf("unknown managed action")
+}
+
+func (m *Manager) installDeployment(a *record) error {
+	if err := m.ensureData(a.Spec.ID); err != nil {
+		return err
+	}
+	destination := filepath.Join(m.path(a.Spec.ID), "data", "app")
+	if err := os.MkdirAll(destination, 0755); err != nil {
+		return err
+	}
+	zr, err := zip.NewReader(bytes.NewReader(a.Spec.Deployment.Artifact), int64(len(a.Spec.Deployment.Artifact)))
+	if err != nil {
+		return fmt.Errorf("deployment artifact is not a valid ZIP: %w", err)
+	}
+	var expanded uint64
+	for _, file := range zr.File {
+		name := filepath.Clean(file.Name)
+		if name == "." || strings.HasPrefix(name, "../") || filepath.IsAbs(name) || strings.Contains(name, `\\`) {
+			return fmt.Errorf("deployment ZIP contains an unsafe path")
+		}
+		if file.FileInfo().Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("deployment ZIP may not contain symlinks")
+		}
+		if file.UncompressedSize64 > 64<<20 || expanded+file.UncompressedSize64 > 512<<20 {
+			return fmt.Errorf("deployment ZIP expands beyond the 512 MiB safety limit")
+		}
+		expanded += file.UncompressedSize64
+		target := filepath.Join(destination, name)
+		if !strings.HasPrefix(target, destination+string(os.PathSeparator)) {
+			return fmt.Errorf("deployment ZIP contains an unsafe path")
+		}
+		if file.FileInfo().IsDir() {
+			if err := os.MkdirAll(target, 0755); err != nil { return err }
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil { return err }
+		in, err := file.Open(); if err != nil { return err }
+		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err == nil { _, err = io.Copy(out, in); closeErr := out.Close(); if err == nil { err = closeErr } }
+		_ = in.Close()
+		if err != nil { return err }
+	}
+	return nil
 }
 func (m *Manager) start(a *record) error {
 	id := a.Spec.ID
@@ -248,7 +305,17 @@ func (m *Manager) start(a *record) error {
 	if err := os.WriteFile(dnsPath, []byte("nameserver 1.1.1.1\nnameserver 8.8.8.8\n"), 0644); err != nil {
 		return fail(err)
 	}
-	env := []byte(`{"HOME":"/data","DATA_DIR":"/data","UPTIME_KUMA_PORT":"8080","UPTIME_KUMA_HOST":"0.0.0.0","UPTIME_KUMA_DATA_DIR":"/data","NODE_ENV":"production"}`)
+	envValues := map[string]string{"HOME": "/data", "DATA_DIR": "/data", "UPTIME_KUMA_PORT": "8080", "UPTIME_KUMA_HOST": "0.0.0.0", "UPTIME_KUMA_DATA_DIR": "/data", "NODE_ENV": "production", "CLOFIX_ENTRY": a.Spec.Deployment.Entry}
+	if a.Spec.Deployment.Runtime == "wordpress" {
+		envValues["CLOFIX_WORDPRESS_BUNDLED"] = "1"
+	}
+	for key, value := range a.Spec.Deployment.Env {
+		envValues[key] = value
+	}
+	env, err := json.Marshal(envValues)
+	if err != nil {
+		return fail(err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "app", ".clofix-env.json"), env, 0600); err != nil {
 		return fail(err)
 	}

@@ -52,6 +52,8 @@ type Server struct {
 	databaseError     error
 	databaseDownloads map[string]databaseDownloadGrant
 	databaseTransfers map[string]bool
+	billing           *billingStore
+	dns               *dnsStore
 
 	placeMu         sync.Mutex
 	failMu          sync.Mutex
@@ -75,7 +77,7 @@ func New(s store.Store, ca *pki.CA, adminToken, uiDir string) *Server {
 	if dataDir == "" {
 		dataDir = "/var/lib/clofix-controller"
 	}
-	server := &Server{license: loadControllerLicense(dataDir), monitoring: loadMonitoring(dataDir), balancers: loadBalancers(dataDir), applications: loadServerless(dataDir), Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), S3MasterAddress: os.Getenv("CLOFIX_S3_MASTER_ADDRESS"), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}, backups: map[string]proto.BackupInfo{}}
+	server := &Server{license: loadControllerLicense(dataDir), monitoring: loadMonitoring(dataDir), balancers: loadBalancers(dataDir), applications: loadServerless(dataDir), billing: loadBilling(dataDir), dns: loadDNS(dataDir), Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), S3MasterAddress: os.Getenv("CLOFIX_S3_MASTER_ADDRESS"), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}, backups: map[string]proto.BackupInfo{}}
 	server.initDatabases(dataDir)
 	return server
 }
@@ -108,6 +110,8 @@ func (s *Server) AdminHandler() http.Handler {
 	s.applicationRoutes(mux)
 	s.managedRoutes(mux)
 	s.databaseRoutes(mux)
+	s.billingRoutes(mux)
+	s.dnsRoutes(mux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /api/ca.pem", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-pem-file")
@@ -319,13 +323,17 @@ func uiPage(route string) (page, title, instanceID string, ok bool) {
 	case "/security":
 		return "security", "CloFix Security", "", true
 	case "/storage/s3":
-		return "storage", "S3 Filesystem", "", true
+		return "storage", "Object Storage", "", true
 	case "/volumes":
 		return "volumes", "Persistent Volumes", "", true
 	case "/backups":
 		return "backups", "VPS Backups", "", true
 	case "/settings":
 		return "settings", "Settings", "", true
+	case "/billing":
+		return "billing", "Billing & Payments", "", true
+	case "/dns":
+		return "dns", "DNS Service", "", true
 	case "/iam":
 		return "iam", "Identity and Access Management", "", true
 	}
@@ -1590,6 +1598,29 @@ func (s *Server) instanceLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"id": inst.ID, "logs": string(data)})
 }
 
+func extractTaggedLog(logs, service, file string) (string, bool) {
+	if strings.TrimSpace(logs) == "" {
+		return "", false
+	}
+	markers := []string{"# " + service + "/" + file + "\n"}
+	if file == "error.log" {
+		markers = append(markers, "# "+service+"/error.log\n", "# log/"+service+".log\n")
+	}
+	for _, marker := range markers {
+		start := strings.Index(logs, marker)
+		if start < 0 {
+			continue
+		}
+		start += len(marker)
+		section := logs[start:]
+		if end := strings.Index(section, "\n# "); end >= 0 {
+			section = section[:end]
+		}
+		return strings.TrimSpace(section), true
+	}
+	return "", false
+}
+
 func (s *Server) wafErrorLogs(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !apiInstanceID.MatchString(id) {
@@ -1603,27 +1634,27 @@ func (s *Server) wafErrorLogs(w http.ResponseWriter, r *http.Request) {
 	s.usageMu.RLock()
 	services := append([]proto.ServiceStatus(nil), s.services[id]...)
 	s.usageMu.RUnlock()
-	const marker = "# nginx/error.log\n"
+	var chunks []string
 	for _, service := range services {
 		if service.Name != "nginx" {
 			continue
 		}
-		start := strings.Index(service.Logs, marker)
-		if start < 0 {
-			writeJSON(w, http.StatusOK, map[string]string{"id": id, "logs": "No Nginx error log entries have been collected yet."})
+		if part, ok := extractTaggedLog(service.Logs, "nginx", "error.log"); ok && part != "" && part != "(empty)" {
+			chunks = append(chunks, part)
+		}
+		if part, ok := extractTaggedLog(service.Logs, "nginx", "modsec_audit.log"); ok && part != "" && part != "(empty)" {
+			chunks = append(chunks, "--- modsec_audit.log ---\n"+part)
+		}
+		if len(chunks) == 0 {
+			if raw := strings.TrimSpace(service.Logs); raw != "" && !strings.Contains(raw, "(empty)") {
+				chunks = append(chunks, raw)
+			}
+		}
+		if len(chunks) == 0 {
+			writeJSON(w, http.StatusOK, map[string]string{"id": id, "logs": "Nginx error log is empty. Generate HTTP traffic through this VPS, then wait for the next worker heartbeat."})
 			return
 		}
-		start += len(marker)
-		end := strings.Index(service.Logs[start:], "\n# ")
-		if end >= 0 {
-			service.Logs = service.Logs[start : start+end]
-		} else {
-			service.Logs = service.Logs[start:]
-		}
-		if strings.TrimSpace(service.Logs) == "" {
-			service.Logs = "Nginx error log is empty."
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"id": id, "logs": service.Logs})
+		writeJSON(w, http.StatusOK, map[string]string{"id": id, "logs": strings.Join(chunks, "\n\n")})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"id": id, "logs": "Nginx is not currently reporting service logs. Start Nginx and wait for a worker heartbeat."})
@@ -1691,27 +1722,22 @@ func (s *Server) serviceErrorLog(w http.ResponseWriter, r *http.Request) {
 	s.usageMu.RLock()
 	services := append([]proto.ServiceStatus(nil), s.services[id]...)
 	s.usageMu.RUnlock()
-	marker := "# " + name + "/error.log\n"
 	for _, service := range services {
 		if service.Name != name {
 			continue
 		}
-		start := strings.Index(service.Logs, marker)
-		if start < 0 {
-			writeJSON(w, http.StatusOK, map[string]string{"service": name, "logs": "No error.log entries have been collected for this service."})
+		if part, ok := extractTaggedLog(service.Logs, name, "error.log"); ok {
+			if part == "" || part == "(empty)" {
+				part = "The service error log is empty."
+			}
+			writeJSON(w, http.StatusOK, map[string]string{"service": name, "logs": part})
 			return
 		}
-		start += len(marker)
-		end := strings.Index(service.Logs[start:], "\n# ")
-		if end >= 0 {
-			service.Logs = service.Logs[start : start+end]
-		} else {
-			service.Logs = service.Logs[start:]
+		if strings.TrimSpace(service.Logs) != "" {
+			writeJSON(w, http.StatusOK, map[string]string{"service": name, "logs": strings.TrimSpace(service.Logs)})
+			return
 		}
-		if strings.TrimSpace(service.Logs) == "" {
-			service.Logs = "The service error log is empty."
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"service": name, "logs": service.Logs})
+		writeJSON(w, http.StatusOK, map[string]string{"service": name, "logs": "No error.log entries have been collected for this service yet. Wait for the next worker heartbeat."})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"service": name, "logs": "Service is not reporting logs. Start it and wait for a worker heartbeat."})

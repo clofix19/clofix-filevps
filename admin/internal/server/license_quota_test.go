@@ -123,3 +123,19 @@ func TestQuotaUsageAndPendingResourcesCount(t *testing.T) {
 		t.Fatal(fmt.Sprint(w.Code), w.Body.String())
 	}
 }
+
+func TestDNSLicenseQuotaUnspecifiedAndZero(t *testing.T) {
+	t.Setenv("CLOFIX_DATA_DIR", t.TempDir())
+	s, _ := newSrv(t)
+	s.license.Grant.Plan.MaxDNSRecords = nil
+	s.license.Grant.Plan.MaxDNSZones = nil
+	body := `{"name":"quota-ok","type":"A","value":"198.51.100.20"}`
+	if w := do(s.AdminHandler(), "POST", "/api/dns/records", body, tok); w.Code != 200 {
+		t.Fatal("unspecified DNS quota should stay unlimited", w.Code, w.Body.String())
+	}
+	zero := 0
+	s.license.Grant.Plan.MaxDNSRecords = &zero
+	if w := do(s.AdminHandler(), "POST", "/api/dns/records", `{"name":"quota-block","type":"A","value":"198.51.100.21"}`, tok); w.Code != 403 {
+		t.Fatal("zero DNS record quota allowed creation", w.Code, w.Body.String())
+	}
+}

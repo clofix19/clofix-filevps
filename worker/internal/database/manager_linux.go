@@ -350,12 +350,17 @@ func (m *Manager) Run(ctx context.Context, op db.Operation) db.Result {
 		}
 		if jobCtx.Err() != nil {
 			result.State = "CANCELLED"
-			result.Error = "operation cancelled or timed out; database is fenced pending inspection"
-			if project, ok := m.records[op.Project.ID]; ok {
-				project.State = "NEEDS_INSPECTION"
-				m.records[op.Project.ID] = project
-				if m.save() != nil {
-					result.Error = "cancelled operation could not persist project fence; worker requires inspection"
+			result.Error = "operation cancelled or timed out"
+			// Database dumps are read-only. An interrupted dump leaves the managed
+			// project usable; only interrupted restore/cutover needs inspection.
+			if op.Action != "backup" {
+				result.Error = "operation cancelled or timed out; database is fenced pending inspection"
+				if project, ok := m.records[op.Project.ID]; ok {
+					project.State = "NEEDS_INSPECTION"
+					m.records[op.Project.ID] = project
+					if m.save() != nil {
+						result.Error = "cancelled operation could not persist project fence; worker requires inspection"
+					}
 				}
 			}
 		}
@@ -387,6 +392,57 @@ func (m *Manager) apply(ctx context.Context, op db.Operation) (json.RawMessage, 
 	}
 	if r.Spec.Engine != op.Project.Engine {
 		return nil, fmt.Errorf("engine mismatch")
+	}
+	if op.Action == "recover-backup" {
+		if !db.ID.MatchString(op.RecoveryJobID) {
+			return nil, fmt.Errorf("interrupted backup reference is invalid")
+		}
+		m.Lock()
+		previous, exists := m.results[op.RecoveryJobID]
+		m.Unlock()
+		if exists {
+			restartedReadOnly := previous.State == "INTERRUPTED" || previous.State == "CANCELLED"
+			blockedByInspection := previous.State == "FAILED" && strings.Contains(previous.Error, "database project requires inspection after interrupted work")
+			if previous.ProjectID != op.Project.ID || !restartedReadOnly && !blockedByInspection {
+				return nil, fmt.Errorf("worker has no matching interrupted backup to recover")
+			}
+		}
+		// The controller attests the original backup job before it dispatches this
+		// recovery operation. Its journal may be absent after a worker restart.
+		if !exists && r.State != "NEEDS_INSPECTION" {
+			return nil, fmt.Errorf("worker has no matching interrupted backup to recover")
+		}
+		// The TLS and credential mount lives in tmpfs and disappears when the
+		// worker restarts. Recreate it before starting the existing engine
+		// container; its persistent database disk is not modified.
+		if _, _, err := m.prepare(r); err != nil {
+			return nil, fmt.Errorf("could not restore database runtime credentials: %w", err)
+		}
+		if _, err := m.docker(ctx, nil, "start", container(r.Spec.ID)); err != nil && !strings.Contains(err.Error(), "already started") {
+			return nil, fmt.Errorf("could not start database engine: %w", err)
+		}
+		if _, err := m.engineOperation(ctx, r, db.Operation{Project: op.Project, Action: "ping"}); err != nil {
+			return nil, fmt.Errorf("database health check failed: %w", err)
+		}
+		inventory, err := m.engineOperation(ctx, r, db.Operation{Project: op.Project, Action: "list-databases"})
+		if err != nil {
+			return nil, fmt.Errorf("database inventory check failed: %w", err)
+		}
+		m.Lock()
+		current, exists := m.records[op.Project.ID]
+		if !exists || current.State != "NEEDS_INSPECTION" {
+			m.Unlock()
+			return nil, fmt.Errorf("database project state changed during inspection")
+		}
+		current.State = "READY"
+		m.records[op.Project.ID] = current
+		delete(m.paused, op.Project.ID)
+		err = m.save()
+		m.Unlock()
+		if err != nil {
+			return nil, fmt.Errorf("could not persist inspected database state")
+		}
+		return inventory, nil
 	}
 	if op.Action == "delete-backup" {
 		return m.removeBackup(r, op)
@@ -497,7 +553,7 @@ func (m *Manager) prepare(r record) (string, string, error) {
 		value string
 		mode  os.FileMode
 		uid   int
-	}{"pg_hba.conf": {"local all postgres scram-sha-256\nlocal all all reject\nhostssl all all 0.0.0.0/0 scram-sha-256\nhostssl all all ::/0 scram-sha-256\nhostnossl all all 0.0.0.0/0 reject\nhostnossl all all ::/0 reject\n", 0644, 0}, "ca.pem": {r.CA, 0644, 0}, "server.pem": {r.Certificate, 0644, 0}, "server.key": {secret.PrivateKey, 0400, uid}, "server-combined.pem": {r.Certificate + secret.PrivateKey, 0400, uid}, "admin-password": {secret.Password, 0440, uid}, "mongo-admin-password": {secret.Password, 0600, 0}, "mysql.cnf": {"[client]\nuser=root\npassword=" + secret.Password + "\nhost=127.0.0.1\nssl-mode=VERIFY_CA\nssl-ca=/run/clofix/ca.pem\n", 0600, 0}, "pgpass": {"127.0.0.1:5432:*:postgres:" + secret.Password + "\n", 0600, 0}}
+	}{"pg_hba.conf": {"local all postgres scram-sha-256\nlocal all all reject\nhostssl all all 0.0.0.0/0 scram-sha-256\nhostssl all all ::/0 scram-sha-256\nhostnossl all all 0.0.0.0/0 reject\nhostnossl all all ::/0 reject\n", 0644, 0}, "ca.pem": {r.CA, 0644, 0}, "server.pem": {r.Certificate, 0644, 0}, "server.key": {secret.PrivateKey, 0400, uid}, "server-combined.pem": {r.Certificate + secret.PrivateKey, 0400, uid}, "admin-password": {secret.Password, 0440, uid}, "mongo-admin-password": {secret.Password, 0600, 0}, "mysql.cnf": {"[client]\nuser=root\npassword=" + secret.Password + "\nhost=127.0.0.1\nssl-mode=VERIFY_CA\nssl-ca=/run/clofix/ca.pem\n", 0600, 0}, "pgpass": {"127.0.0.1:5432:*:postgres:" + secret.Password + "\n", 0600, 0}, "redis.conf": {"bind 0.0.0.0 -::1\nport 6379\ntls-port 6380\ntls-cert-file /run/clofix/server.pem\ntls-key-file /run/clofix/server.key\ntls-ca-cert-file /run/clofix/ca.pem\ntls-auth-clients no\nrequirepass " + secret.Password + "\ndir /data\nappendonly yes\nprotected-mode yes\ndaemonize no\nsupervised no\nrename-command FLUSHALL \"\"\nrename-command FLUSHDB \"\"\nrename-command SHUTDOWN \"\"\nrename-command DEBUG \"\"\nrename-command MODULE \"\"\n", 0440, uid}}
 	for name, file := range files {
 		path := filepath.Join(private, name)
 		if e = os.WriteFile(path, []byte(file.value), file.mode); e != nil {
@@ -575,6 +631,8 @@ func (m *Manager) provision(ctx context.Context, spec db.Project) (json.RawMessa
 			args = append(args, "--mount", "type=bind,src="+data+",dst=/var/lib/postgresql/data", "-e", "PGDATA=/var/lib/postgresql/data/pgdata", "-e", "POSTGRES_PASSWORD_FILE=/run/clofix/admin-password", "-e", "POSTGRES_INITDB_ARGS=--auth-local=scram-sha-256 --auth-host=scram-sha-256", r.Image.Ref, "postgres", "-c", "hba_file=/run/clofix/pg_hba.conf", "-c", "ssl=on", "-c", "ssl_ca_file=/run/clofix/ca.pem", "-c", "ssl_cert_file=/run/clofix/server.pem", "-c", "ssl_key_file=/run/clofix/server.key")
 		case "mongodb":
 			args = append(args, "--tmpfs", "/data/configdb:rw,noexec,nosuid,size=16m,uid=999,gid=999", "--mount", "type=bind,src="+data+",dst=/data/db", "-e", "MONGO_INITDB_ROOT_USERNAME=clofixadmin", "-e", "MONGO_INITDB_ROOT_PASSWORD_FILE=/run/clofix/admin-password", r.Image.Ref, "mongod", "--auth", "--bind_ip_all", "--noscripting", "--tlsMode", "requireTLS", "--tlsCertificateKeyFile", "/run/clofix/server-combined.pem", "--tlsCAFile", "/run/clofix/ca.pem", "--tlsAllowConnectionsWithoutCertificates")
+		case "redis":
+			args = append(args, "--mount", "type=bind,src="+data+",dst=/data", r.Image.Ref, "redis-server", "/run/clofix/redis.conf")
 		}
 		if _, e = m.docker(ctx, nil, args...); e != nil {
 			return nil, e
@@ -587,6 +645,7 @@ func (m *Manager) provision(ctx context.Context, spec db.Project) (json.RawMessa
 	ready = false
 	readinessCtx, stopReadiness := context.WithTimeout(ctx, 90*time.Second)
 	defer stopReadiness()
+	var last error
 	for i := 0; i < 90; i++ {
 		probeCtx, stopProbe := context.WithTimeout(readinessCtx, 3*time.Second)
 		_, e = m.engineOperation(probeCtx, r, db.Operation{Action: "ping"})
@@ -595,8 +654,12 @@ func (m *Manager) provision(ctx context.Context, spec db.Project) (json.RawMessa
 			ready = true
 			break
 		}
+		last = e
 		select {
 		case <-readinessCtx.Done():
+			if last != nil {
+				return nil, fmt.Errorf("database engine readiness timed out: %w", last)
+			}
 			return nil, fmt.Errorf("database engine readiness timed out")
 		case <-time.After(time.Second):
 		}
@@ -666,6 +729,8 @@ func (m *Manager) listen(r record) error {
 					port = 5432
 				} else if r.Spec.Engine == "mongodb" {
 					port = 27017
+				} else if r.Spec.Engine == "redis" {
+					port = 6380
 				}
 				upstream, e := net.DialTimeout("tcp", net.JoinHostPort(strings.TrimSpace(string(raw)), strconv.Itoa(port)), 3*time.Second)
 				if e != nil {

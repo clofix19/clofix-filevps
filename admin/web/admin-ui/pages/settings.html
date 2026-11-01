@@ -1,15 +1,113 @@
 {{define "content"}}
 <section class="page active" id="page-settings">
-      <div class="section-head"><div><p class="eyebrow">CloFix Configuration</p><h2>Settings</h2><p>Manage VPS defaults, notifications, networking and licenses.</p></div></div>
+      <div class="section-head"><div><p class="eyebrow">Platform</p><h2>Settings</h2><p>Manage general defaults, product pricing, notifications, networking and licenses. Customer invoices and payments live in <a href="/billing">Billing &amp; Payments</a>.</p></div></div>
       <div class="settings-layout">
         <nav class="settings-nav" aria-label="Settings sections">
-          <a href="#settings-defaults" data-settings-link aria-controls="settings-defaults" aria-current="location"><strong>VPS defaults</strong><span>Images and resource defaults</span></a>
+          <a href="#settings-defaults" data-settings-link aria-controls="settings-defaults" aria-current="location"><strong>General Settings</strong><span>Images and VPS defaults</span></a>
+          <a href="#settings-pricing" data-settings-link aria-controls="settings-pricing"><strong>Pricing &amp; Plans</strong><span>VPS, database and product prices</span></a>
+          <a href="#settings-resource-pricing" data-settings-link aria-controls="settings-resource-pricing"><strong>Resource Pricing</strong><span>CPU, RAM, disk and transfer units</span></a>
+          <a href="#settings-discounts" data-settings-link aria-controls="settings-discounts"><strong>Discounts &amp; Promotions</strong><span>Codes, percent and amount off</span></a>
+          <a href="#settings-gateway" data-settings-link aria-controls="settings-gateway"><strong>Payment Gateway Settings</strong><span>Stored credentials only</span></a>
+          <a href="#settings-currency" data-settings-link aria-controls="settings-currency"><strong>Currency &amp; Tax Settings</strong><span>Default currency and tax</span></a>
+          <a href="#settings-billing-notifications" data-settings-link aria-controls="settings-billing-notifications"><strong>Billing Notifications</strong><span>Invoice and payment flags</span></a>
           <a href="#notification-channels" data-settings-link aria-controls="notification-channels"><strong>Notifications</strong><span>Slack and webhook channels</span></a>
           <a href="#settings-nlb" data-settings-link aria-controls="settings-nlb"><strong>NLB network</strong><span>IP pool and listener settings</span></a>
           <a href="#settings-license" data-settings-link aria-controls="settings-license"><strong>License</strong><span>Server, key and plan status</span></a>
         </nav>
         <div class="settings-content">
-      <div class="panel settings-section" id="settings-defaults" data-settings-panel aria-labelledby="settings-heading-defaults"><div class="section-head"><div><h2 id="settings-heading-defaults" tabindex="-1">New VPS defaults</h2><p>Saved in this browser and applied to future creations only.</p></div></div><div class="form-grid"><div class="form-field"><label for="settings-image">Image name</label><input id="settings-image" value="ubuntu"></div><div class="form-field"><label for="settings-version">Image version</label><input id="settings-version" value="24.04"></div><div class="form-field"><label for="settings-ram">RAM (MB)</label><input id="settings-ram" type="number" min="128" step="128"></div><div class="form-field"><label for="settings-cpu">CPU cores</label><input id="settings-cpu" type="number" min="0.25" step="0.25"></div><div class="form-field"><label for="settings-disk">Disk (MB)</label><input id="settings-disk" type="number" min="512" step="512"></div><div class="form-field"><label for="settings-swap">Swap limit (MB)</label><input id="settings-swap" type="number" min="0" step="128"></div><label class="inline-fields" style="grid-column:1/-1"><input id="settings-protection" type="checkbox" style="width:auto"> Enable Protection Mode by default for new VPSs</label></div><div class="inline-fields" style="margin-top:16px"><button class="primary" id="settings-save">Save defaults</button><button class="secondary" id="settings-reset">Reset defaults</button><span id="settings-message" class="message"></span></div></div>
+      <div class="panel settings-section" id="settings-defaults" data-settings-panel aria-labelledby="settings-heading-defaults"><div class="section-head"><div><h2 id="settings-heading-defaults" tabindex="-1">General Settings</h2><p>New VPS defaults are saved in this browser and applied to future creations only.</p></div></div><div class="form-grid"><div class="form-field"><label for="settings-image">Image name</label><input id="settings-image" value="ubuntu"></div><div class="form-field"><label for="settings-version">Image version</label><input id="settings-version" value="24.04"></div><div class="form-field"><label for="settings-ram">RAM (MB)</label><input id="settings-ram" type="number" min="128" step="128"></div><div class="form-field"><label for="settings-cpu">CPU cores</label><input id="settings-cpu" type="number" min="0.25" step="0.25"></div><div class="form-field"><label for="settings-disk">Disk (MB)</label><input id="settings-disk" type="number" min="512" step="512"></div><div class="form-field"><label for="settings-swap">Swap limit (MB)</label><input id="settings-swap" type="number" min="0" step="128"></div><label class="inline-fields" style="grid-column:1/-1"><input id="settings-protection" type="checkbox" style="width:auto"> Enable Protection Mode by default for new VPSs</label></div><div class="inline-fields" style="margin-top:16px"><button class="primary" id="settings-save">Save defaults</button><button class="secondary" id="settings-reset">Reset defaults</button><span id="settings-message" class="message"></span></div></div>
+      <div class="panel settings-section" id="settings-pricing" data-settings-panel aria-labelledby="settings-heading-pricing" hidden>
+        <h2 id="settings-heading-pricing" tabindex="-1">Pricing &amp; Plans</h2>
+        <p>Create and edit catalog prices for VPS, Managed Database, Object Storage, Backup, Network and License plans. Changing a price does not rewrite an existing customer’s active subscription. Set when the new catalog price becomes effective.</p>
+        <form id="pricing-plan-form">
+          <input id="pricing-plan-id" type="hidden">
+          <div class="form-grid">
+            <div class="form-field"><label for="pricing-plan-product">Product</label><select id="pricing-plan-product" required></select></div>
+            <div class="form-field"><label for="pricing-plan-name">Plan name</label><input id="pricing-plan-name" maxlength="80" required></div>
+            <div class="form-field form-span"><label for="pricing-plan-description">Description</label><input id="pricing-plan-description" maxlength="240"></div>
+            <div class="form-field"><label for="pricing-plan-currency">Currency</label><input id="pricing-plan-currency" maxlength="3" value="USD" required></div>
+            <div class="form-field"><label for="pricing-plan-monthly">Monthly rate</label><input id="pricing-plan-monthly" type="number" min="0" step="0.01" value="0" required></div>
+            <div class="form-field"><label for="pricing-plan-hourly">Hourly rate</label><input id="pricing-plan-hourly" type="number" min="0" step="0.01" value="0" required></div>
+            <div class="form-field"><label for="pricing-plan-setup">Setup fee</label><input id="pricing-plan-setup" type="number" min="0" step="0.01" value="0" required></div>
+            <div class="form-field"><label for="pricing-plan-overage">Overage charge</label><input id="pricing-plan-overage" type="number" min="0" step="0.01" value="0" required></div>
+            <div class="form-field"><label for="pricing-plan-cpu">CPU cores</label><input id="pricing-plan-cpu" type="number" min="0" step="1" value="0"></div>
+            <div class="form-field"><label for="pricing-plan-ram">RAM (MB)</label><input id="pricing-plan-ram" type="number" min="0" step="128" value="0"></div>
+            <div class="form-field"><label for="pricing-plan-disk">SSD (MB)</label><input id="pricing-plan-disk" type="number" min="0" step="512" value="0"></div>
+            <div class="form-field"><label for="pricing-plan-max">Resource limit · max instances</label><input id="pricing-plan-max" type="number" min="0" step="1" value="0"></div>
+            <div class="form-field"><label for="pricing-plan-bandwidth">Bandwidth limit (GB)</label><input id="pricing-plan-bandwidth" type="number" min="0" step="1" value="0"></div>
+            <div class="form-field"><label for="pricing-plan-effective">New price effective from</label><input id="pricing-plan-effective" type="datetime-local"><small class="muted">Required when editing rates or allocations. Active subscriptions keep their snapshot price.</small></div>
+            <label><input id="pricing-plan-visible" type="checkbox" checked> Visible in catalog</label>
+            <label><input id="pricing-plan-enabled" type="checkbox" checked> Enabled</label>
+          </div>
+          <div class="inline-fields"><button class="primary" id="pricing-plan-save" type="submit">Save plan</button><button class="secondary" id="pricing-plan-reset" type="button">Cancel edit</button></div>
+        </form>
+        <p class="message" id="pricing-plan-message" role="status" aria-live="polite"></p>
+        <div class="table-wrap"><table id="pricing-plan-table"></table></div>
+      </div>
+      <div class="panel settings-section" id="settings-resource-pricing" data-settings-panel aria-labelledby="settings-heading-resource-pricing" hidden>
+        <h2 id="settings-heading-resource-pricing" tabindex="-1">Resource Pricing</h2>
+        <p>Unit prices for add-on resources. Zero and disabled means the unit is not sold yet. These values do not change active subscriptions.</p>
+        <form id="pricing-resource-form"><div class="table-wrap"><table id="pricing-resource-table"></table></div><button class="primary" id="pricing-resource-save" type="submit">Save resource prices</button></form>
+        <p class="message" id="pricing-resource-message" role="status" aria-live="polite"></p>
+      </div>
+      <div class="panel settings-section" id="settings-discounts" data-settings-panel aria-labelledby="settings-heading-discounts" hidden>
+        <h2 id="settings-heading-discounts" tabindex="-1">Discounts &amp; Promotions</h2>
+        <p>Promo codes stored on the controller. They are not applied to existing invoices until a billing charge uses them.</p>
+        <form id="pricing-discount-form">
+          <input id="pricing-discount-id" type="hidden">
+          <div class="form-grid">
+            <div class="form-field"><label for="pricing-discount-name">Name</label><input id="pricing-discount-name" maxlength="80" required></div>
+            <div class="form-field"><label for="pricing-discount-code">Code</label><input id="pricing-discount-code" maxlength="32" required></div>
+            <div class="form-field"><label for="pricing-discount-percent">Percent off</label><input id="pricing-discount-percent" type="number" min="0" max="100" step="0.01" value="0"></div>
+            <div class="form-field"><label for="pricing-discount-amount">Amount off</label><input id="pricing-discount-amount" type="number" min="0" step="0.01" value="0"></div>
+            <div class="form-field"><label for="pricing-discount-currency">Currency</label><input id="pricing-discount-currency" maxlength="3" value="USD" required></div>
+            <div class="form-field"><label for="pricing-discount-applies">Applies to products</label><select id="pricing-discount-applies" multiple size="6"></select></div>
+            <div class="form-field"><label for="pricing-discount-starts">Starts</label><input id="pricing-discount-starts" type="datetime-local"></div>
+            <div class="form-field"><label for="pricing-discount-ends">Ends</label><input id="pricing-discount-ends" type="datetime-local"></div>
+            <label><input id="pricing-discount-enabled" type="checkbox" checked> Enable promotion</label>
+          </div>
+          <div class="inline-fields"><button class="primary" id="pricing-discount-save" type="submit">Save promotion</button><button class="secondary" id="pricing-discount-reset" type="button">Cancel edit</button></div>
+        </form>
+        <p class="message" id="pricing-discount-message" role="status" aria-live="polite"></p>
+        <div class="table-wrap"><table id="pricing-discount-table"></table></div>
+      </div>
+      <div class="panel settings-section" id="settings-gateway" data-settings-panel aria-labelledby="settings-heading-gateway" hidden>
+        <h2 id="settings-heading-gateway" tabindex="-1">Payment Gateway Settings</h2>
+        <p>Store provider credentials on the controller. Card charges are not processed in this version. Use Billing &amp; Payments to record a manual payment.</p>
+        <form id="pricing-gateway-form">
+          <div class="form-grid">
+            <div class="form-field"><label for="pricing-gateway-provider">Provider</label><select id="pricing-gateway-provider"><option value="none">None</option><option value="manual">Manual bookkeeping</option><option value="stripe">Stripe</option><option value="sslcommerz">SSLCOMMERZ</option></select></div>
+            <div class="form-field"><label for="pricing-gateway-publishable">Publishable key</label><input id="pricing-gateway-publishable" autocomplete="off"></div>
+            <div class="form-field form-span"><label for="pricing-gateway-secret">Secret key</label><input id="pricing-gateway-secret" type="password" autocomplete="off"><small class="muted" id="pricing-gateway-secret-note">The secret is stored on the controller and never returned to the browser. Leave blank to keep the saved key.</small></div>
+            <label><input id="pricing-gateway-enabled" type="checkbox"> Enable gateway</label>
+          </div>
+          <button class="primary" id="pricing-gateway-save" type="submit">Save gateway settings</button>
+        </form>
+        <p class="message" id="pricing-gateway-message" role="status" aria-live="polite"></p>
+      </div>
+      <div class="panel settings-section" id="settings-currency" data-settings-panel aria-labelledby="settings-heading-currency" hidden>
+        <h2 id="settings-heading-currency" tabindex="-1">Currency &amp; Tax Settings</h2>
+        <form id="pricing-currency-form">
+          <div class="form-grid">
+            <div class="form-field"><label for="pricing-currency-code">Default currency</label><input id="pricing-currency-code" maxlength="3" value="USD" required></div>
+            <div class="form-field"><label for="pricing-currency-tax-name">Tax name</label><input id="pricing-currency-tax-name" maxlength="40" placeholder="VAT"></div>
+            <div class="form-field"><label for="pricing-currency-tax">Tax percent</label><input id="pricing-currency-tax" type="number" min="0" max="100" step="0.01" value="0"></div>
+          </div>
+          <button class="primary" id="pricing-currency-save" type="submit">Save currency settings</button>
+        </form>
+        <p class="message" id="pricing-currency-message" role="status" aria-live="polite"></p>
+      </div>
+      <div class="panel settings-section" id="settings-billing-notifications" data-settings-panel aria-labelledby="settings-heading-billing-notifications" hidden>
+        <h2 id="settings-heading-billing-notifications" tabindex="-1">Billing Notifications</h2>
+        <p>These flags are stored only. No billing mailer is connected yet.</p>
+        <form id="pricing-notify-form">
+          <label><input id="pricing-notify-invoice" type="checkbox"> Invoice issued</label>
+          <label><input id="pricing-notify-failed" type="checkbox"> Payment failed</label>
+          <label><input id="pricing-notify-expiring" type="checkbox"> Subscription expiring</label>
+          <div class="inline-fields" style="margin-top:16px"><button class="primary" id="pricing-notify-save" type="submit">Save notification flags</button></div>
+        </form>
+        <p class="message" id="pricing-notify-message" role="status" aria-live="polite"></p>
+      </div>
       <div class="panel settings-section" id="notification-channels" data-settings-panel aria-labelledby="settings-heading-notifications" hidden><h2 id="settings-heading-notifications" tabindex="-1">Notification channels</h2><p>Send down and recovery alerts to Slack or a JSON webhook. Configure checks in <a href="/health-checks">Health Checks</a>.</p><form id="alert-channel-form"><div class="form-grid"><div class="form-field"><label for="alert-name">Channel name</label><input id="alert-name" maxlength="80" required></div><div class="form-field"><label for="alert-type">Channel type</label><select id="alert-type"><option value="slack">Slack incoming webhook</option><option value="webhook">Other · JSON webhook</option></select></div><div class="form-field form-span"><label for="alert-webhook">Webhook URL</label><input id="alert-webhook" type="password" autocomplete="off" required><small class="muted">The URL is stored on the controller and never returned to the browser. Leave blank when editing to keep it. Slack: <a href="https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/" target="_blank" rel="noopener">create an incoming webhook</a>.</small></div><label><input id="alert-enabled" type="checkbox" checked> Enable channel</label></div><button class="primary" id="alert-save" type="submit">Save channel</button><button class="secondary" id="alert-reset" type="button">Cancel edit</button></form><p class="message" id="alert-message" role="status" aria-live="polite"></p><div class="table-wrap"><table id="alert-channels"></table></div></div>
       <div class="panel settings-section" id="settings-nlb" data-settings-panel aria-labelledby="settings-heading-network" hidden><h2 id="settings-heading-network" tabindex="-1">NLB network settings</h2><form id="settings-nlb-form"><div class="form-field"><label for="settings-nlb-pool">Allocated IPv4 pool</label><textarea id="settings-nlb-pool" rows="3" placeholder="One IP, CIDR or start-end range per line"></textarea><small class="muted">IPs must be assigned/routed to the controller. Local host testing example: 127.0.0.2-127.0.0.10. This is not a public IP range.</small></div><button class="primary" id="settings-nlb-save" type="submit">Save IP pool</button></form><hr><form id="settings-nlb-lb-form"><h3>Update an existing load balancer</h3><div class="form-grid"><div class="form-field"><label for="settings-nlb-lb">Load balancer</label><select id="settings-nlb-lb" required></select></div><div class="form-field"><label for="settings-nlb-port">TCP listener port</label><input id="settings-nlb-port" type="number" min="1" max="65535" value="80" required></div><div class="form-field"><label for="settings-nlb-backend">Backend guest port</label><select id="settings-nlb-backend"><option value="80">80 · HTTP</option><option value="443">443 · TLS passthrough</option><option value="22">22 · SSH</option></select></div></div><p class="muted" id="settings-nlb-current">Choose a load balancer to see its current IP.</p><button class="primary" id="settings-nlb-apply" type="submit">Apply NLB settings</button><small class="muted">Uses a unique IP from the saved pool. Existing backend VPS instances are retained; their next TCP health check refreshes readiness.</small></form><p class="message" id="settings-nlb-message" role="status" aria-live="polite"></p></div>
       <div class="panel settings-section" id="settings-license" data-settings-panel aria-labelledby="settings-heading-license" hidden><h2 id="settings-heading-license" tabindex="-1">License configuration</h2><p>Connect to the CloFix company license server. Plans and license issuance are managed separately by CloFix.</p><form id="license-form"><div class="form-grid"><div class="form-field form-span"><label for="license-server">License server URL · reachable from controller</label><input id="license-server" type="url" placeholder="https://your-company-license-server" required></div><div class="form-field form-span"><label for="license-key">License key</label><input id="license-key" type="password" autocomplete="off" placeholder="CFL-…" pattern="CFL-[a-fA-F0-9]{48}" title="Enter the CFL- license key, not the lic- license ID"><small class="muted" id="license-key-note">Use the CFL- key shown when issued, not the lic- ID. Leave blank to keep the saved key.</small></div><label><input id="license-clear" type="checkbox"> Remove saved license key</label></div><button class="primary" id="license-save" type="submit">Save &amp; validate</button><button class="secondary" id="license-validate" type="button">Validate license</button></form><p class="message" id="license-message" role="status" aria-live="polite"></p><button class="secondary" id="license-copy-installation" type="button">Copy Installation ID</button><div class="form-grid" id="license-status"></div><h3>Resource usage and quotas</h3><div class="table-wrap"><table id="license-usage-table"></table></div><p class="muted" id="license-storage-scope"></p><p class="muted">Validation runs every 5 minutes after configuration. All resource creation and growth follow the validated license quotas. Unspecified optional limits do not permit allocations. Existing resources are not automatically deleted.</p></div>

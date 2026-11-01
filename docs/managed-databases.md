@@ -11,7 +11,7 @@ The implementation currently includes:
 - Portable project/job/backup protocol models and allowlisted SQL schema generation in `worker/pkg/database`.
 - Chunked AES-256-GCM backup streams, authenticated end markers, object-bound integrity and a seekable decrypting reader for future streaming/range endpoints.
 - Upload filename, native signature, UTF-8 SQL, gzip checksum and expansion-limit validation. Native parsing still runs only in staging under an unprivileged database role.
-- Linux worker adapters for MySQL, PostgreSQL and MongoDB: dedicated project containers, private networks, CPU/RAM/PID limits, preallocated ext4 volumes, encrypted administrator credentials, TLS certificates and native CLI administration.
+- Linux worker adapters for MySQL, PostgreSQL, MongoDB and Redis: dedicated project containers, private networks, CPU/RAM/PID limits, preallocated ext4 volumes, encrypted administrator credentials, TLS certificates and native CLI administration. Redis logical databases are key prefixes in a shared instance; Redis backup/restore is not implemented.
 - Database/user/table/collection/index operations and native encrypted backup/staged restore execution.
 - Worker job journaling, cancellation and per-project serialization; interrupted work is fenced for inspection rather than replayed. Failed cutover keeps the application gateway paused.
 - Controller metadata models with file/PostgreSQL snapshot persistence and migration `0006_managed_databases`, owner-scoped REST APIs, encrypted job payloads, mTLS transfers and durable dispatch.
@@ -23,7 +23,7 @@ The implementation currently includes:
 
 Database runtime containers run on a Linux worker with its **own local Docker daemon**. The readiness check rejects a remote daemon with a different hostname. The customer controller never receives a Docker socket. The existing development worker does not automatically gain database capability.
 
-An operator-managed `database-images.json` in the worker state directory maps `mysql`, `postgresql` and `mongodb` to `ref` (an immutable `repository@sha256:digest`) and `version` (the supported version prefix). Customer input cannot choose arbitrary images. Native server versions are checked against the manifest. Official Debian-based images with database UID/GID 999 are assumed; operator packaging must validate this before enabling an image.
+An operator-managed `database-images.json` in the worker state directory maps `mysql`, `postgresql`, `mongodb` and `redis` to `ref` (an immutable `repository@sha256:digest`) and `version` (the supported version prefix). Customer input cannot choose arbitrary images. Native server versions are checked against the manifest. Official Debian-based images with database UID/GID 999 are assumed; operator packaging must validate this before enabling an image.
 
 On a production Linux worker with a local Docker daemon, prepare and pin the supported official images, then restart the worker:
 
@@ -36,7 +36,7 @@ The preparation script rejects remote daemons, unresolved tags and images whose 
 
 Worker `databases/credentials.key` is required to decrypt persistent administrative passwords and TLS private keys. Back it up with project metadata. A missing key with existing metadata fails closed. No root password is returned in job results.
 
-Database ports are reserved in the 26000–26099 range. The passthrough gateway bounds connections to 128 per project and closes application connections during cutover. PostgreSQL explicitly rejects unencrypted connections; MySQL requires secure transport; MongoDB requires TLS. Public routing/firewall integration is still pending.
+Database ports are reserved in the 26000–26099 range. The passthrough gateway bounds connections to 128 per project and closes application connections during cutover. PostgreSQL explicitly rejects unencrypted connections; MySQL requires secure transport; MongoDB and Redis require TLS on the published listener. Redis keeps a non-TLS port on the isolated project network for worker administration. Public routing/firewall integration is still pending.
 
 ## Backup and restore constraints
 

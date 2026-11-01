@@ -40,6 +40,8 @@ type Plan struct {
 	MaxIAMGroups            *int `json:"max_iam_groups,omitempty"`
 	MaxIAMPolicies          *int `json:"max_iam_policies,omitempty"`
 	MaxAccessKeys           *int `json:"max_access_keys,omitempty"`
+	MaxDNSZones             *int `json:"max_dns_zones,omitempty"`
+	MaxDNSRecords           *int `json:"max_dns_records,omitempty"`
 
 	ID             string `json:"id"`
 	Name           string `json:"name"`
@@ -262,7 +264,7 @@ func (s *Service) savePlan(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "valid name, positive resource limits, exactly one installation required")
 		return
 	}
-	for _, limit := range []*int{p.MaxDatabaseProjects, p.MaxDatabases, p.MaxDatabaseUsers, p.MaxDatabaseSchedules, p.MaxHealthChecks, p.MaxBackups, p.MaxVolumes, p.MaxStorageGB, p.MaxS3Connections, p.MaxApplications, p.MaxManagedApps, p.MaxNotificationChannels, p.MaxIAMUsers, p.MaxIAMGroups, p.MaxIAMPolicies, p.MaxAccessKeys} {
+	for _, limit := range []*int{p.MaxDatabaseProjects, p.MaxDatabases, p.MaxDatabaseUsers, p.MaxDatabaseSchedules, p.MaxHealthChecks, p.MaxBackups, p.MaxVolumes, p.MaxStorageGB, p.MaxS3Connections, p.MaxApplications, p.MaxManagedApps, p.MaxNotificationChannels, p.MaxIAMUsers, p.MaxIAMGroups, p.MaxIAMPolicies, p.MaxAccessKeys, p.MaxDNSZones, p.MaxDNSRecords} {
 		if limit != nil && (*limit < -1 || *limit > 1000000) {
 			problem(w, 400, "optional resource limits must be -1 (unlimited), 0 (not included), or up to 1000000; omit for unspecified")
 			return

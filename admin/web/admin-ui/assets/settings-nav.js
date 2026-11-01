@@ -1,5 +1,5 @@
 (()=>{
- if(page!=='settings')return;
+ if(!document.querySelector('[data-settings-panel]'))return;
  const panels=Array.from(document.querySelectorAll('[data-settings-panel]'));
  const links=Array.from(document.querySelectorAll('[data-settings-link]'));
  function activate(focus=false){

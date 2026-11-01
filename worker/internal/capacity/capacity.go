@@ -9,8 +9,10 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/clofix/filevps/worker/internal/gpu"
+	"github.com/clofix/filevps/worker/internal/netstats"
 	"github.com/clofix/filevps/worker/pkg/scheduler"
 )
 
@@ -20,6 +22,8 @@ type Collector struct {
 
 	mu              sync.Mutex
 	prevBusy, prevT uint64
+	prevRx, prevTx  uint64
+	prevNetAt       time.Time
 }
 
 func parseMeminfo(s string) map[string]uint64 {
@@ -135,6 +139,14 @@ func (c *Collector) Collect(committedRAM uint64, allocCPU float64, committedDisk
 		cp.DiskTotal = uint64(st.Blocks) * uint64(st.Bsize)
 		cp.DiskFree = uint64(st.Bavail) * uint64(st.Bsize)
 	}
+	net := netstats.HostUplink()
+	cp.NetRxBytes, cp.NetTxBytes = net.RxBytes, net.TxBytes
+	c.mu.Lock()
+	if !c.prevNetAt.IsZero() {
+		cp.NetRxBps, cp.NetTxBps = netstats.Rate(netstats.Counters{RxBytes: c.prevRx, TxBytes: c.prevTx}, net, time.Since(c.prevNetAt).Seconds())
+	}
+	c.prevRx, c.prevTx, c.prevNetAt = net.RxBytes, net.TxBytes, time.Now()
+	c.mu.Unlock()
 	return cp
 }
 

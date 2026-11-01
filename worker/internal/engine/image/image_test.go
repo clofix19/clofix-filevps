@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/clofix/filevps/worker/pkg/proto"
@@ -55,6 +56,29 @@ func TestEnsurePullVerifyCache(t *testing.T) {
 	}
 	if _, err := m.Ensure(ref); err != nil || hits != 1 {
 		t.Fatalf("expected cache hit, hits=%d err=%v", hits, err)
+	}
+}
+
+func TestEnsureStickyTmp(t *testing.T) {
+	root := t.TempDir()
+	tmp := filepath.Join(root, "tmp")
+	if err := os.MkdirAll(tmp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureStickyTmp(root); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{"tmp", filepath.Join("var", "tmp")} {
+		st, err := os.Stat(filepath.Join(root, rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.Mode().Perm() != 0o777 {
+			t.Fatalf("%s mode %s, want 0777", rel, st.Mode())
+		}
+		if runtime.GOOS != "darwin" && st.Mode()&os.ModeSticky == 0 {
+			t.Fatalf("%s missing sticky bit: %s", rel, st.Mode())
+		}
 	}
 }
 

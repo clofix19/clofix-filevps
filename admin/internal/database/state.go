@@ -43,6 +43,7 @@ type Backup struct {
 	Engine           string       `json:"engine"`
 	EngineVersion    string       `json:"engine_version"`
 	Tables           []string     `json:"tables,omitempty"`
+	Scope            string       `json:"scope,omitempty"`
 	Format           string       `json:"format"`
 	State            string       `json:"state"`
 	Destination      string       `json:"destination"`

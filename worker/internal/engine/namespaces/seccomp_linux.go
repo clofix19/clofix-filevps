@@ -65,5 +65,7 @@ func installSeccomp() error {
 	if _, _, errno := syscall.RawSyscall6(syscall.SYS_PRCTL, prSetSeccomp, seccompModeFilter, uintptr(unsafe.Pointer(&program)), 0, 0, 0); errno != 0 {
 		return fmt.Errorf("install seccomp filter: %w", errno)
 	}
+	runtime.KeepAlive(filters)
+	runtime.KeepAlive(program)
 	return nil
 }

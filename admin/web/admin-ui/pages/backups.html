@@ -1,6 +1,6 @@
 {{define "content"}}
 <section class="page active" id="page-backups">
-  <div class="section-head"><div><p class="eyebrow">Recovery and restore</p><h2>VPS backups</h2><p>Worker-local snapshots of a stopped VPS writable root filesystem. Restore a backup as a new VPS with its own SSH key and resource limits.</p></div><div class="row-actions"><button class="primary" id="restore-open" type="button">Run backup as a new VPS</button><button class="secondary" id="backups-refresh" type="button">Refresh</button></div></div>
+  <div class="section-head"><div><p class="eyebrow">Storage</p><h2>VPS backups</h2><p>Worker-local snapshots of a stopped VPS writable root filesystem. Restore a backup as a new VPS with its own SSH key and resource limits.</p></div><div class="row-actions"><button class="primary" id="restore-open" type="button">Run backup as a new VPS</button><button class="secondary" id="backups-refresh" type="button">Refresh</button></div></div>
   <div class="panel"><div class="table-wrap"><table id="backups-table"></table></div><div class="message" id="backups-message" role="status" aria-live="polite"></div></div>
   <dialog class="terminal-dialog form-dialog" id="restore-dialog" aria-labelledby="restore-title"><div class="section-head"><div><p class="eyebrow">Recovery</p><h2 id="restore-title">Run backup as a new VPS</h2><p>Choose the backup and set the new VPS resources and SSH key.</p></div><button class="secondary" id="restore-close" type="button">Close</button></div>
     <div class="form-grid">

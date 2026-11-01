@@ -5,6 +5,7 @@ state_dir=${1:-/var/lib/clofix-filevps}
 mysql_image=${CLOFIX_MYSQL_IMAGE:-mysql:8.4}
 postgres_image=${CLOFIX_POSTGRES_IMAGE:-postgres:17-bookworm}
 mongo_image=${CLOFIX_MONGO_IMAGE:-mongo:8.0}
+redis_image=${CLOFIX_REDIS_IMAGE:-redis:7.4-bookworm}
 
 if [ "$(docker info --format '{{.Name}}')" != "$(hostname)" ]; then
   echo "The database runtime must be the worker's local Docker daemon." >&2
@@ -34,9 +35,10 @@ resolve_image() {
 mysql_digest=$(resolve_image "$mysql_image" mysql)
 postgres_digest=$(resolve_image "$postgres_image" postgres)
 mongo_digest=$(resolve_image "$mongo_image" mongodb)
+redis_digest=$(resolve_image "$redis_image" redis)
 
-printf '{\n  "mysql":{"ref":"%s","version":"8.4"},\n  "postgresql":{"ref":"%s","version":"17"},\n  "mongodb":{"ref":"%s","version":"8.0"}\n}\n' \
-  "$mysql_digest" "$postgres_digest" "$mongo_digest" >"$temporary"
+printf '{\n  "mysql":{"ref":"%s","version":"8.4"},\n  "postgresql":{"ref":"%s","version":"17"},\n  "mongodb":{"ref":"%s","version":"8.0"},\n  "redis":{"ref":"%s","version":"7.4"}\n}\n' \
+  "$mysql_digest" "$postgres_digest" "$mongo_digest" "$redis_digest" >"$temporary"
 chmod 0600 "$temporary"
 mv "$temporary" "$state_dir/database-images.json"
 trap - EXIT INT TERM

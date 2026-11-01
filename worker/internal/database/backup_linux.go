@@ -21,6 +21,9 @@ import (
 )
 
 func (m *Manager) backupOperation(ctx context.Context, r record, op db.Operation) (json.RawMessage, error) {
+	if r.Spec.Engine == "redis" {
+		return nil, fmt.Errorf("Redis backup and restore are not implemented")
+	}
 	if op.Action == "restore" {
 		return m.restore(ctx, r, op)
 	}
@@ -35,6 +38,15 @@ func (m *Manager) backupOperation(ctx context.Context, r record, op db.Operation
 		if e := db.Name(name); e != nil {
 			return nil, e
 		}
+	}
+	if b.Scope == "" {
+		b.Scope = "full"
+	}
+	if b.Scope != "full" && b.Scope != "data" && b.Scope != "schema" {
+		return nil, fmt.Errorf("backup scope must be full, data or schema")
+	}
+	if b.Scope == "schema" && r.Spec.Engine == "mongodb" {
+		return nil, fmt.Errorf("MongoDB does not have a separate schema-only backup")
 	}
 	directory := filepath.Join(m.path(r.Spec.ID), "backups")
 	if e := os.MkdirAll(directory, 0700); e != nil {
@@ -66,11 +78,22 @@ func (m *Manager) backupOperation(ctx context.Context, r record, op db.Operation
 		if unsupported != "0" {
 			return nil, fmt.Errorf("consistent MySQL backups require InnoDB tables; convert other storage engines first")
 		}
-		args = append(args, container(r.Spec.ID), "mysqldump", "--defaults-extra-file=/run/clofix/mysql.cnf", "--single-transaction", "--quick", "--no-tablespaces", "--set-gtid-purged=OFF", "--skip-triggers", "--skip-add-locks", op.Database)
+		args = append(args, container(r.Spec.ID), "mysqldump", "--defaults-extra-file=/run/clofix/mysql.cnf", "--single-transaction", "--quick", "--no-tablespaces", "--set-gtid-purged=OFF", "--skip-triggers", "--skip-add-locks")
+		if b.Scope == "data" {
+			args = append(args, "--no-create-info")
+		} else if b.Scope == "schema" {
+			args = append(args, "--no-data")
+		}
+		args = append(args, op.Database)
 		args = append(args, b.Tables...)
 	case "postgresql":
 		format = "dump"
 		args = append(args, "-e", "PGPASSFILE=/run/clofix/pgpass", "-e", "PGSSLMODE=verify-full", "-e", "PGSSLROOTCERT=/run/clofix/ca.pem", container(r.Spec.ID), "pg_dump", "-h", "127.0.0.1", "-U", "postgres", "--format=custom", "--no-owner", "--no-acl", "--dbname="+op.Database)
+		if b.Scope == "data" {
+			args = append(args, "--data-only")
+		} else if b.Scope == "schema" {
+			args = append(args, "--schema-only")
+		}
 		for _, name := range b.Tables {
 			args = append(args, "--table=public."+name)
 		}
@@ -117,7 +140,8 @@ func (m *Manager) backupOperation(ctx context.Context, r record, op db.Operation
 	}
 	pipeReader, pipeWriter := io.Pipe()
 	command := exec.CommandContext(ctx, "docker", args...)
-	command.Stderr = io.Discard
+	var stderr limitedBuffer
+	command.Stderr = &stderr
 	done := make(chan error, 1)
 	go func() {
 		var writer io.WriteCloser = pipeWriter
@@ -137,8 +161,17 @@ func (m *Manager) backupOperation(ctx context.Context, r record, op db.Operation
 	written, e := db.Encrypt(io.MultiWriter(output, h), pipeReader, b.Key, b.ID, b.LimitBytes)
 	pipeReader.CloseWithError(e)
 	commandErr := <-done
-	if e != nil || commandErr != nil {
-		return nil, fmt.Errorf("native backup failed or exceeded its reserved capacity")
+	if e != nil {
+		if strings.Contains(e.Error(), "backup exceeds reserved storage limit") {
+			return nil, fmt.Errorf("database backup exceeded the configured %d MB maximum; increase the backup size limit or select fewer tables", b.LimitBytes>>20)
+		}
+		return nil, fmt.Errorf("could not encrypt database backup: %w", e)
+	}
+	if commandErr != nil {
+		if message := strings.TrimSpace(stderr.String()); message != "" {
+			return nil, fmt.Errorf("database dump command failed: %s", message)
+		}
+		return nil, fmt.Errorf("database dump command failed: %w", commandErr)
 	}
 	if e = output.Sync(); e != nil {
 		return nil, e
@@ -178,6 +211,23 @@ func (m *Manager) backupOperation(ctx context.Context, r record, op db.Operation
 	raw, _ := json.Marshal(map[string]any{"backup_id": b.ID, "size_bytes": info.Size(), "plain_bytes": written, "sha256": sum, "format": format, "engine_version": r.Image.Version})
 	return raw, nil
 }
+
+type limitedBuffer struct{ buf []byte }
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	n := len(p)
+	remaining := 4096 - len(b.buf)
+	if remaining > 0 {
+		if len(p) > remaining {
+			p = p[:remaining]
+		}
+		b.buf = append(b.buf, p...)
+	}
+	return n, nil
+}
+
+func (b *limitedBuffer) String() string { return string(b.buf) }
+
 func (m *Manager) restore(ctx context.Context, r record, op db.Operation) (json.RawMessage, error) {
 	restore := op.Restore
 	if restore == nil || !restore.ConfirmOverwrite || !db.ID.MatchString(restore.BackupID) || len(restore.Key) != 32 || restore.LimitBytes < 1 {

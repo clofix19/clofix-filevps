@@ -1,3 +1,5 @@
+//go:build linux
+
 // Package namespaces holds the in-namespace setup step. The engine re-executes the worker binary as
 // "clofix-worker fx-init ..." inside new user/mount/PID/UTS/IPC/net namespaces; RunInit then builds the
 // instance's root (private mounts, /proc, /dev, hostname), pivots into it and execs the instance's init.
@@ -29,6 +31,7 @@ func RunInit(args []string) error {
 	unprivileged := false
 	type bindMount struct{ source, target string }
 	var binds []bindMount
+	meminfo := ""
 	for argStart < len(args) && args[argStart] != "--" {
 		switch args[argStart] {
 		case "--unprivileged":
@@ -37,6 +40,12 @@ func RunInit(args []string) error {
 		case "--protection-mode":
 			protected = true
 			argStart++
+		case "--meminfo-file":
+			if argStart+1 >= len(args) {
+				return errors.New("--meminfo-file requires a path")
+			}
+			meminfo = args[argStart+1]
+			argStart += 2
 		case "--bind-mount":
 			if argStart+2 >= len(args) {
 				return errors.New("--bind-mount requires source and guest target")
@@ -63,15 +72,32 @@ func RunInit(args []string) error {
 	if err := syscall.Mount("proc", filepath.Join(root, "proc"), "proc", syscall.MS_NOSUID|syscall.MS_NODEV|syscall.MS_NOEXEC, ""); err != nil {
 		return fmt.Errorf("mount /proc: %w", err)
 	}
+	if meminfo != "" {
+		target := filepath.Join(root, "proc", "meminfo")
+		if err := syscall.Mount(meminfo, target, "", syscall.MS_BIND, ""); err != nil {
+			return fmt.Errorf("bind /proc/meminfo: %w", err)
+		}
+	}
+	if kmsg := filepath.Join(root, "proc", "kmsg"); fileExists(kmsg) {
+		_ = syscall.Mount("/dev/null", kmsg, "", syscall.MS_BIND, "")
+	}
 	if err := setupDev(root); err != nil {
 		return fmt.Errorf("setup /dev: %w", err)
+	}
+	for _, tmp := range []string{"tmp", "var/tmp"} {
+		path := filepath.Join(root, tmp)
+		if err := os.MkdirAll(path, 0o1777); err != nil {
+			return fmt.Errorf("prepare /%s: %w", tmp, err)
+		}
+		if err := syscall.Mount("tmpfs", path, "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, "mode=1777,size=64m"); err != nil {
+			return fmt.Errorf("mount /%s: %w", tmp, err)
+		}
 	}
 	if protected {
 		for _, mount := range []struct{ path, opts string }{
 			{"run", "mode=755,size=16m"},
 			{"var/log", "mode=755,size=32m"},
 			{"var/log/nginx", "mode=755,size=16m"},
-			{"tmp", "mode=1777,size=64m"},
 			{"var/lib/apt/lists", "mode=755,size=64m"},
 			{"var/cache/apt", "mode=755,size=64m"},
 			{"var/cache/nginx", "mode=755,size=32m"},
@@ -148,6 +174,9 @@ func RunInit(args []string) error {
 			return err
 		}
 	}
+	if err := dropCaps(); err != nil {
+		return fmt.Errorf("drop capabilities: %w", err)
+	}
 	if err := installSeccomp(); err != nil {
 		return fmt.Errorf("install seccomp: %w", err)
 	}
@@ -184,6 +213,62 @@ func RunInit(args []string) error {
 		path = p
 	}
 	return syscall.Exec(path, argv, env)
+}
+
+// RunConfined installs the same capability allowlist + no_new_privs + seccomp
+// deny-list as fx-init, then execs argv. Used by fx exec after nsenter: that
+// process is not a child of guest PID 1, so it would otherwise stay unconfined.
+// Caps and the filter are applied after setns because setns is on the deny list.
+func RunConfined(argv []string) error {
+	runtime.LockOSThread()
+	chroot := ""
+	for len(argv) > 0 && argv[0] != "--" && argv[0] != "" {
+		if argv[0] == "--chroot" {
+			if len(argv) < 2 || argv[1] == "" {
+				return errors.New("fx-confine --chroot requires a path")
+			}
+			chroot = argv[1]
+			argv = argv[2:]
+			continue
+		}
+		return errors.New("unknown fx-confine option: " + argv[0])
+	}
+	if len(argv) > 0 && argv[0] == "--" {
+		argv = argv[1:]
+	}
+	if len(argv) == 0 || argv[0] == "" {
+		return errors.New("usage: fx-confine [--chroot path] -- <cmd...>")
+	}
+	// /proc/<pid>/root needs SYS_PTRACE to traverse. Enter the guest root
+	// first, then drop the allowlist (which omits SYS_PTRACE).
+	if chroot != "" {
+		if err := syscall.Chroot(chroot); err != nil {
+			return fmt.Errorf("chroot %s: %w", chroot, err)
+		}
+		if err := syscall.Chdir("/"); err != nil {
+			return err
+		}
+	}
+	if err := dropCaps(); err != nil {
+		return fmt.Errorf("drop capabilities: %w", err)
+	}
+	if err := installSeccomp(); err != nil {
+		return fmt.Errorf("install seccomp: %w", err)
+	}
+	path := argv[0]
+	if filepath.Base(path) == path {
+		p, err := exec.LookPath(path)
+		if err != nil {
+			return err
+		}
+		path = p
+	}
+	return syscall.Exec(path, argv, os.Environ())
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
 
 func validBindTarget(p string) bool {

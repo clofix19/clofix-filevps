@@ -51,6 +51,8 @@ func (s *Server) databaseRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/databases/projects/{id}", s.auth(s.deleteDatabaseProject))
 	mux.HandleFunc("GET /api/databases/projects/{id}/ca.pem", s.auth(s.downloadDatabaseCA))
 	mux.HandleFunc("POST /api/databases/projects/{id}/operations", s.auth(s.databaseOperation))
+	mux.HandleFunc("POST /api/databases/projects/{id}/retry", s.auth(s.retryDatabaseProject))
+	mux.HandleFunc("POST /api/databases/projects/{id}/recover-backup", s.auth(s.recoverInterruptedDatabaseBackup))
 	mux.HandleFunc("POST /api/databases/projects/{id}/backups", s.auth(s.createDatabaseBackup))
 	mux.HandleFunc("POST /api/databases/projects/{id}/restore", s.auth(s.restoreDatabase))
 	mux.HandleFunc("POST /api/databases/jobs/{id}/cancel", s.auth(s.cancelDatabaseJob))
@@ -63,6 +65,44 @@ func (s *Server) databaseRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/databases/schedules/{id}", s.auth(s.saveDatabaseSchedule))
 	mux.HandleFunc("DELETE /api/databases/schedules/{id}", s.auth(s.deleteDatabaseSchedule))
 	s.databaseUploadRoutes(mux)
+}
+
+func (s *Server) recoverInterruptedDatabaseBackup(w http.ResponseWriter, r *http.Request) {
+	if !s.databaseAvailable(w) {
+		return
+	}
+	var in struct {
+		JobID string `json:"job_id"`
+	}
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&in) != nil || !db.ID.MatchString(in.JobID) {
+		fail(w, 400, "interrupted backup job ID required")
+		return
+	}
+	d := s.databases
+	d.Lock()
+	defer d.Unlock()
+	project, ok := d.Projects[r.PathValue("id")]
+	job, jobOK := d.Jobs[in.JobID]
+	recoverableState := job.State == "INTERRUPTED" || job.State == "CANCELLED" || job.State == "FAILED" && strings.Contains(job.Error, "database project requires inspection after interrupted work")
+	if !ok || !canAccessApplication(r, project.Owner) || !jobOK || job.ProjectID != project.Spec.ID || job.WorkerID != project.WorkerID || job.Action != "backup" || !recoverableState {
+		fail(w, 409, "project must have a matching interrupted backup before recovery")
+		return
+	}
+	if s.databaseProjectBusy(project.Spec.ID) {
+		fail(w, 409, "project has another active job")
+		return
+	}
+	before := s.databaseCheckpoint()
+	recovery, err := s.queueDatabase(project, db.Operation{Action: "recover-backup", RecoveryJobID: job.ID}, "")
+	if err == nil {
+		err = s.saveDatabase(before)
+	}
+	if err != nil {
+		json.Unmarshal(before, d)
+		fail(w, 503, err.Error())
+		return
+	}
+	writeJSON(w, 202, map[string]string{"job_id": recovery.ID})
 }
 
 func (s *Server) downloadDatabaseCA(w http.ResponseWriter, r *http.Request) {
@@ -388,6 +428,42 @@ func (s *Server) createDatabaseProject(w http.ResponseWriter, r *http.Request) {
 	s.Store.Audit(project.Owner, "database.provision", project.Spec.ID, job.ID)
 	writeJSON(w, 202, map[string]any{"project": project, "job_id": job.ID})
 }
+func (s *Server) retryDatabaseProject(w http.ResponseWriter, r *http.Request) {
+	if !s.databaseAvailable(w) {
+		return
+	}
+	d := s.databases
+	d.Lock()
+	defer d.Unlock()
+	p, ok := d.Projects[r.PathValue("id")]
+	if !ok || !canAccessApplication(r, p.Owner) {
+		fail(w, 404, "project not found")
+		return
+	}
+	if p.State != "FAILED" {
+		fail(w, 409, "only a failed instance can be retried")
+		return
+	}
+	if s.databaseProjectBusy(p.Spec.ID) {
+		fail(w, 409, "project has another active job")
+		return
+	}
+	before := s.databaseCheckpoint()
+	job, e := s.queueDatabase(p, db.Operation{Action: "provision"}, "")
+	if e == nil {
+		p.State = "PROVISIONING"
+		p.Error = ""
+		d.Projects[p.Spec.ID] = p
+		e = s.saveDatabase(before)
+	}
+	if e != nil {
+		json.Unmarshal(before, d)
+		fail(w, 503, e.Error())
+		return
+	}
+	s.Store.Audit(p.Owner, "database.provision.retry", p.Spec.ID, job.ID)
+	writeJSON(w, 202, map[string]string{"job_id": job.ID})
+}
 func validateDatabaseAction(p model.Project, op db.Operation) error {
 	switch op.Action {
 	case "list-databases":
@@ -402,7 +478,7 @@ func validateDatabaseAction(p model.Project, op db.Operation) error {
 		if e := db.Name(op.Username); e != nil {
 			return e
 		}
-		if strings.EqualFold(op.Username, "root") || strings.EqualFold(op.Username, "clofixadmin") || strings.HasPrefix(strings.ToLower(op.Username), "pg_") || strings.HasPrefix(strings.ToLower(op.Username), "restore_") {
+		if strings.EqualFold(op.Username, "root") || strings.EqualFold(op.Username, "clofixadmin") || strings.EqualFold(op.Username, "default") || strings.HasPrefix(strings.ToLower(op.Username), "pg_") || strings.HasPrefix(strings.ToLower(op.Username), "restore_") {
 			return fmt.Errorf("reserved database user")
 		}
 		if op.Action == "create-user" && p.Users[op.Username] != nil {
@@ -431,6 +507,12 @@ func validateDatabaseAction(p model.Project, op db.Operation) error {
 	}
 	if op.Action != "list-users" && !p.Databases[op.Database] {
 		return fmt.Errorf("database not found")
+	}
+	if p.Spec.Engine == "redis" {
+		switch op.Action {
+		case "rename-database", "list-tables", "create-table", "delete-table", "create-index", "delete-index":
+			return fmt.Errorf("Redis uses a shared keyspace; SQL schema operations are not supported")
+		}
 	}
 	switch op.Action {
 	case "rename-database":
@@ -796,6 +878,10 @@ func (s *Server) databaseHeartbeat(worker string, results []db.Result, statuses 
 			case "restore":
 				p.Databases[op.Database] = true
 				p.Inventory = nil
+			case "recover-backup":
+				p.State = "READY"
+				p.Error = ""
+				p.Inventory = result.Data
 			case "backup":
 				b, ok := d.Backups[j.BackupID]
 				if !ok {
@@ -845,7 +931,7 @@ func (s *Server) databaseHeartbeat(worker string, results []db.Result, statuses 
 				p.State = "FAILED"
 				p.Error = j.Error
 			}
-			if j.State == "INTERRUPTED" || j.State == "CANCELLED" || j.Action == "restore" && strings.Contains(j.Error, "inspection") {
+			if j.Action != "backup" && (j.State == "INTERRUPTED" || j.State == "CANCELLED" || j.Action == "restore" && strings.Contains(j.Error, "inspection")) {
 				p.State = "NEEDS_INSPECTION"
 				p.Error = j.Error
 			}

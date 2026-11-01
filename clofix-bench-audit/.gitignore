@@ -1,0 +1,5 @@
+results/*.tsv
+results/.bench-ssh*
+results/.bench-ssh
+__pycache__/
+*.pyc

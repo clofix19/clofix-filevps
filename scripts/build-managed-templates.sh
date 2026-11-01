@@ -8,15 +8,16 @@ ROOT="$STATE/managed-templates"
 ARCH=$(dpkg --print-architecture)
 case "$ARCH" in amd64) MIRROR=http://archive.ubuntu.com/ubuntu ;; *) MIRROR=http://ports.ubuntu.com/ubuntu-ports ;; esac
 mkdir -p "$ROOT"
-for app in ${CLOFIX_MANAGED_TEMPLATES:-adminer code-server uptime-kuma}; do
+for app in ${CLOFIX_MANAGED_TEMPLATES:-adminer uptime-kuma web-static web-php web-nodejs web-nextjs web-wordpress}; do
   case "$app" in
     adminer) packages=ca-certificates,nginx,php-fpm,php-cli,php-mysql,php-pgsql,php-sqlite3,adminer ;;
-    code-server)
-      [ -n "${CLOFIX_CODE_SERVER_ARCHIVE:-}" ] && [ -n "${CLOFIX_CODE_SERVER_SHA256:-}" ] || { echo 'Skipping code-server: provide its verified Linux standalone archive and SHA256.'; continue; }
-      packages=ca-certificates,git ;;
     uptime-kuma)
       [ -n "${CLOFIX_UPTIME_KUMA_DIR:-}" ] && [ -n "${CLOFIX_NODE_ARCHIVE:-}" ] && [ -n "${CLOFIX_NODE_SHA256:-}" ] || { echo 'Skipping uptime-kuma: provide a prepared application directory and verified compatible Node.js Linux archive/SHA256.'; continue; }
       packages=ca-certificates ;;
+    web-static) packages=ca-certificates,nginx ;;
+    web-php) packages=ca-certificates,nginx,php-fpm,php-cli,php-mysql,php-pgsql,php-sqlite3 ;;
+    web-nodejs|web-nextjs) packages=ca-certificates,nodejs,npm ;;
+    web-wordpress) packages=ca-certificates,nginx,php-fpm,php-cli,php-mysql,php-pgsql,php-sqlite3,wordpress ;;
     *) echo "Unknown template: $app" >&2; exit 1 ;;
   esac
   target="$ROOT/$app"
@@ -88,15 +89,63 @@ mkdir -p /tmp/client-body /tmp/fastcgi /tmp/proxy /tmp/uwsgi /tmp/scgi
 exec /usr/sbin/nginx -c /app/nginx.conf -p /tmp -g 'daemon off;'
 START
       ;;
-    code-server)
-      printf '%s  %s\n' "$CLOFIX_CODE_SERVER_SHA256" "$CLOFIX_CODE_SERVER_ARCHIVE" | sha256sum -c -
-      mkdir -p "$staging/opt/code-server"
-      tar -xzf "$CLOFIX_CODE_SERVER_ARCHIVE" --strip-components=1 -C "$staging/opt/code-server"
+    web-static)
+      cat > "$staging/app/nginx.conf" <<'CONFIG'
+worker_processes 1;
+pid /tmp/nginx.pid;
+error_log stderr;
+events { worker_connections 256; }
+http { access_log /dev/stdout; client_body_temp_path /tmp/client-body; server { listen 8080; root /data/app; index index.html; location / { try_files $uri $uri/ /index.html; } } }
+CONFIG
       cat > "$staging/app/start" <<'START'
 #!/bin/sh
 set -eu
-mkdir -p /data/user /data/extensions /data/workspace
-exec /opt/code-server/bin/code-server --bind-addr 0.0.0.0:8080 --auth none --user-data-dir /data/user --extensions-dir /data/extensions /data/workspace
+mkdir -p /tmp/client-body
+exec /usr/sbin/nginx -c /app/nginx.conf -p /tmp -g 'daemon off;'
+START
+      ;;
+    web-nodejs|web-nextjs)
+      cat > "$staging/app/start" <<'START'
+#!/bin/sh
+set -eu
+cd /data/app
+if [ -n "${CLOFIX_ENTRY:-}" ]; then exec node "$CLOFIX_ENTRY"; fi
+if [ -f server.js ]; then exec node server.js; fi
+if [ -f package.json ]; then exec npm start -- --hostname 0.0.0.0 --port 8080; fi
+echo 'No server entrypoint supplied. Add server.js, package.json, or set an entrypoint.' >&2
+exit 64
+START
+      ;;
+    web-php|web-wordpress)
+      cat > "$staging/app/nginx.conf" <<'CONFIG'
+worker_processes 1;
+pid /tmp/nginx.pid;
+error_log stderr;
+events { worker_connections 256; }
+http { access_log /dev/stdout; client_body_temp_path /tmp/client-body; fastcgi_temp_path /tmp/fastcgi; server { listen 8080; root /data/app; index index.php index.html; location / { try_files $uri $uri/ /index.php?$query_string; } location ~ \.php$ { include /etc/nginx/fastcgi_params; fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name; fastcgi_pass 127.0.0.1:9000; } } }
+CONFIG
+      cat > "$staging/app/php-fpm.conf" <<'CONFIG'
+[global]
+daemonize = no
+error_log = /proc/self/fd/2
+[www]
+listen = 127.0.0.1:9000
+user = nobody
+group = nogroup
+pm = ondemand
+pm.max_children = 8
+catch_workers_output = yes
+clear_env = no
+php_admin_value[session.save_path] = /tmp
+php_admin_value[upload_tmp_dir] = /tmp
+CONFIG
+      cat > "$staging/app/start" <<'START'
+#!/bin/sh
+set -eu
+mkdir -p /tmp/client-body /tmp/fastcgi
+if [ "${CLOFIX_WORDPRESS_BUNDLED:-}" = "1" ] && [ ! -f /data/app/index.php ]; then cp -R /usr/share/wordpress/. /data/app/; fi
+      /usr/sbin/php-fpm8.3 -F -y /app/php-fpm.conf &
+exec /usr/sbin/nginx -c /app/nginx.conf -p /tmp -g 'daemon off;'
 START
       ;;
     uptime-kuma)

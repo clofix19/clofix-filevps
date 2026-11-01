@@ -45,7 +45,7 @@ func (e *Engine) CreateBackup(instanceID, backupID, workerID string) error {
 		return err
 	}
 	archive := filepath.Join(dir, "upper.tar.gz")
-	cmd := exec.Command("tar", "--xattrs", "--xattrs-include=*", "--acls", "--numeric-owner", "-czf", archive, "-C", filepath.Join(e.idir(instanceID), "upper"), ".")
+	cmd := exec.Command("tar", "--xattrs", "--xattrs-include=*", "--acls", "--numeric-owner", "-czf", archive, "-C", e.upperDir(instanceID), ".")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		info.State, info.Error = "FAILED", fmt.Sprintf("tar backup failed: %s: %v", string(out), err)
 		manifest.Info = info
@@ -107,7 +107,7 @@ func (e *Engine) restoreBackup(id, backupID string) error {
 	if manifest.Info.State != "READY" {
 		return errors.New("backup is not ready")
 	}
-	cmd := exec.Command("tar", "--xattrs", "--xattrs-include=*", "--acls", "--numeric-owner", "--same-owner", "-xzf", filepath.Join(dir, "upper.tar.gz"), "-C", filepath.Join(e.idir(id), "upper"))
+	cmd := exec.Command("tar", "--xattrs", "--xattrs-include=*", "--acls", "--numeric-owner", "--same-owner", "-xzf", filepath.Join(dir, "upper.tar.gz"), "-C", e.upperDir(id))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("extract backup: %s: %w", string(out), err)
 	}

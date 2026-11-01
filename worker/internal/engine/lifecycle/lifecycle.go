@@ -24,6 +24,7 @@ import (
 	"github.com/clofix/filevps/worker/internal/engine/cgroups"
 	"github.com/clofix/filevps/worker/internal/engine/image"
 	"github.com/clofix/filevps/worker/internal/engine/network"
+	"github.com/clofix/filevps/worker/internal/netstats"
 	"github.com/clofix/filevps/worker/pkg/proto"
 )
 
@@ -49,6 +50,7 @@ type Meta struct {
 	S3MountPath     string             `json:"s3_mount_path,omitempty"`
 	ServiceInstalls map[string]string  `json:"service_installs,omitempty"`
 	Created         time.Time          `json:"created"`
+	HostUID         uint32             `json:"host_uid,omitempty"`
 }
 
 type Engine struct {
@@ -62,6 +64,7 @@ type Engine struct {
 	mu                sync.Mutex
 	meta              map[string]*Meta
 	cpuSamples        map[string]cpuSample
+	netSamples        map[string]netSample
 	diskMu            sync.Mutex
 	volumeMu          sync.Mutex
 	diskSamples       map[string]diskSample
@@ -74,6 +77,12 @@ type Engine struct {
 type cpuSample struct {
 	usage uint64
 	at    time.Time
+}
+
+type netSample struct {
+	rx uint64
+	tx uint64
+	at time.Time
 }
 
 type diskSample struct {
@@ -95,7 +104,7 @@ func New(cfg config.Config) *Engine {
 	return &Engine{
 		StateDir: st, LogDir: envOr("CLOFIX_LOG_DIR", "/var/log/clofix-filevps"), Cfg: cfg,
 		Images: image.New(filepath.Join(st, "images", "cache"), shift),
-		CG:     cgroups.New(), Network: network.New(), meta: map[string]*Meta{}, cpuSamples: map[string]cpuSample{}, diskSamples: map[string]diskSample{}, serviceCPUSamples: map[string]serviceCPUSample{}, s3Mounts: map[string]*s3MountProcess{},
+		CG:     cgroups.New(), Network: network.New(), meta: map[string]*Meta{}, cpuSamples: map[string]cpuSample{}, netSamples: map[string]netSample{}, diskSamples: map[string]diskSample{}, serviceCPUSamples: map[string]serviceCPUSample{}, s3Mounts: map[string]*s3MountProcess{},
 	}
 }
 
@@ -210,18 +219,14 @@ func (e *Engine) setState(m *Meta, state, errMsg string) {
 	e.mu.Unlock()
 }
 
-func (e *Engine) configureSSHFiles(id string, spec proto.InstanceSpec) error {
+func (e *Engine) configureSSHFiles(id string, spec proto.InstanceSpec, owner int) error {
 	if spec.SSHAuthorizedKey == "" {
 		return nil
 	}
 	if len(spec.SSHAuthorizedKey) > 8192 || strings.ContainsAny(spec.SSHAuthorizedKey, "\r\n") {
 		return errors.New("invalid SSH authorized key")
 	}
-	owner := 0
-	if e.Cfg.UserNS {
-		owner = int(e.Cfg.UIDBase)
-	}
-	upper := filepath.Join(e.idir(id), "upper")
+	upper := e.upperDir(id)
 	sshDir := filepath.Join(upper, "root", ".ssh")
 	if err := os.MkdirAll(sshDir, 0o700); err != nil {
 		return err
@@ -269,6 +274,23 @@ func (e *Engine) Create(id string, spec proto.InstanceSpec) error {
 		e.mu.Unlock()
 		return nil
 	}
+	hostUID := uint32(0)
+	if hadExisting {
+		hostUID = existing.HostUID
+	}
+	if e.Cfg.UserNS && hostUID == 0 {
+		uid, err := e.allocateHostUIDLocked()
+		if err != nil {
+			e.mu.Unlock()
+			return err
+		}
+		hostUID = uid
+		if hadExisting {
+			existing.HostUID = hostUID
+		} else {
+			e.meta[id] = &Meta{ID: id, HostUID: hostUID, State: proto.StateStopped}
+		}
+	}
 	e.mu.Unlock()
 	if spec.SwapMB == nil {
 		swapMB := proto.DefaultSwapMB
@@ -298,17 +320,23 @@ func (e *Engine) Create(id string, spec proto.InstanceSpec) error {
 		enabled := true
 		spec.ProtectionMode = &enabled
 	}
-	for _, d := range []string{"upper", "work", "rootfs-mount"} {
-		if err := os.MkdirAll(filepath.Join(e.idir(id), d), 0o750); err != nil {
+	if err := os.MkdirAll(e.merged(id), 0o750); err != nil {
+		return err
+	}
+	if err := e.ensureDiskQuota(&Meta{ID: id, Spec: spec, HostUID: hostUID}); err != nil {
+		return err
+	}
+	for _, d := range []string{e.upperDir(id), e.workDir(id)} {
+		if err := os.MkdirAll(d, 0o750); err != nil {
 			return err
 		}
 	}
 	// Keep the upper layer owned by the guest root according to the selected UID map.
 	owner := 0
 	if e.Cfg.UserNS {
-		owner = int(e.Cfg.UIDBase)
+		owner = int(hostUID)
 	}
-	upper := filepath.Join(e.idir(id), "upper")
+	upper := e.upperDir(id)
 	if err := os.Chown(upper, owner, owner); err != nil {
 		return fmt.Errorf("set upper layer ownership: %w", err)
 	}
@@ -325,14 +353,14 @@ func (e *Engine) Create(id string, spec proto.InstanceSpec) error {
 		// are deliberately not copied into the new guest.
 		spec.StorageMounts, spec.S3MountPath, spec.S3ConnectionID = nil, "", ""
 	}
-	if err := e.configureSSHFiles(id, spec); err != nil {
+	if err := e.configureSSHFiles(id, spec, owner); err != nil {
 		return err
 	}
 	created := time.Now()
 	if hadExisting {
 		created = existing.Created
 	}
-	m := &Meta{ID: id, Spec: spec, State: proto.StateStopped, Desired: "stopped", Created: created}
+	m := &Meta{ID: id, Spec: spec, State: proto.StateStopped, Desired: "stopped", Created: created, HostUID: hostUID}
 	e.mu.Lock()
 	e.meta[id] = m
 	err := e.save(m)
@@ -360,7 +388,7 @@ func (e *Engine) mountRoot(m *Meta) error {
 	if err != nil {
 		return err
 	}
-	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", lower, filepath.Join(e.idir(m.ID), "upper"), filepath.Join(e.idir(m.ID), "work"))
+	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", lower, e.upperDir(m.ID), e.workDir(m.ID))
 	if err := syscall.Mount("overlay", merged, "overlay", 0, opts); err != nil {
 		return fmt.Errorf("overlay mount: %w", err)
 	}
@@ -371,11 +399,9 @@ func (e *Engine) mountRoot(m *Meta) error {
 // unprivileged users. Existing layers may have been created while UID shifting was
 // enabled and retained when local Docker Desktop switched to no-userns mode.
 func (e *Engine) prepareRootLayer(id string) error {
-	owner := 0
-	if e.Cfg.UserNS {
-		owner = int(e.Cfg.UIDBase)
-	}
-	for _, path := range []string{filepath.Join(e.idir(id), "upper"), e.merged(id)} {
+	m, _ := e.get(id)
+	owner := e.guestOwner(m)
+	for _, path := range []string{e.upperDir(id), e.merged(id)} {
 		if err := os.Chown(path, owner, owner); err != nil {
 			return fmt.Errorf("set root layer ownership on %s: %w", filepath.Base(path), err)
 		}
@@ -393,6 +419,38 @@ func (e *Engine) cleanupMounts(id string) {
 			syscall.Unmount(merged, syscall.MNT_DETACH)
 		}
 	}
+	e.unmountLayer(id)
+}
+
+func guestHostname(m *Meta) string {
+	if m.Spec.Hostname != "" && !strings.ContainsAny(m.Spec.Hostname, "\r\n\x00 /") {
+		return m.Spec.Hostname
+	}
+	return m.ID
+}
+
+func (e *Engine) configureHostname(m *Meta) error {
+	host := guestHostname(m)
+	root := e.merged(m.ID)
+	owner := e.guestOwner(m)
+	hostnamePath := filepath.Join(root, "etc", "hostname")
+	if err := os.MkdirAll(filepath.Dir(hostnamePath), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(hostnamePath, []byte(host+"\n"), 0o644); err != nil {
+		return fmt.Errorf("write /etc/hostname: %w", err)
+	}
+	hosts := "127.0.0.1\tlocalhost\n127.0.1.1\t" + host + "\n::1\tlocalhost ip6-localhost ip6-loopback\n"
+	hostsPath := filepath.Join(root, "etc", "hosts")
+	if err := os.WriteFile(hostsPath, []byte(hosts), 0o644); err != nil {
+		return fmt.Errorf("write /etc/hosts: %w", err)
+	}
+	for _, p := range []string{hostnamePath, hostsPath} {
+		if err := os.Lchown(p, owner, owner); err != nil {
+			return fmt.Errorf("set hostname file ownership: %w", err)
+		}
+	}
+	return nil
 }
 
 func (e *Engine) configureDNS(m *Meta) error {
@@ -439,10 +497,7 @@ func (e *Engine) ensureSSHHostKeys(m *Meta) error {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("prepare guest SSH host keys: %s: %w", strings.TrimSpace(string(out)), err)
 	}
-	owner := 0
-	if e.Cfg.UserNS {
-		owner = int(e.Cfg.UIDBase)
-	}
+	owner := e.guestOwner(m)
 	keys, err := filepath.Glob(filepath.Join(root, "etc/ssh/ssh_host_*_key*"))
 	if err != nil {
 		return err
@@ -481,14 +536,26 @@ func (e *Engine) Start(id string) error {
 		return err
 	}
 
+	if err := e.ensureHostUID(m); err != nil {
+		return fail(err)
+	}
+	if err := e.ensureDiskQuota(m); err != nil {
+		return fail(err)
+	}
 	if err := e.prepareRootLayer(id); err != nil {
 		return fail(err)
 	}
 	if err := e.mountRoot(m); err != nil {
 		return fail(err)
 	}
-	if err := e.configureSSHFiles(id, m.Spec); err != nil {
+	if err := image.EnsureStickyTmp(e.merged(id)); err != nil {
+		return fail(err)
+	}
+	if err := e.configureSSHFiles(id, m.Spec, e.guestOwner(m)); err != nil {
 		return fail(fmt.Errorf("configure SSH: %w", err))
+	}
+	if err := e.configureHostname(m); err != nil {
+		return fail(fmt.Errorf("configure hostname: %w", err))
 	}
 	if err := e.configureDNS(m); err != nil {
 		return fail(fmt.Errorf("configure DNS: %w", err))
@@ -513,14 +580,15 @@ func (e *Engine) Start(id string) error {
 	}
 	defer logf.Close()
 
-	host := m.Spec.Hostname
-	if host == "" {
-		host = id
-	}
+	host := guestHostname(m)
 	args := []string{"fx-init", e.merged(id), host}
 	if protectionEnabled(m.Spec) {
 		args = append(args, "--protection-mode")
 	}
+	if err := e.writeGuestMeminfo(m); err != nil {
+		return fail(err)
+	}
+	args = append(args, "--meminfo-file", e.meminfoPath(id))
 	var s3HostPath string
 	if m.S3MountPath != "" {
 		s3HostPath, err = e.startS3Mount(id, int(cgf.Fd()), logf)
@@ -549,12 +617,15 @@ func (e *Engine) Start(id string) error {
 	args = append(args, m.Spec.Init...)
 	cmd := exec.Command("/proc/self/exe", args...)
 	cmd.Stdout, cmd.Stderr = logf, logf
-	flags := uintptr(syscall.CLONE_NEWNS | syscall.CLONE_NEWPID | syscall.CLONE_NEWUTS | syscall.CLONE_NEWIPC | syscall.CLONE_NEWNET)
+	// Cgroup is created and CgroupFD is set first so the child is placed in
+	// /clofix-filevps/<id> before CLONE_NEWCGROUP virtualizes the view to 0::/.
+	flags := uintptr(syscall.CLONE_NEWNS | syscall.CLONE_NEWPID | syscall.CLONE_NEWUTS | syscall.CLONE_NEWIPC | syscall.CLONE_NEWNET | cloneNewCgroup)
 	sp := &syscall.SysProcAttr{CgroupFD: int(cgf.Fd()), UseCgroupFD: true, Setsid: true}
 	if e.Cfg.UserNS {
 		flags |= syscall.CLONE_NEWUSER
-		sp.UidMappings = []syscall.SysProcIDMap{{ContainerID: 0, HostID: int(e.Cfg.UIDBase), Size: 65536}}
-		sp.GidMappings = []syscall.SysProcIDMap{{ContainerID: 0, HostID: int(e.Cfg.UIDBase), Size: 65536}}
+		hostUID := int(e.guestOwner(m))
+		sp.UidMappings = []syscall.SysProcIDMap{{ContainerID: 0, HostID: hostUID, Size: uidRangeSize}}
+		sp.GidMappings = []syscall.SysProcIDMap{{ContainerID: 0, HostID: hostUID, Size: uidRangeSize}}
 	} else {
 		log.Printf("WARNING: instance %s starts WITHOUT a user namespace (container root == host root)", id)
 	}
@@ -750,7 +821,8 @@ func (e *Engine) Apply(op proto.Operation) error {
 }
 
 // UpdateResources stores the requested limits and recreates the guest cgroup.
-// DiskMB remains placement/accounting metadata; this backend does not enforce quotas.
+// DiskMB sizes the guest overlay backing image. Changing the size after the
+// image exists is not supported; the running guest still restarts for RAM/CPU.
 func (e *Engine) UpdateResources(id string, requested proto.InstanceSpec) error {
 	m, err := e.get(id)
 	if err != nil {
@@ -874,6 +946,8 @@ func (e *Engine) CreateVolume(id string, limitMB int64) error {
 }
 
 func (e *Engine) setVolumeOwner(p string) error {
+	// Volumes can be attached to more than one guest over time, so they stay
+	// on the shared image uid_base rather than a per-instance HostUID.
 	owner := uint32(0)
 	if e.Cfg.UserNS {
 		owner = e.Cfg.UIDBase
@@ -1056,13 +1130,13 @@ func (e *Engine) UpdateSSHLogin(id string, blocked bool) error {
 	previous := m.Spec.SSHLoginBlocked
 	updated := m.Spec
 	updated.SSHLoginBlocked = &blocked
-	if err := e.configureSSHFiles(id, updated); err != nil {
+	if err := e.configureSSHFiles(id, updated, e.guestOwner(m)); err != nil {
 		return fmt.Errorf("configure SSH login policy: %w", err)
 	}
 	m.Spec.SSHLoginBlocked = &blocked
 	if err := e.save(m); err != nil {
 		m.Spec.SSHLoginBlocked = previous
-		_ = e.configureSSHFiles(id, m.Spec)
+		_ = e.configureSSHFiles(id, m.Spec, e.guestOwner(m))
 		return fmt.Errorf("save SSH login policy: %w", err)
 	}
 	if running {
@@ -1095,6 +1169,22 @@ func (e *Engine) UpdateDeleteProtection(id string, enabled bool) error {
 	return nil
 }
 
+// UsedNetwork returns IPs and SSH host ports already assigned to local instances.
+func (e *Engine) UsedNetwork() (map[string]bool, map[int]bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	ips, ports := map[string]bool{}, map[int]bool{}
+	for _, m := range e.meta {
+		if m.Spec.IPAddress != "" {
+			ips[m.Spec.IPAddress] = true
+		}
+		if m.Spec.SSHPort > 0 {
+			ports[m.Spec.SSHPort] = true
+		}
+	}
+	return ips, ports
+}
+
 func (e *Engine) Statuses() []proto.InstanceStatus {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -1121,18 +1211,28 @@ func (e *Engine) Statuses() []proto.InstanceStatus {
 			e.cpuSamples[m.ID] = cpuSample{usage: usage, at: now}
 		} else {
 			delete(e.cpuSamples, m.ID)
+			delete(e.netSamples, m.ID)
 		}
 		out = append(out, proto.InstanceStatus{
 			ID: m.ID, State: st, Error: m.Error, Pid: m.Pid,
-			Metrics:  e.instanceMetrics(m, cpuPercent, memoryCurrent),
+			Metrics:  e.instanceMetrics(m, cpuPercent, memoryCurrent, st == proto.StateRunning, now),
 			Services: e.applicationServices(m.ID, m.Pid, st == proto.StateRunning), ServiceInstalls: cloneStringMap(m.ServiceInstalls),
 		})
 	}
 	return out
 }
 
-func (e *Engine) instanceMetrics(m *Meta, cpuPercent float64, memoryCurrent uint64) proto.InstanceMetrics {
-	metrics := proto.InstanceMetrics{CPUPercent: cpuPercent, MemoryCurrentBytes: memoryCurrent, MemoryLimitBytes: uint64(m.Spec.RAMMB) << 20, SwapCurrentBytes: e.CG.MemorySwapCurrent(m.ID), SwapLimitBytes: uint64(proto.SwapLimitMB(m.Spec)) << 20, DiskUsageBytes: e.cachedDirectoryBytes("upper/"+m.ID, filepath.Join(e.idir(m.ID), "upper"))}
+func (e *Engine) instanceMetrics(m *Meta, cpuPercent float64, memoryCurrent uint64, running bool, now time.Time) proto.InstanceMetrics {
+	metrics := proto.InstanceMetrics{CPUPercent: cpuPercent, MemoryCurrentBytes: memoryCurrent, MemoryLimitBytes: uint64(m.Spec.RAMMB) << 20, SwapCurrentBytes: e.CG.MemorySwapCurrent(m.ID), SwapLimitBytes: uint64(proto.SwapLimitMB(m.Spec)) << 20, DiskUsageBytes: e.cachedDirectoryBytes("upper/"+m.ID, e.upperDir(m.ID))}
+	if running {
+		if counters, ok := netstats.Guest(m.Pid, network.HostInterface(m.ID)); ok {
+			metrics.NetRxBytes, metrics.NetTxBytes = counters.RxBytes, counters.TxBytes
+			if previous, have := e.netSamples[m.ID]; have {
+				metrics.NetRxBps, metrics.NetTxBps = netstats.Rate(netstats.Counters{RxBytes: previous.rx, TxBytes: previous.tx}, counters, now.Sub(previous.at).Seconds())
+			}
+			e.netSamples[m.ID] = netSample{rx: counters.RxBytes, tx: counters.TxBytes, at: now}
+		}
+	}
 	for _, mount := range m.Spec.StorageMounts {
 		bytes := e.cachedDirectoryBytes("volume/"+mount.ID, filepath.Join(e.StateDir, "volumes", mount.ID))
 		metrics.DiskUsageBytes += bytes
@@ -1532,6 +1632,33 @@ func (e *Engine) guestShell(id string, pid int, script string) error {
 }
 
 func (e *Engine) guestExec(id string, pid int, program string, commandArgs []string) error {
+	var output cappedOutput
+	if err := e.execInGuest(id, pid, program, commandArgs, &output, &output); err != nil {
+		if output.b.Len() > 0 {
+			return errors.New(strings.TrimSpace(output.b.String()))
+		}
+		return err
+	}
+	return nil
+}
+
+// Exec runs a command inside a running guest and writes its output to the given writers.
+// It enters the guest namespaces and cgroup; it does not run the command on the host.
+func (e *Engine) Exec(id string, argv []string, stdout, stderr io.Writer) error {
+	if len(argv) == 0 || argv[0] == "" {
+		return errors.New("command required")
+	}
+	m, err := e.get(id)
+	if err != nil {
+		return err
+	}
+	if !e.CG.Alive(id) || m.Pid <= 0 {
+		return errors.New("instance is not running")
+	}
+	return e.execInGuest(id, m.Pid, argv[0], argv[1:], stdout, stderr)
+}
+
+func (e *Engine) execInGuest(id string, pid int, program string, commandArgs []string, stdout, stderr io.Writer) error {
 	cgf, err := e.CG.Open(id)
 	if err != nil {
 		return err
@@ -1539,24 +1666,28 @@ func (e *Engine) guestExec(id string, pid int, program string, commandArgs []str
 	defer cgf.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
+	self, err := os.Open("/proc/self/exe")
+	if err != nil {
+		return err
+	}
+	defer self.Close()
 	args := []string{"--target", strconv.Itoa(pid)}
 	if e.Cfg.UserNS {
 		args = append(args, "--user")
 	}
-	// nsenter forks by default when entering a PID namespace; util-linux 2.39
-	// has --no-fork but no --fork option.
-	args = append(args, "--mount", "--uts", "--ipc", "--net", "--pid", "--", "chroot", "/proc/1/root", "/usr/bin/env", "DEBIAN_FRONTEND=noninteractive", program)
+	// nsenter is not a child of guest PID 1, so it does not inherit that
+	// process's seccomp. After setns, exec the worker via an inherited fd
+	// (the guest has no worker binary) and install the filter before the
+	// command. fd 3 is ExtraFiles[0].
+	args = append(args, "--mount", "--uts", "--ipc", "--net", "--pid", "--cgroup", "--", "/proc/self/fd/3", "fx-confine", "--chroot", "/proc/1/root", "--", "/usr/bin/env", "DEBIAN_FRONTEND=noninteractive", program)
 	args = append(args, commandArgs...)
 	cmd := exec.CommandContext(ctx, "nsenter", args...)
+	cmd.ExtraFiles = []*os.File{self}
 	cmd.SysProcAttr = &syscall.SysProcAttr{CgroupFD: int(cgf.Fd()), UseCgroupFD: true, Setsid: true}
-	var output cappedOutput
-	cmd.Stdout, cmd.Stderr = &output, &output
+	cmd.Stdout, cmd.Stderr = stdout, stderr
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
-			return errors.New("package operation timed out after 15 minutes")
-		}
-		if output.b.Len() > 0 {
-			return errors.New(strings.TrimSpace(output.b.String()))
+			return errors.New("guest command timed out after 15 minutes")
 		}
 		return err
 	}
@@ -1627,7 +1758,7 @@ func (e *Engine) applicationServices(id string, pid int, running bool) []proto.S
 		return []proto.ServiceStatus{}
 	}
 	type serviceUsage struct {
-		pids                int
+		proc                []int
 		ticks, memory, swap uint64
 	}
 	usage := map[string]*serviceUsage{}
@@ -1652,7 +1783,7 @@ func (e *Engine) applicationServices(id string, pid int, running bool) []proto.S
 							continue
 						}
 					}
-					stats.pids++
+					stats.proc = append(stats.proc, processPID)
 					stats.ticks += ticks
 					stats.memory += memory
 					stats.swap += swap
@@ -1665,10 +1796,10 @@ func (e *Engine) applicationServices(id string, pid int, running bool) []proto.S
 	for name := range enabled {
 		state := "ENABLED"
 		stats := usage[name]
-		if stats.pids > 0 {
+		if len(stats.proc) > 0 {
 			state = "RUNNING"
 		}
-		out = append(out, proto.ServiceStatus{Name: name, State: state, CPUPercent: e.sampleServiceCPU(id, name, stats.ticks), MemoryBytes: stats.memory, SwapBytes: stats.swap})
+		out = append(out, proto.ServiceStatus{Name: name, State: state, CPUPercent: e.sampleServiceCPU(id, name, stats.ticks), MemoryBytes: stats.memory, SwapBytes: stats.swap, ListenPorts: serviceListenPorts(stats.proc)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	logBudget := 16 << 10
@@ -1684,7 +1815,7 @@ func (e *Engine) applicationServices(id string, pid int, running bool) []proto.S
 		}
 	}
 	for _, i := range logOrder {
-		if out[i].State != "RUNNING" || logBudget <= 0 {
+		if logBudget <= 0 {
 			continue
 		}
 		limit := 4 << 10
@@ -1787,63 +1918,233 @@ func validServiceName(name string) bool {
 	return true
 }
 
+func serviceLogCandidates(root, service string) [][2]string {
+	logDir := filepath.Join(root, "var", "log")
+	pair := func(path, label string) [2]string { return [2]string{path, label} }
+	switch {
+	case service == "nginx":
+		return [][2]string{
+			pair(filepath.Join(logDir, "nginx", "error.log"), "error.log"),
+			pair(filepath.Join(logDir, "nginx", "modsec_audit.log"), "modsec_audit.log"),
+			pair(filepath.Join(logDir, "modsec_audit.log"), "modsec_audit.log"),
+		}
+	case service == "apache2" || service == "apache":
+		return [][2]string{pair(filepath.Join(logDir, "apache2", "error.log"), "error.log")}
+	case strings.Contains(service, "php") && strings.Contains(service, "fpm"):
+		return [][2]string{
+			pair(filepath.Join(logDir, service+".log"), "error.log"),
+			pair(filepath.Join(logDir, "php-fpm.log"), "error.log"),
+			pair(filepath.Join(logDir, service, "error.log"), "error.log"),
+		}
+	case service == "mysql" || service == "mariadb" || service == "mariadbd":
+		return [][2]string{pair(filepath.Join(logDir, "mysql", "error.log"), "error.log")}
+	case service == "postgresql":
+		return [][2]string{
+			pair(filepath.Join(logDir, "postgresql", "postgresql-16-main.log"), "error.log"),
+			pair(filepath.Join(logDir, "postgresql", "postgresql-15-main.log"), "error.log"),
+			pair(filepath.Join(logDir, service, "error.log"), "error.log"),
+		}
+	case service == "redis" || service == "redis-server":
+		return [][2]string{
+			pair(filepath.Join(logDir, "redis", "redis-server.log"), "error.log"),
+			pair(filepath.Join(logDir, service, "error.log"), "error.log"),
+		}
+	case service == "tomcat10":
+		return [][2]string{
+			pair(filepath.Join(logDir, "tomcat10", "clofix-console.log"), "error.log"),
+			pair(filepath.Join(logDir, "tomcat10", "error.log"), "error.log"),
+		}
+	case service == "wildfly":
+		return [][2]string{
+			pair(filepath.Join(root, "lib", "wildfly", "standalone", "log", "server.log"), "error.log"),
+			pair(filepath.Join(root, "lib", "wildfly", "standalone", "log", "clofix-console.log"), "error.log"),
+		}
+	default:
+		return [][2]string{
+			pair(filepath.Join(logDir, service, "error.log"), "error.log"),
+			pair(filepath.Join(logDir, service+".log"), "error.log"),
+			pair(filepath.Join(logDir, service, "application.log"), "error.log"),
+		}
+	}
+}
+
+func tailRegularFile(path string, limit int) []byte {
+	if limit <= 0 {
+		return nil
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	if info.Size() > int64(limit) {
+		_, _ = f.Seek(-int64(limit), io.SeekEnd)
+	}
+	b, _ := io.ReadAll(io.LimitReader(f, int64(limit)))
+	return b
+}
+
 func (e *Engine) serviceLogs(pid int, service string, maxBytes int) string {
 	if pid <= 0 || maxBytes <= 0 || !validServiceName(service) {
 		return ""
 	}
-	root := filepath.Join("/proc", strconv.Itoa(pid), "root", "var", "log")
-	paths := []string{
-		filepath.Join(root, service, "error.log"),
-		filepath.Join(root, service, "access.log"),
-		filepath.Join(root, service, "application.log"),
-		filepath.Join(root, service+".log"),
-	}
-	if service == "tomcat10" {
-		paths = append([]string{filepath.Join(root, "tomcat10", "clofix-console.log")}, paths...)
-	}
-	if service == "wildfly" {
-		paths = append([]string{filepath.Join(root, "..", "lib", "wildfly", "standalone", "log", "server.log"), filepath.Join(root, "..", "lib", "wildfly", "standalone", "log", "clofix-console.log")}, paths...)
-	}
+	root := filepath.Join("/proc", strconv.Itoa(pid), "root")
 	var out strings.Builder
-	for _, path := range paths {
-		info, err := os.Lstat(path)
-		if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 {
+	seen := map[string]bool{}
+	wroteError := false
+	for _, item := range serviceLogCandidates(root, service) {
+		path, label := item[0], item[1]
+		if seen[path] {
 			continue
 		}
-		f, err := os.Open(path)
-		if err != nil {
-			continue
-		}
-		limit := maxBytes - out.Len()
-		if limit <= 0 {
-			f.Close()
-			break
-		}
-		if info.Size() > int64(limit) {
-			_, _ = f.Seek(-int64(limit), io.SeekEnd)
-		}
-		b, _ := io.ReadAll(io.LimitReader(f, int64(limit)))
-		f.Close()
-		if len(b) == 0 {
+		seen[path] = true
+		data := tailRegularFile(path, maxBytes-out.Len())
+		if len(data) == 0 {
 			continue
 		}
 		if out.Len() > 0 {
 			out.WriteByte('\n')
 		}
 		out.WriteString("# ")
-		out.WriteString(filepath.Base(filepath.Dir(path)))
+		out.WriteString(service)
 		out.WriteByte('/')
-		out.WriteString(filepath.Base(path))
+		out.WriteString(label)
 		out.WriteByte('\n')
-		out.Write(b)
-		if out.Len() < maxBytes {
+		out.Write(data)
+		if data[len(data)-1] != '\n' && out.Len() < maxBytes {
 			out.WriteByte('\n')
 		}
+		if label == "error.log" {
+			wroteError = true
+		}
+		if out.Len() >= maxBytes {
+			break
+		}
+	}
+	if !wroteError && out.Len() < maxBytes {
+		if out.Len() > 0 {
+			out.WriteByte('\n')
+		}
+		out.WriteString("# ")
+		out.WriteString(service)
+		out.WriteString("/error.log\n(empty)\n")
 	}
 	if out.Len() > maxBytes {
 		return out.String()[out.Len()-maxBytes:]
 	}
 	return out.String()
+}
+
+type listenSock struct {
+	Port  int
+	Inode uint64
+}
+
+func parseProcNetListenSocks(s string) []listenSock {
+	seen := map[string]bool{}
+	var socks []listenSock
+	for _, line := range strings.Split(s, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 10 || fields[0] == "sl" || fields[3] != "0A" {
+			continue
+		}
+		_, portHex, ok := strings.Cut(fields[1], ":")
+		if !ok {
+			continue
+		}
+		port, err := strconv.ParseUint(portHex, 16, 16)
+		if err != nil || port == 0 {
+			continue
+		}
+		inode, err := strconv.ParseUint(fields[9], 10, 64)
+		if err != nil || inode == 0 {
+			continue
+		}
+		key := strconv.FormatUint(inode, 10) + ":" + strconv.FormatUint(port, 10)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		socks = append(socks, listenSock{Port: int(port), Inode: inode})
+	}
+	return socks
+}
+
+func parseProcNetListen(s string) []int {
+	seen := map[int]bool{}
+	var ports []int
+	for _, sock := range parseProcNetListenSocks(s) {
+		if seen[sock.Port] {
+			continue
+		}
+		seen[sock.Port] = true
+		ports = append(ports, sock.Port)
+	}
+	sort.Ints(ports)
+	return ports
+}
+
+func processSocketInodes(pid int) map[uint64]bool {
+	owned := map[uint64]bool{}
+	if pid <= 0 {
+		return owned
+	}
+	entries, err := os.ReadDir(fmt.Sprintf("/proc/%d/fd", pid))
+	if err != nil {
+		return owned
+	}
+	for _, entry := range entries {
+		target, err := os.Readlink(fmt.Sprintf("/proc/%d/fd/%s", pid, entry.Name()))
+		if err != nil || !strings.HasPrefix(target, "socket:[") || !strings.HasSuffix(target, "]") {
+			continue
+		}
+		inode, err := strconv.ParseUint(strings.TrimSuffix(strings.TrimPrefix(target, "socket:["), "]"), 10, 64)
+		if err != nil || inode == 0 {
+			continue
+		}
+		owned[inode] = true
+	}
+	return owned
+}
+
+func serviceListenPorts(pids []int) []int {
+	owned := map[uint64]bool{}
+	seen := map[int]bool{}
+	var ports []int
+	for _, pid := range pids {
+		for inode := range processSocketInodes(pid) {
+			owned[inode] = true
+		}
+	}
+	if len(owned) == 0 {
+		return nil
+	}
+	add := func(path string) {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return
+		}
+		for _, sock := range parseProcNetListenSocks(string(b)) {
+			if !owned[sock.Inode] || seen[sock.Port] {
+				continue
+			}
+			seen[sock.Port] = true
+			ports = append(ports, sock.Port)
+		}
+	}
+	for _, pid := range pids {
+		if pid <= 0 {
+			continue
+		}
+		add(fmt.Sprintf("/proc/%d/net/tcp", pid))
+		add(fmt.Sprintf("/proc/%d/net/tcp6", pid))
+	}
+	sort.Ints(ports)
+	return ports
 }
 
 type cappedOutput struct{ b strings.Builder }
@@ -1894,7 +2195,7 @@ func (e *Engine) ControlService(id, name, action string) error {
 	if e.Cfg.UserNS {
 		args = append(args, "--user")
 	}
-	args = append(args, "--mount", "--uts", "--ipc", "--net", "--pid", "--", "chroot", "/proc/1/root", "/usr/sbin/service", name, action)
+	args = append(args, "--mount", "--uts", "--ipc", "--net", "--pid", "--cgroup", "--", "chroot", "/proc/1/root", "/usr/sbin/service", name, action)
 	cmd := exec.CommandContext(ctx, "nsenter", args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{CgroupFD: int(cgf.Fd()), UseCgroupFD: true, Setsid: true}
 	var output cappedOutput
@@ -1920,10 +2221,13 @@ func serviceProcessNames(service string) []string {
 	aliases := map[string][]string{
 		"apache2": {"apache2"}, "mariadb": {"mariadbd", "mysqld"}, "mysql": {"mysqld"},
 		"postgresql": {"postgres"}, "redis": {"redis-server"}, "redis-server": {"redis-server"},
-		"wildfly": {"java"}, "tomcat10": {"java"}, "supervisor": {"supervisord"}, "docker": {"dockerd"}, "php-fpm": {"php-fpm", "php-fpm8.3"},
+		"wildfly": {"java"}, "tomcat10": {"java"}, "supervisor": {"supervisord"}, "docker": {"dockerd"}, "php-fpm": {"php-fpm", "php-fpm8.3", "php-fpm8.4"},
 	}
 	if values, ok := aliases[service]; ok {
 		return values
+	}
+	if strings.Contains(service, "php") && strings.Contains(service, "fpm") {
+		return []string{service, "php-fpm", "php-fpm8.3", "php-fpm8.4"}
 	}
 	return []string{strings.ToLower(service)}
 }

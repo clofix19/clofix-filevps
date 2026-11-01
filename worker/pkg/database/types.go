@@ -18,13 +18,13 @@ func Name(name string) error {
 		return fmt.Errorf("names must start with a letter and use up to 48 letters, digits or underscores")
 	}
 	switch strings.ToLower(name) {
-	case "admin", "local", "config", "mysql", "sys", "performance_schema", "information_schema", "postgres", "template0", "template1":
+	case "admin", "local", "config", "mysql", "sys", "performance_schema", "information_schema", "postgres", "template0", "template1", "redis":
 		return fmt.Errorf("system database name is reserved")
 	}
 	return nil
 }
 func Engine(engine string) bool {
-	return engine == "mysql" || engine == "postgresql" || engine == "mongodb"
+	return engine == "mysql" || engine == "postgresql" || engine == "mongodb" || engine == "redis"
 }
 
 type Project struct {
@@ -59,23 +59,25 @@ type Index struct {
 	Unique  bool     `json:"unique"`
 }
 type Operation struct {
-	JobID    string            `json:"job_id"`
-	Project  Project           `json:"project"`
-	Action   string            `json:"action"`
-	Database string            `json:"database,omitempty"`
-	NewName  string            `json:"new_name,omitempty"`
-	Username string            `json:"username,omitempty"`
-	Password string            `json:"password,omitempty"`
-	Grants   map[string]string `json:"grants,omitempty"`
-	Table    string            `json:"table,omitempty"`
-	Columns  []Column          `json:"columns,omitempty"`
-	Index    *Index            `json:"index,omitempty"`
-	Backup   *BackupSpec       `json:"backup,omitempty"`
-	Restore  *RestoreSpec      `json:"restore,omitempty"`
+	JobID         string            `json:"job_id"`
+	RecoveryJobID string            `json:"recovery_job_id,omitempty"`
+	Project       Project           `json:"project"`
+	Action        string            `json:"action"`
+	Database      string            `json:"database,omitempty"`
+	NewName       string            `json:"new_name,omitempty"`
+	Username      string            `json:"username,omitempty"`
+	Password      string            `json:"password,omitempty"`
+	Grants        map[string]string `json:"grants,omitempty"`
+	Table         string            `json:"table,omitempty"`
+	Columns       []Column          `json:"columns,omitempty"`
+	Index         *Index            `json:"index,omitempty"`
+	Backup        *BackupSpec       `json:"backup,omitempty"`
+	Restore       *RestoreSpec      `json:"restore,omitempty"`
 }
 type BackupSpec struct {
 	ID         string   `json:"id"`
 	Tables     []string `json:"tables,omitempty"`
+	Scope      string   `json:"scope,omitempty"`
 	Key        []byte   `json:"key"`
 	LimitBytes int64    `json:"limit_bytes"`
 	CentralURL string   `json:"central_url,omitempty"`

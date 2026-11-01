@@ -25,6 +25,7 @@ func usage() {
   enroll              enroll with a controller: --controller URL --ca ca.pem (token read from a secure prompt)
   check               validate host kernel features
   status              list local instances
+  fx                  guest-engine CLI: create|start|exec|delete
   version`)
 	os.Exit(2)
 }
@@ -38,6 +39,11 @@ func main() {
 	case "fx-init": // internal: executed inside the new namespaces by the engine
 		if err := namespaces.RunInit(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, "fx-init:", err)
+			os.Exit(1)
+		}
+	case "fx-confine": // internal: apply guest seccomp, then exec (used by fx exec)
+		if err := namespaces.RunConfined(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "fx-confine:", err)
 			os.Exit(1)
 		}
 	case "version":
@@ -82,6 +88,11 @@ func main() {
 		eng.Load()
 		for _, s := range eng.Statuses() {
 			fmt.Printf("%-24s %-12s pid=%d %s\n", s.ID, s.State, s.Pid, s.Error)
+		}
+	case "fx":
+		if err := runFX(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
 		}
 	case "run":
 		run()

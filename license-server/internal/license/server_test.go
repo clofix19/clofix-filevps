@@ -115,14 +115,14 @@ func TestPlanExtendedEntitlements(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := New(dir, testToken)
 	h := s.Handler()
-	p := map[string]any{"name": "Complete", "max_vps": 10, "max_workers": 2, "max_load_balancers": 3, "max_activations": 1, "active": true, "max_database_projects": 4, "max_databases": 20, "max_database_users": 40, "max_database_schedules": 15, "max_health_checks": 25, "max_backups": 0, "max_volumes": 10, "max_storage_gb": 100, "max_s3_connections": 5, "max_applications": 20, "max_managed_apps": 10, "max_notification_channels": -1, "max_iam_users": 10, "max_iam_groups": 4, "max_iam_policies": 20, "max_access_keys": 30}
+	p := map[string]any{"name": "Complete", "max_vps": 10, "max_workers": 2, "max_load_balancers": 3, "max_activations": 1, "active": true, "max_database_projects": 4, "max_databases": 20, "max_database_users": 40, "max_database_schedules": 15, "max_health_checks": 25, "max_backups": 0, "max_volumes": 10, "max_storage_gb": 100, "max_s3_connections": 5, "max_applications": 20, "max_managed_apps": 10, "max_notification_channels": -1, "max_iam_users": 10, "max_iam_groups": 4, "max_iam_policies": 20, "max_access_keys": 30, "max_dns_zones": 1, "max_dns_records": 50}
 	w := call(h, "POST", "/api/plans", p, true)
 	if w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
 	var plan Plan
 	json.Unmarshal(w.Body.Bytes(), &plan)
-	if plan.MaxDatabaseProjects == nil || *plan.MaxDatabaseProjects != 4 || plan.MaxDatabases == nil || *plan.MaxDatabases != 20 || plan.MaxDatabaseUsers == nil || *plan.MaxDatabaseUsers != 40 || plan.MaxDatabaseSchedules == nil || *plan.MaxDatabaseSchedules != 15 || plan.MaxHealthChecks == nil || *plan.MaxHealthChecks != 25 || plan.MaxBackups == nil || *plan.MaxBackups != 0 || plan.MaxNotificationChannels == nil || *plan.MaxNotificationChannels != -1 {
+	if plan.MaxDatabaseProjects == nil || *plan.MaxDatabaseProjects != 4 || plan.MaxDatabases == nil || *plan.MaxDatabases != 20 || plan.MaxDatabaseUsers == nil || *plan.MaxDatabaseUsers != 40 || plan.MaxDatabaseSchedules == nil || *plan.MaxDatabaseSchedules != 15 || plan.MaxHealthChecks == nil || *plan.MaxHealthChecks != 25 || plan.MaxBackups == nil || *plan.MaxBackups != 0 || plan.MaxNotificationChannels == nil || *plan.MaxNotificationChannels != -1 || plan.MaxDNSZones == nil || *plan.MaxDNSZones != 1 || plan.MaxDNSRecords == nil || *plan.MaxDNSRecords != 50 {
 		t.Fatal("quota semantics lost")
 	}
 	w = call(h, "POST", "/api/licenses", map[string]any{"installation_id": "controller-1", "duration_days": 30, "plan_id": plan.ID, "customer": "Customer"}, true)

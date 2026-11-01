@@ -72,10 +72,19 @@ func quotaLimit(p licensePlan, resource string) int64 {
 		optional = p.MaxIAMPolicies
 	case "access-keys":
 		optional = p.MaxAccessKeys
+	case "dns-zones":
+		optional = p.MaxDNSZones
+	case "dns-records":
+		optional = p.MaxDNSRecords
 	default:
 		return 0
 	}
 	if optional == nil {
+		// DNS shipped after existing plans. Unspecified DNS stays unlimited so
+		// current controllers keep zone/record operations until CloFix sets a limit.
+		if resource == "dns-zones" || resource == "dns-records" {
+			return -1
+		}
 		return 0
 	}
 	return int64(*optional)
@@ -147,6 +156,17 @@ func (s *Server) quotaUsed(resource string) (int64, error) {
 			n += int64(len(keys))
 		}
 		return n, nil
+	case "dns-zones":
+		s.dns.Lock()
+		defer s.dns.Unlock()
+		if s.dns.Zone.Domain == "" {
+			return 0, nil
+		}
+		return 1, nil
+	case "dns-records":
+		s.dns.Lock()
+		defer s.dns.Unlock()
+		return int64(len(s.dns.Records)), nil
 	}
 	return 0, fmt.Errorf("unknown quota resource")
 }
@@ -249,6 +269,8 @@ func quotaCreation(r *http.Request) string {
 		return "notification-channels"
 	case "/api/storage/connections":
 		return "s3-connections"
+	case "/api/dns/records":
+		return "dns-records"
 	case "/api/iam/users":
 		return "iam-users"
 	case "/api/iam/groups":
@@ -283,6 +305,11 @@ func quotaOperation(r *http.Request) string {
 		return "notification-channels"
 	case strings.HasPrefix(p, "/api/storage/connections/"):
 		return "s3-connections"
+	case strings.HasPrefix(p, "/api/dns/"):
+		if strings.HasPrefix(p, "/api/dns/records/") {
+			return "dns-records"
+		}
+		return "dns-zones"
 	case strings.HasPrefix(p, "/api/iam/users/"):
 		return "iam-users"
 	case strings.HasPrefix(p, "/api/iam/groups/"):
@@ -344,7 +371,7 @@ func (s *Server) licenseUsage(w http.ResponseWriter, r *http.Request) {
 	defer s.quotaMu.Unlock()
 	p, e := s.licensedPlan()
 	out := map[string]quotaEntry{}
-	resources := []string{"database-projects", "databases", "database-users", "database-schedules", "instances", "workers", "load-balancers", "health-checks", "backups", "volumes", "s3-connections", "applications", "managed-apps", "notification-channels", "iam-users", "iam-groups", "iam-policies", "access-keys"}
+	resources := []string{"database-projects", "databases", "database-users", "database-schedules", "instances", "workers", "load-balancers", "dns-zones", "dns-records", "health-checks", "backups", "volumes", "s3-connections", "applications", "managed-apps", "notification-channels", "iam-users", "iam-groups", "iam-policies", "access-keys"}
 	for _, resource := range resources {
 		used, err := s.quotaUsed(resource)
 		if err != nil {

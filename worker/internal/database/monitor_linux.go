@@ -21,8 +21,21 @@ func (m *Manager) engineVersion(ctx context.Context, r record) (string, error) {
 		return m.sql(ctx, r, "", "SELECT VERSION();")
 	case "postgresql":
 		return m.sql(ctx, r, "postgres", "SHOW server_version;")
-	default:
+	case "mongodb":
 		return m.mongo(ctx, r, `print(db.version())`)
+	case "redis":
+		raw, e := m.redis(ctx, r, "INFO", "server")
+		if e != nil {
+			return "", e
+		}
+		for _, line := range strings.Split(raw, "\n") {
+			if version, ok := strings.CutPrefix(strings.TrimSpace(line), "redis_version:"); ok {
+				return version, nil
+			}
+		}
+		return "", fmt.Errorf("redis version is unavailable")
+	default:
+		return "", fmt.Errorf("unsupported database engine")
 	}
 }
 
@@ -84,8 +97,19 @@ func (m *Manager) sample(ctx context.Context, r record, status *db.Status) error
 		connections, e = m.sql(ctx, r, "", "SELECT COUNT(*) FROM information_schema.processlist;")
 	case "postgresql":
 		connections, e = m.sql(ctx, r, "postgres", "SELECT COUNT(*) FROM pg_stat_activity WHERE backend_type='client backend';")
-	default:
+	case "mongodb":
 		connections, e = m.mongo(ctx, r, `print(db.serverStatus().connections.current)`)
+	case "redis":
+		raw, err := m.redis(ctx, r, "INFO", "clients")
+		e = err
+		for _, line := range strings.Split(raw, "\n") {
+			if value, ok := strings.CutPrefix(strings.TrimSpace(line), "connected_clients:"); ok {
+				connections = value
+				break
+			}
+		}
+	default:
+		return fmt.Errorf("unsupported database engine")
 	}
 	if e != nil {
 		return e

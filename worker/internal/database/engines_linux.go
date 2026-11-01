@@ -31,6 +31,14 @@ func (m *Manager) mongo(ctx context.Context, r record, script string) (string, e
 	raw, e := m.docker(ctx, strings.NewReader(prefix+script), "exec", "-i", "--user", "0:0", "-e", "HOME=/tmp/clofix-admin", container(r.Spec.ID), "mongosh", "--quiet", "--norc", "--file", "/dev/stdin", "--host", "127.0.0.1", "--tls", "--tlsCAFile", "/run/clofix/ca.pem")
 	return strings.TrimSpace(string(raw)), e
 }
+func (m *Manager) redis(ctx context.Context, r record, args ...string) (string, error) {
+	// Engine containers drop all capabilities, so root cannot read the 0440
+	// admin-password file owned by uid 999. Probe as that user instead.
+	cmd := []string{"exec", "-i", "--user", "999:999", container(r.Spec.ID), "sh", "-c", `REDISCLI_AUTH=$(cat /run/clofix/admin-password) exec redis-cli -h 127.0.0.1 -p 6379 --raw "$@"`, "redis-cli"}
+	cmd = append(cmd, args...)
+	raw, e := m.docker(ctx, nil, cmd...)
+	return strings.TrimSpace(string(raw)), e
+}
 func (m *Manager) listDatabases(ctx context.Context, r record) ([]string, error) {
 	var raw string
 	var e error
@@ -55,6 +63,11 @@ func (m *Manager) listDatabases(ctx context.Context, r record) ([]string, error)
 			}
 		}
 		return out, nil
+	case "redis":
+		if _, e = m.redis(ctx, r, "PING"); e != nil {
+			return nil, e
+		}
+		return []string{}, nil
 	}
 	if e != nil {
 		return nil, e
@@ -82,6 +95,16 @@ func (m *Manager) engineOperation(ctx context.Context, r record, op db.Operation
 		if engine == "mongodb" {
 			_, e := m.mongo(ctx, r, `if(db.adminCommand({ping:1}).ok!==1)throw Error('not ready');`)
 			return nil, e
+		}
+		if engine == "redis" {
+			reply, e := m.redis(ctx, r, "PING")
+			if e != nil {
+				return nil, e
+			}
+			if !strings.EqualFold(reply, "PONG") {
+				return nil, fmt.Errorf("redis ping failed")
+			}
+			return nil, nil
 		}
 		_, e := m.sql(ctx, r, admin, "SELECT 1;")
 		return nil, e
@@ -114,6 +137,8 @@ func (m *Manager) engineOperation(ctx context.Context, r record, op db.Operation
 				_, e = m.sql(ctx, r, "", "CREATE DATABASE "+q+" CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;")
 			case "mongodb":
 				_, e = m.mongo(ctx, r, "db.getSiblingDB("+db.MongoJSON(op.Database)+").createCollection('clofix_metadata');")
+			case "redis":
+				_, e = m.redis(ctx, r, "PING")
 			}
 		}
 		if e != nil {
@@ -133,6 +158,8 @@ func (m *Manager) engineOperation(ctx context.Context, r record, op db.Operation
 			_, e = m.sql(ctx, r, "", "DROP DATABASE "+q+";")
 		case "mongodb":
 			_, e = m.mongo(ctx, r, "db.getSiblingDB("+db.MongoJSON(op.Database)+").dropDatabase();")
+		case "redis":
+			_, e = m.redis(ctx, r, "PING")
 		}
 		if e != nil {
 			return nil, e
@@ -155,6 +182,9 @@ func (m *Manager) engineOperation(ctx context.Context, r record, op db.Operation
 	case "list-tables":
 		if e := db.Name(op.Database); e != nil {
 			return nil, e
+		}
+		if engine == "redis" {
+			return nil, fmt.Errorf("Redis uses a shared keyspace; SQL schema operations are not supported")
 		}
 		if engine == "mongodb" {
 			raw, e := m.mongo(ctx, r, "print(JSON.stringify(db.getSiblingDB("+db.MongoJSON(op.Database)+").getCollectionInfos().map(x=>({name:x.name,type:x.type}))))")
@@ -187,6 +217,9 @@ func (m *Manager) engineOperation(ctx context.Context, r record, op db.Operation
 		if e := db.Name(op.Database); e != nil {
 			return nil, e
 		}
+		if engine == "redis" {
+			return nil, fmt.Errorf("Redis uses a shared keyspace; SQL schema operations are not supported")
+		}
 		if engine == "mongodb" {
 			if e := db.Name(op.Table); e != nil {
 				return nil, e
@@ -210,6 +243,9 @@ func (m *Manager) engineOperation(ctx context.Context, r record, op db.Operation
 		if e := db.Name(op.Table); e != nil {
 			return nil, e
 		}
+		if engine == "redis" {
+			return nil, fmt.Errorf("Redis uses a shared keyspace; SQL schema operations are not supported")
+		}
 		if engine == "mongodb" {
 			if _, e := m.mongo(ctx, r, "db.getSiblingDB("+db.MongoJSON(op.Database)+").getCollection("+db.MongoJSON(op.Table)+").drop();"); e != nil {
 				return nil, e
@@ -226,6 +262,9 @@ func (m *Manager) engineOperation(ctx context.Context, r record, op db.Operation
 		}
 		if op.Index == nil {
 			return nil, fmt.Errorf("index definition required")
+		}
+		if engine == "redis" {
+			return nil, fmt.Errorf("Redis uses a shared keyspace; SQL schema operations are not supported")
 		}
 		if engine == "mongodb" {
 			if e := db.Name(op.Table); e != nil {
@@ -264,6 +303,9 @@ func (m *Manager) engineOperation(ctx context.Context, r record, op db.Operation
 	case "delete-index":
 		if op.Index == nil {
 			return nil, fmt.Errorf("index required")
+		}
+		if engine == "redis" {
+			return nil, fmt.Errorf("Redis uses a shared keyspace; SQL schema operations are not supported")
 		}
 		if e := db.Name(op.Database); e != nil {
 			return nil, e
@@ -304,7 +346,7 @@ func (m *Manager) userOperation(ctx context.Context, r record, op db.Operation) 
 	if e := db.Name(op.Username); e != nil {
 		return nil, e
 	}
-	if strings.EqualFold(op.Username, "root") || strings.EqualFold(op.Username, "clofixadmin") || strings.HasPrefix(strings.ToLower(op.Username), "pg_") {
+	if strings.EqualFold(op.Username, "root") || strings.EqualFold(op.Username, "clofixadmin") || strings.EqualFold(op.Username, "default") || strings.HasPrefix(strings.ToLower(op.Username), "pg_") {
 		return nil, fmt.Errorf("reserved administrative username")
 	}
 	if op.Action != "delete-user" && (len(op.Password) > 0 && (len(op.Password) < 16 || len(op.Password) > 128 || strings.ContainsAny(op.Password, "\x00\r\n"))) {
@@ -325,6 +367,38 @@ func (m *Manager) userOperation(ctx context.Context, r record, op db.Operation) 
 		if !known[name] || role != "read" && role != "write" {
 			return nil, fmt.Errorf("grants must reference an existing project database and read/write permission")
 		}
+	}
+	if r.Spec.Engine == "redis" {
+		if op.Action == "delete-user" {
+			if _, e = m.redis(ctx, r, "ACL", "DELUSER", op.Username); e != nil {
+				return nil, e
+			}
+			return json.RawMessage(`{"updated":true}`), nil
+		}
+		args := []string{"ACL", "SETUSER", op.Username}
+		if op.Action == "create-user" {
+			args = append(args, "on", ">"+op.Password)
+		} else {
+			args = append(args, "resetkeys", "resetchannels", "nocommands", "on")
+			if op.Password != "" {
+				args = append(args, ">"+op.Password)
+			}
+		}
+		write := false
+		for name, role := range op.Grants {
+			args = append(args, "~"+name+":*")
+			if role == "write" {
+				write = true
+			}
+		}
+		args = append(args, "&*", "-@all", "+@read", "+ping", "+info", "+select", "+echo")
+		if write {
+			args = append(args, "+@write")
+		}
+		if _, e = m.redis(ctx, r, args...); e != nil {
+			return nil, e
+		}
+		return json.RawMessage(`{"updated":true}`), nil
 	}
 	if r.Spec.Engine == "mongodb" {
 		roles := []map[string]string{}
