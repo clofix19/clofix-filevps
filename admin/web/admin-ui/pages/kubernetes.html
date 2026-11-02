@@ -1,0 +1,269 @@
+{{define "content"}}
+<section class="page active database-page">
+  <div class="section-head"><div><p class="eyebrow">Compute</p><h2>CKS</h2><p>CloFix Kubernetes Service on dedicated workers. FileVPS guests cannot run kubelet. Local Compose uses a lab executor until a host worker has kubeadm.</p></div><button class="primary" id="cks-create" type="button">＋ Create cluster</button></div>
+  <article class="panel database-activity-card" aria-labelledby="cks-activity-title"><div class="database-activity-icon" aria-hidden="true">↻</div><div><span class="eyebrow" id="cks-activity-title">Live activity</span><p class="message" id="cks-message" role="status" aria-live="polite">No CKS activity yet.</p></div></article>
+  <div class="sync-warning database-readiness" id="cks-readiness" role="status" aria-live="polite" hidden></div>
+  <div class="settings-layout">
+    <nav class="settings-nav" aria-label="CKS sections">
+      <a href="#cks-clusters" data-settings-link aria-controls="cks-clusters" aria-current="location"><strong>Clusters</strong><span>Inventory and selected cluster</span></a>
+      <a href="#cks-workloads" data-settings-link aria-controls="cks-workloads"><strong>Resources</strong><span>Namespaces, pods, services, secrets</span></a>
+      <a href="#cks-integrate" data-settings-link aria-controls="cks-integrate"><strong>CloFix attach</strong><span>LB, FileVPS, volume, EFS, S3</span></a>
+      <a href="#cks-pools" data-settings-link aria-controls="cks-pools"><strong>VPS groups</strong><span>Workers that run pods and Services</span></a>
+      <a href="#cks-helm" data-settings-link aria-controls="cks-helm"><strong>Helm</strong><span>Install or upgrade charts</span></a>
+      <a href="#cks-addons" data-settings-link aria-controls="cks-addons"><strong>Storage &amp; ingress</strong><span>CSI class, IngressClass, RBAC, HPA</span></a>
+      <a href="#cks-ops" data-settings-link aria-controls="cks-ops"><strong>HA &amp; backups</strong><span>etcd backup, restore, upgrades</span></a>
+      <a href="#cks-events" data-settings-link aria-controls="cks-events"><strong>Events</strong><span>Cluster and CKS events</span></a>
+    </nav>
+    <div class="settings-content">
+      <div class="settings-section" id="cks-clusters" data-settings-panel aria-labelledby="cks-heading-clusters">
+        <h2 id="cks-heading-clusters" class="visually-hidden" tabindex="-1">Clusters</h2>
+        <div class="stats-grid database-stats">
+          <article class="stat-card"><span>Clusters</span><strong id="cks-cluster-count">—</strong><small id="cks-cluster-note">Loading inventory…</small></article>
+          <article class="stat-card"><span>Running</span><strong id="cks-ready-count">—</strong><small id="cks-ready-note">Checking health…</small></article>
+          <article class="stat-card"><span>Ready workers</span><strong id="cks-worker-count">—</strong><small id="cks-worker-note">Checking Kubernetes capability…</small></article>
+          <article class="stat-card"><span>Active jobs</span><strong id="cks-job-count">—</strong><small id="cks-job-note">Checking activity…</small></article>
+        </div>
+        <div class="panel"><div class="section-head"><h3>Clusters</h3><button class="secondary" id="cks-refresh" type="button">Refresh</button></div><div class="table-wrap"><table id="cks-clusters-table"></table></div></div>
+        <div class="panel" id="cks-cluster-panel" hidden>
+          <div class="section-head"><div><h3 id="cks-cluster-title">Cluster details</h3><p id="cks-cluster-meta" class="muted"></p></div>
+            <button class="secondary" id="cks-edit" type="button">Edit cluster</button>
+            <button class="secondary" id="cks-download-kubeconfig" type="button">Download kubeconfig</button>
+            <button class="secondary" id="cks-toggle-protection" type="button">Delete protection</button>
+            <button class="danger" id="cks-delete" type="button">Delete cluster</button>
+          </div>
+          <div class="resource-grid">
+            <div><strong>Version</strong><span id="cks-metric-version">—</span></div>
+            <div><strong>Mode</strong><span id="cks-metric-mode">—</span></div>
+            <div><strong>API</strong><span id="cks-metric-api">—</span></div>
+            <div><strong>Nodes</strong><span id="cks-metric-nodes">—</span></div>
+          </div>
+          <h4>Nodes</h4>
+          <div class="table-wrap"><table id="cks-nodes-table"></table></div>
+        </div>
+      </div>
+      <div class="panel settings-section" id="cks-workloads" data-settings-panel aria-labelledby="cks-heading-workloads" hidden>
+        <div class="section-head"><div><h3 id="cks-heading-workloads" tabindex="-1">Resources</h3><p class="muted">EKS-style workload console. Create from the form, apply YAML, then scale, restart or delete. Secrets store names only in inventory.</p></div>
+          <button class="primary" id="cks-resource-add" type="button">＋ Create resource</button>
+        </div>
+        <div class="form-grid">
+          <div class="form-field"><label>Namespace filter<select id="cks-ns-filter"><option value="">All namespaces</option></select></label></div>
+        </div>
+        <form id="cks-apply-form" class="form-grid">
+          <div class="form-field form-span"><label>YAML<textarea id="cks-yaml" rows="8" placeholder="apiVersion: apps/v1&#10;kind: Deployment&#10;metadata:&#10;  name: demo&#10;spec: ..."></textarea></label></div>
+          <button class="primary" type="submit">Apply YAML</button>
+        </form>
+        <div class="cks-resource-tabs" role="tablist" aria-label="Kubernetes resource types">
+          <button type="button" role="tab" data-cks-tab="ns" aria-controls="cks-tab-ns" aria-selected="true">Namespaces</button>
+          <button type="button" role="tab" data-cks-tab="pods" aria-controls="cks-tab-pods" aria-selected="false">Pods</button>
+          <button type="button" role="tab" data-cks-tab="deploy" aria-controls="cks-tab-deploy" aria-selected="false">Deployments</button>
+          <button type="button" role="tab" data-cks-tab="sts" aria-controls="cks-tab-sts" aria-selected="false">StatefulSets</button>
+          <button type="button" role="tab" data-cks-tab="ds" aria-controls="cks-tab-ds" aria-selected="false">DaemonSets</button>
+          <button type="button" role="tab" data-cks-tab="svc" aria-controls="cks-tab-svc" aria-selected="false">Services</button>
+          <button type="button" role="tab" data-cks-tab="ing" aria-controls="cks-tab-ing" aria-selected="false">Ingress</button>
+          <button type="button" role="tab" data-cks-tab="secret" aria-controls="cks-tab-secret" aria-selected="false">Secrets</button>
+          <button type="button" role="tab" data-cks-tab="cm" aria-controls="cks-tab-cm" aria-selected="false">Config maps</button>
+          <button type="button" role="tab" data-cks-tab="pv" aria-controls="cks-tab-pv" aria-selected="false">PVs</button>
+          <button type="button" role="tab" data-cks-tab="pvc" aria-controls="cks-tab-pvc" aria-selected="false">PVCs</button>
+          <button type="button" role="tab" data-cks-tab="jobs" aria-controls="cks-tab-jobs" aria-selected="false">Jobs</button>
+          <button type="button" role="tab" data-cks-tab="hpa" aria-controls="cks-tab-hpa" aria-selected="false">HPA</button>
+          <button type="button" role="tab" data-cks-tab="netpol" aria-controls="cks-tab-netpol" aria-selected="false">Network policies</button>
+          <button type="button" role="tab" data-cks-tab="sa" aria-controls="cks-tab-sa" aria-selected="false">Service accounts</button>
+          <button type="button" role="tab" data-cks-tab="logs" aria-controls="cks-tab-logs" aria-selected="false">Pod logs</button>
+        </div>
+        <div class="cks-resource-panels">
+          <div class="cks-resource-panel" id="cks-tab-ns" role="tabpanel" data-cks-panel="ns"><div class="table-wrap"><table id="cks-ns-table"></table></div></div>
+          <div class="cks-resource-panel" id="cks-tab-pods" role="tabpanel" data-cks-panel="pods" hidden><div class="table-wrap"><table id="cks-pods-table"></table></div></div>
+          <div class="cks-resource-panel" id="cks-tab-deploy" role="tabpanel" data-cks-panel="deploy" hidden><div class="table-wrap"><table id="cks-deploy-table"></table></div></div>
+          <div class="cks-resource-panel" id="cks-tab-sts" role="tabpanel" data-cks-panel="sts" hidden><div class="table-wrap"><table id="cks-sts-table"></table></div></div>
+          <div class="cks-resource-panel" id="cks-tab-ds" role="tabpanel" data-cks-panel="ds" hidden><div class="table-wrap"><table id="cks-ds-table"></table></div></div>
+          <div class="cks-resource-panel" id="cks-tab-svc" role="tabpanel" data-cks-panel="svc" hidden><div class="table-wrap"><table id="cks-svc-table"></table></div></div>
+          <div class="cks-resource-panel" id="cks-tab-ing" role="tabpanel" data-cks-panel="ing" hidden><div class="table-wrap"><table id="cks-ing-table"></table></div></div>
+          <div class="cks-resource-panel" id="cks-tab-secret" role="tabpanel" data-cks-panel="secret" hidden><div class="table-wrap"><table id="cks-secret-table"></table></div></div>
+          <div class="cks-resource-panel" id="cks-tab-cm" role="tabpanel" data-cks-panel="cm" hidden><div class="table-wrap"><table id="cks-cm-table"></table></div></div>
+          <div class="cks-resource-panel" id="cks-tab-pv" role="tabpanel" data-cks-panel="pv" hidden><div class="table-wrap"><table id="cks-pv-table"></table></div></div>
+          <div class="cks-resource-panel" id="cks-tab-pvc" role="tabpanel" data-cks-panel="pvc" hidden><div class="table-wrap"><table id="cks-pvc-table"></table></div></div>
+          <div class="cks-resource-panel" id="cks-tab-jobs" role="tabpanel" data-cks-panel="jobs" hidden><div class="table-wrap"><table id="cks-k8sjob-table"></table></div></div>
+          <div class="cks-resource-panel" id="cks-tab-hpa" role="tabpanel" data-cks-panel="hpa" hidden><div class="table-wrap"><table id="cks-hpa-table"></table></div></div>
+          <div class="cks-resource-panel" id="cks-tab-netpol" role="tabpanel" data-cks-panel="netpol" hidden><div class="table-wrap"><table id="cks-netpol-table"></table></div></div>
+          <div class="cks-resource-panel" id="cks-tab-sa" role="tabpanel" data-cks-panel="sa" hidden><div class="table-wrap"><table id="cks-sa-table"></table></div></div>
+          <div class="cks-resource-panel" id="cks-tab-logs" role="tabpanel" data-cks-panel="logs" hidden><pre id="cks-logs" class="log-view">Select a pod to request logs.</pre></div>
+        </div>
+      </div>
+      <div class="panel settings-section" id="cks-integrate" data-settings-panel aria-labelledby="cks-heading-integrate" hidden>
+        <div class="section-head"><div><h3 id="cks-heading-integrate" tabindex="-1">CloFix attach</h3><p class="muted">Use existing CloFix load balancers, FileVPS, volumes, EFS and S3 as Kubernetes Services, PVCs and Secrets. FileVPS is a companion backend, not a kubelet node.</p></div>
+          <button class="secondary" id="cks-attach" type="button">Attach resource</button>
+        </div>
+        <div class="table-wrap"><table id="cks-integrate-table"></table></div>
+      </div>
+      <div class="panel settings-section" id="cks-pools" data-settings-panel aria-labelledby="cks-heading-pools" hidden>
+        <div class="section-head"><div><h3 id="cks-heading-pools" tabindex="-1">VPS groups</h3><p class="muted">A VPS group is the set of CKS worker nodes that execute pods, Services and other workloads. Nodes are sized like FileVPS (CPU, RAM, disk) and run kubelet on dedicated CKS workers. FileVPS guests cannot run kubelet.</p></div>
+          <button class="primary" id="cks-vps-group-add" type="button">Add VPS group</button>
+          <button class="secondary" id="cks-pool-add" type="button">Add node pool</button>
+        </div>
+        <div class="table-wrap"><table id="cks-pools-table"></table></div>
+      </div>
+      <div class="panel settings-section" id="cks-helm" data-settings-panel aria-labelledby="cks-heading-helm" hidden>
+        <div class="section-head"><div><h3 id="cks-heading-helm" tabindex="-1">Helm</h3><p class="muted">Allowlisted chart references only. The worker uses helm when installed, otherwise records a fake release for labs.</p></div></div>
+        <form id="cks-helm-form" class="form-grid">
+          <div class="form-field"><label>Release<input id="cks-helm-release" required pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?"></label></div>
+          <div class="form-field"><label>Chart<input id="cks-helm-chart" placeholder="oci://… or repo/chart"></label></div>
+          <div class="form-field"><label>Namespace<input id="cks-helm-ns" value="default"></label></div>
+          <div class="form-field"><label>Action<select id="cks-helm-action"><option value="install">Install</option><option value="upgrade">Upgrade</option><option value="uninstall">Uninstall</option></select></label></div>
+          <div class="form-field form-span"><label>Values YAML<textarea id="cks-helm-values" rows="6"></textarea></label></div>
+          <button class="primary" type="submit">Run Helm</button>
+        </form>
+        <div class="table-wrap"><table id="cks-helm-table"></table></div>
+      </div>
+      <div class="panel settings-section" id="cks-addons" data-settings-panel aria-labelledby="cks-heading-addons" hidden>
+        <h3 id="cks-heading-addons" tabindex="-1">Storage, ingress, RBAC, HPA</h3>
+        <p class="muted">Install the CKS local StorageClass and nginx IngressClass, or apply your own manifests. FileVPS guests still cannot run CSI node plugins.</p>
+        <div class="row-actions" style="margin:12px 0">
+          <button class="secondary" id="cks-storage-install" type="button">Install storage class</button>
+          <button class="secondary" id="cks-ingress-install" type="button">Install ingress class</button>
+        </div>
+        <form id="cks-addon-form" class="form-grid">
+          <div class="form-field"><label>Kind<select id="cks-addon-kind"><option value="storage">Storage / PVC</option><option value="ingress">Ingress</option><option value="rbac">RBAC</option><option value="hpa">HPA</option></select></label></div>
+          <div class="form-field form-span"><label>YAML<textarea id="cks-addon-yaml" rows="8"></textarea></label></div>
+          <button class="primary" type="submit">Apply</button>
+        </form>
+        <div class="table-wrap"><table id="cks-addon-table"></table></div>
+      </div>
+      <div class="panel settings-section" id="cks-ops" data-settings-panel aria-labelledby="cks-heading-ops" hidden>
+        <h3 id="cks-heading-ops" tabindex="-1">HA, backups and upgrades</h3>
+        <p class="muted" id="cks-gate-note">Production-ready is withheld until FileVPS kubelet validation passes and live kubeadm e2e is opted in.</p>
+        <div class="row-actions" style="margin:12px 0">
+          <button class="secondary" id="cks-backup" type="button">Create etcd backup</button>
+          <button class="secondary" id="cks-upgrade" type="button">Rolling upgrade</button>
+        </div>
+        <form id="cks-restore-form" class="form-grid">
+          <div class="form-field"><label>Restore backup ID<input id="cks-restore-id" required></label></div>
+          <button class="primary" type="submit">Restore</button>
+        </form>
+        <div class="table-wrap"><table id="cks-backup-table"></table></div>
+      </div>
+      <div class="panel settings-section" id="cks-events" data-settings-panel aria-labelledby="cks-heading-events" hidden>
+        <h3 id="cks-heading-events" tabindex="-1">Events</h3>
+        <div class="table-wrap"><table id="cks-events-table"></table></div>
+        <h4>Jobs</h4>
+        <div class="table-wrap"><table id="cks-jobs-table"></table></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<dialog class="terminal-dialog form-dialog" id="cks-pool-dialog">
+  <form id="cks-pool-form">
+    <div class="section-head"><h2 id="cks-pool-title">Add VPS group</h2><button class="secondary dialog-close" type="button">Close</button></div>
+    <input id="cks-pool-kind" type="hidden" value="vps-group">
+    <div class="form-grid">
+      <div class="form-field"><label>Group name<input id="cks-pool-name" required pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?"></label></div>
+      <div class="form-field"><label>VPS count<input id="cks-pool-count" type="number" min="1" max="8" value="1" required></label></div>
+      <div class="form-field"><label>CPU per VPS<input id="cks-pool-cpu" type="number" min="0.5" step="0.5" value="1" required></label></div>
+      <div class="form-field"><label>RAM per VPS (MB)<input id="cks-pool-ram" type="number" min="1024" value="2048" required></label></div>
+      <div class="form-field"><label>Disk per VPS (MB)<input id="cks-pool-disk" type="number" min="5120" value="10240" required></label></div>
+      <div class="form-field"><label>Worker<select id="cks-pool-worker"></select></label></div>
+    </div>
+    <p class="muted" id="cks-pool-hint">Each VPS in the group is a CKS node. Pods and Services schedule onto these nodes.</p>
+    <button class="primary" id="cks-pool-save" type="submit">Create VPS group</button>
+  </form>
+</dialog>
+<dialog class="terminal-dialog form-dialog" id="cks-edit-dialog">
+  <form id="cks-edit-form">
+    <div class="section-head"><h2>Edit cluster</h2><button class="secondary dialog-close" type="button">Close</button></div>
+    <div class="form-grid">
+      <div class="form-field"><label>Cluster name<input id="cks-edit-name" maxlength="63" required pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?"></label></div>
+      <label><input id="cks-edit-protection" type="checkbox"> Delete protection</label>
+    </div>
+    <p class="muted">Name and delete protection only. Use Rolling upgrade on HA &amp; backups to change the Kubernetes version.</p>
+    <button class="primary" type="submit">Save cluster</button>
+  </form>
+</dialog>
+<dialog class="terminal-dialog form-dialog" id="cks-node-dialog">
+  <form id="cks-node-form">
+    <div class="section-head"><h2>Update node</h2><button class="secondary dialog-close" type="button">Close</button></div>
+    <input id="cks-node-id" type="hidden">
+    <p class="muted" id="cks-node-meta"></p>
+    <div class="form-grid">
+      <div class="form-field"><label>CPU<input id="cks-node-cpu" type="number" min="0.5" max="128" step="0.5" required></label></div>
+      <div class="form-field"><label>RAM (MB)<input id="cks-node-ram" type="number" min="1024" required></label></div>
+      <div class="form-field"><label>Disk (MB)<input id="cks-node-disk" type="number" min="5120" required></label></div>
+    </div>
+    <p class="muted">Updates this CKS node size. The node stays on its current dedicated worker. FileVPS guests cannot become kubelet nodes.</p>
+    <button class="primary" type="submit">Save node</button>
+  </form>
+</dialog>
+<dialog class="terminal-dialog form-dialog" id="cks-resource-dialog">
+  <form id="cks-resource-form">
+    <div class="section-head"><h2 id="cks-res-title">Create Kubernetes resource</h2><button class="secondary dialog-close" type="button">Close</button></div>
+    <div class="form-grid">
+      <div class="form-field"><label>Kind<select id="cks-res-kind">
+        <option value="namespace">Namespace</option>
+        <option value="deployment">Deployment</option>
+        <option value="statefulset">StatefulSet</option>
+        <option value="daemonset">DaemonSet</option>
+        <option value="service">Service</option>
+        <option value="ingress">Ingress</option>
+        <option value="secret">Secret</option>
+        <option value="configmap">ConfigMap</option>
+        <option value="pv">PersistentVolume</option>
+        <option value="pvc">PersistentVolumeClaim</option>
+        <option value="job">Job</option>
+        <option value="cronjob">CronJob</option>
+        <option value="hpa">HorizontalPodAutoscaler</option>
+        <option value="networkpolicy">NetworkPolicy</option>
+        <option value="serviceaccount">ServiceAccount</option>
+      </select></label></div>
+      <div class="form-field"><label>Name<input id="cks-res-name" required pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?"></label></div>
+      <div class="form-field" data-cks-kind="deployment,statefulset,daemonset,service,secret,configmap,pvc,ingress,job,cronjob,hpa,networkpolicy,serviceaccount"><label>Namespace<input id="cks-res-ns" value="default"></label></div>
+      <div class="form-field" data-cks-kind="deployment,statefulset,hpa"><label>Replicas / max<input id="cks-res-replicas" type="number" min="1" max="100" value="1"></label></div>
+      <div class="form-field" data-cks-kind="deployment,statefulset,daemonset,job,cronjob"><label>Image<input id="cks-res-image" value="nginx:1.27-alpine"></label></div>
+      <div class="form-field" data-cks-kind="deployment,statefulset,daemonset,service,ingress"><label>Port<input id="cks-res-port" type="number" min="1" max="65535" value="80"></label></div>
+      <div class="form-field" data-cks-kind="service"><label>Service type<select id="cks-res-type"><option value="ClusterIP">ClusterIP</option><option value="NodePort">NodePort</option><option value="LoadBalancer">LoadBalancer</option></select></label></div>
+      <div class="form-field" data-cks-kind="deployment,statefulset,daemonset,service,ingress,hpa,networkpolicy"><label id="cks-res-selector-label">App label<input id="cks-res-selector" placeholder="nginx"></label></div>
+      <div class="form-field" data-cks-kind="pv,pvc"><label>Storage<input id="cks-res-storage" value="1Gi"></label></div>
+      <div class="form-field" data-cks-kind="cronjob"><label>Schedule<input id="cks-res-schedule" value="0 * * * *"></label></div>
+      <div class="form-field form-span" data-cks-kind="secret,configmap"><label id="cks-res-data-label">Data (KEY=value per line)<textarea id="cks-res-data" rows="4" placeholder="USERNAME=demo&#10;PASSWORD=change-me"></textarea></label></div>
+    </div>
+    <p class="muted" id="cks-res-hint">Choose a kind to see the matching fields.</p>
+    <button class="primary" id="cks-res-save" type="submit">Create</button>
+  </form>
+</dialog>
+<dialog class="terminal-dialog form-dialog" id="cks-attach-dialog">
+  <form id="cks-attach-form">
+    <div class="section-head"><h2>Attach CloFix resource</h2><button class="secondary dialog-close" type="button">Close</button></div>
+    <div class="form-grid">
+      <div class="form-field"><label>Kind<select id="cks-attach-kind">
+        <option value="lb">Load balancer</option>
+        <option value="vps">FileVPS</option>
+        <option value="volume">Volume</option>
+        <option value="efs">EFS</option>
+        <option value="s3">S3</option>
+      </select></label></div>
+      <div class="form-field"><label>Resource<select id="cks-attach-id" required></select></label></div>
+      <div class="form-field"><label>Kubernetes name<input id="cks-attach-name" pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?"></label></div>
+      <div class="form-field"><label>Namespace<input id="cks-attach-ns" value="default"></label></div>
+      <div class="form-field"><label>Selector / app label<input id="cks-attach-selector" placeholder="nginx"></label></div>
+    </div>
+    <p class="muted">Attaches the selected CloFix object into this cluster. Quota for LB, volume and S3 stays on those products.</p>
+    <button class="primary" type="submit">Attach</button>
+  </form>
+</dialog>
+<dialog class="terminal-dialog form-dialog" id="cks-create-dialog">
+  <form id="cks-create-form">
+    <div class="section-head"><h2>Create CKS cluster</h2><button class="secondary dialog-close" type="button">Close</button></div>
+    <div class="form-grid">
+      <div class="form-field"><label>Cluster name<input id="cks-name" maxlength="63" required pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?"></label></div>
+      <div class="form-field"><label>Kubernetes version<select id="cks-version" required></select></label></div>
+      <div class="form-field"><label>Infrastructure mode<select id="cks-mode"><option value="dedicated">Dedicated physical worker</option><option value="filevps" disabled>FileVPS (unavailable)</option></select></label></div>
+      <div class="form-field"><label>Control plane<select id="cks-ha"><option value="1">Single control plane</option><option value="3">HA · 3 control planes</option><option value="5">HA · 5 control planes</option></select></label></div>
+      <div class="form-field"><label>Worker<select id="cks-worker"></select></label></div>
+      <div class="form-field"><label>Node count<input id="cks-nodes" type="number" min="1" max="16" value="1" required></label></div>
+      <div class="form-field"><label>CPU per node<input id="cks-cpu" type="number" min="0.5" max="128" step="0.5" value="1" required></label></div>
+      <div class="form-field"><label>RAM per node (MB)<input id="cks-ram" type="number" min="1024" value="2048" required></label></div>
+      <div class="form-field"><label>Storage per node (MB)<input id="cks-disk" type="number" min="5120" value="10240" required></label></div>
+    </div>
+    <p class="muted" id="cks-estimate">Estimated consumption appears after workers load.</p>
+    <button class="primary" type="submit">Create cluster</button>
+  </form>
+</dialog>
+{{end}}

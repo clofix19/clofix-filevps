@@ -107,13 +107,29 @@
     "file": "adminer.png",
     "source": "https://www.adminer.org/apple-touch-icon.png"
   },
-  "uptime-kuma": {
-    "file": "uptime-kuma.svg",
-    "source": "https://uptime.kuma.pet/img/icon.svg"
-  },
   "jenkins": {
     "file": "jenkins.svg",
     "source": "https://www.jenkins.io/images/logos/jenkins/jenkins.svg"
+  },
+  "grafana": {
+    "file": "grafana.svg",
+    "source": "placeholder brand tile"
+  },
+  "prometheus": {
+    "file": "prometheus.svg",
+    "source": "placeholder brand tile"
+  },
+  "loki": {
+    "file": "loki.svg",
+    "source": "placeholder brand tile"
+  },
+  "jaeger": {
+    "file": "jaeger.svg",
+    "source": "placeholder brand tile"
+  },
+  "otel-collector": {
+    "file": "otel-collector.svg",
+    "source": "placeholder brand tile"
   },
   "supervisor": {
     "file": "supervisor.png",

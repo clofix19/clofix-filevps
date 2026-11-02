@@ -41,7 +41,7 @@ New VPSs start automatically with Protection Mode enabled. The guest root filesy
 
 Paste an SSH public key in the create form; on macOS, create one with `ssh-keygen -t ed25519` and copy `cat ~/.ssh/id_ed25519.pub`. VPS Details shows CPU, RAM, swap, and guest network IN/OUT. The Workers page shows host CPU, RAM, disk, swap, ZRAM and network. New VPSs default to a 512 MB swap limit, adjustable during creation (0 disables it). Host-wide ZRAM is optional and configured with `zram_mb` in the worker config; local Docker Desktop may not expose ZRAM devices.
 
-The UI shows each private worker IP and local SSH, HTTP, and HTTPS access. Compose forwards SSH ports `22000–22099`, HTTP ports `23000–23099` to guest port 80, and HTTPS ports `23100–23199` to guest port 443. Manual TCP/UDP mappings use unique local ports `24000–24099`. For example, the first VPS is available at `http://localhost:23000`. The `10.231.0.x` addresses are private to the worker and are not directly reachable from the Mac. VPS Details includes an SSH command helper for Terminal; it is not an in-browser shell.
+The UI shows each private worker IP and local SSH, HTTP, and HTTPS access. Compose publishes cloud-scale ranges: SSH `22000–26999`, HTTP `27000–31999` (guest 80 = SSH+5000), HTTPS `32000–36999` (guest 443 = SSH+10000), custom maps `37000–41999`, managed apps `42000–46999`, databases `47000–51999`. For example, SSH `22000` is HTTP at `http://localhost:27000`. The `10.231.0.x` addresses are private to the worker and are not directly reachable from the Mac. VPS Details includes an SSH command helper for Terminal; it is not an in-browser shell.
 
 The Backups page snapshots a stopped VPS writable root layer to compressed worker-local storage. **Run as VPS** restores it as a new VPS on the same worker. Persistent volumes and S3 mounts are outside the backup. Cross-worker restore is not available.
 
@@ -53,7 +53,7 @@ The pool uses replication placement `000` (one copy) to maximize capacity. If a 
 
 ## Library and managed apps
 
-`/services` has Quick Apps (persistent sandboxes) and VPS software installs. Quick Apps include Adminer, Uptime Kuma, Jenkins, and ZIP web deployments: static HTML, PHP, Node.js/Next.js and WordPress. A deploy can attach an existing managed database. Apps use CloFix namespaces and cgroup v2, not a customer VPS. The worker template builder downloads official Uptime Kuma and Jenkins archives and verifies their SHA-256 checksums. See [managed apps](docs/managed-apps.md).
+`/services` has Quick Apps (persistent sandboxes) and VPS software installs. Quick Apps include Adminer, Jenkins, and ZIP web deployments: static HTML, PHP, Node.js/Next.js and WordPress. A deploy can attach an existing managed database. Apps use CloFix namespaces and cgroup v2, not a customer VPS. The worker template builder downloads the official Jenkins LTS war and verifies its SHA-256 checksum. See [managed apps](docs/managed-apps.md).
 
 Jobs & Functions (`/applications`) run scheduled or invoked workloads on workers that advertise serverless runtimes. See [serverless](docs/serverless.md).
 
@@ -73,7 +73,7 @@ On **Records**, select FileVPS, load balancer, database, app or worker, set a ho
 
 ## Health Checks
 
-`/health-checks` monitors HTTP, TCP and ICMP targets plus worker/LB availability. Alerts go to channels configured in Settings. See [monitoring](docs/monitoring.md). This is the controller's own checker, not Uptime Kuma.
+`/health-checks` monitors HTTP, TCP and ICMP targets plus worker/LB availability. Alerts go to channels configured in Settings. See [monitoring](docs/monitoring.md).
 
 ## Pricing and billing
 

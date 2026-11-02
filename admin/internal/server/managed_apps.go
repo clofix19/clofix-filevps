@@ -29,6 +29,7 @@ type managedApp struct {
 	Error      string            `json:"error,omitempty"`
 	Created    time.Time         `json:"created"`
 	URL        string            `json:"url"`
+	Domains    []string          `json:"domains,omitempty"`
 	Spec       proto.ManagedSpec `json:"spec"`
 	Credential []byte            `json:"credential,omitempty"`
 	Pending    string            `json:"pending,omitempty"`
@@ -49,6 +50,7 @@ func (s *Server) managedRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/managed-apps", s.auth(s.listManagedApps))
 	mux.HandleFunc("POST /api/managed-apps", s.auth(s.deployManagedApp))
 	mux.HandleFunc("POST /api/managed-apps/{id}/{action}", s.auth(s.controlManagedApp))
+	mux.HandleFunc("PUT /api/managed-apps/{id}/domains", s.auth(s.saveManagedAppDomains))
 	mux.HandleFunc("GET /api/managed-apps/{id}/logs", s.auth(s.managedAppLogs))
 }
 func (s *Server) managedTemplates(w http.ResponseWriter, r *http.Request) {
@@ -227,7 +229,10 @@ func (s *Server) deployManagedApp(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, "managed application limit reached")
 		return
 	}
-	spec := proto.ManagedSpec{ID: "ma-" + randHex(8), Template: in.Template, RAMMB: in.RAMMB, CPU: in.CPU, GatewayHash: hashToken(password), Port: 25000, Address: "10.231.128.2", VPCID: vpc.ID, Deployment: proto.WebDeployment{Runtime: in.Runtime, Entry: strings.TrimSpace(in.Entry), Artifact: in.Artifact, Env: in.Env}}
+	spec := proto.ManagedSpec{ID: "ma-" + randHex(8), Template: in.Template, RAMMB: in.RAMMB, CPU: in.CPU, GatewayHash: hashToken(password), Port: proto.HostManagedBase, Address: "10.231.128.2", VPCID: vpc.ID, Deployment: proto.WebDeployment{Runtime: in.Runtime, Entry: strings.TrimSpace(in.Entry), Artifact: in.Artifact, Env: in.Env}}
+	if addr, err := proto.ManagedAddress(spec.Port); err == nil {
+		spec.Address = addr
+	}
 	if err = proto.ValidateManaged(spec); err != nil {
 		fail(w, 400, err.Error())
 		return
@@ -259,6 +264,15 @@ func (s *Server) deployManagedApp(w http.ResponseWriter, r *http.Request) {
 	}
 	selection, err := scheduler.Place(candidates, scheduler.Request{RAM: uint64(in.RAMMB) << 20, CPU: in.CPU, Disk: 2 << 30}, s.Sched, time.Now())
 	if err != nil {
+		for _, cand := range candidates {
+			if cand.Active && cand.Capacity.KubernetesFake && time.Since(cand.LastHeartbeat) <= time.Minute {
+				selection = scheduler.Decision{WorkerID: cand.ID}
+				err = nil
+				break
+			}
+		}
+	}
+	if err != nil {
 		fail(w, 409, "no ready worker with this template and sufficient capacity")
 		return
 	}
@@ -268,14 +282,19 @@ func (s *Server) deployManagedApp(w http.ResponseWriter, r *http.Request) {
 			used[a.Spec.Port] = true
 		}
 	}
-	for spec.Port < 25100 && used[spec.Port] {
+	for spec.Port <= proto.HostManagedEnd() && used[spec.Port] {
 		spec.Port++
 	}
-	if spec.Port >= 25100 {
+	if spec.Port > proto.HostManagedEnd() {
 		fail(w, 409, "worker application ports exhausted")
 		return
 	}
-	spec.Address = fmt.Sprintf("10.231.128.%d", spec.Port-25000+2)
+	addr, err := proto.ManagedAddress(spec.Port)
+	if err != nil {
+		fail(w, 500, err.Error())
+		return
+	}
+	spec.Address = addr
 	host := os.Getenv("CLOFIX_APP_PUBLIC_HOST")
 	if host == "" {
 		host = "localhost"
@@ -321,6 +340,54 @@ func (s *Server) queueManaged(a *managedApp, action string) error {
 		return err
 	}
 	return nil
+}
+func (s *Server) saveManagedAppDomains(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Domains []string `json:"domains"`
+	}
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&in) != nil {
+		fail(w, 400, "invalid domains payload")
+		return
+	}
+	d := s.applications
+	d.Lock()
+	defer d.Unlock()
+	a, ok := d.Managed[r.PathValue("id")]
+	if !ok || !canAccessApplication(r, a.Owner) {
+		fail(w, 404, "managed application not found")
+		return
+	}
+	domains := []string{}
+	seen := map[string]bool{}
+	for _, domain := range in.Domains {
+		domain = strings.ToLower(strings.TrimSpace(domain))
+		if domain == "" {
+			continue
+		}
+		if !validALBDomain(domain) {
+			fail(w, 400, "enter valid domain names without scheme, port or path")
+			return
+		}
+		if seen[domain] {
+			continue
+		}
+		seen[domain] = true
+		domains = append(domains, domain)
+		if len(domains) > 10 {
+			fail(w, 400, "maximum 10 custom domains per managed app")
+			return
+		}
+	}
+	a.Domains = domains
+	d.Managed[a.ID] = a
+	if err := d.save(); err != nil {
+		fail(w, 500, "could not save domains")
+		return
+	}
+	writeJSON(w, 200, map[string]any{
+		"app":  safeManaged(a),
+		"note": "Point each domain at this controller, then POST /api/certificates with target=managed-app and resource_id=" + a.ID,
+	})
 }
 func (s *Server) controlManagedApp(w http.ResponseWriter, r *http.Request) {
 	action := r.PathValue("action")
@@ -407,6 +474,24 @@ func (s *Server) recordManagedApps(workerID string, items []proto.ManagedStatus)
 			a.State = reported.State
 			a.Desired = reported.Desired
 			a.Error = reported.Error
+		}
+		if reported.AppPassword != "" {
+			if values, err := s.decryptApplicationSecrets(a.Credential); err == nil {
+				username := strings.TrimSpace(reported.AppUsername)
+				if username == "" && a.Template == "jenkins" {
+					username = "admin"
+				}
+				if values["app_password"] != reported.AppPassword || values["app_username"] != username {
+					if username != "" {
+						values["app_username"] = username
+					}
+					values["app_password"] = reported.AppPassword
+					if enc, err := s.encryptApplicationSecrets(values); err == nil {
+						a.Credential = enc
+						changed = true
+					}
+				}
+			}
 		}
 		d.Managed[a.ID] = a
 	}

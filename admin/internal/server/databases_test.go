@@ -10,6 +10,7 @@ import (
 	model "github.com/clofix/filevps/admin/internal/database"
 	"github.com/clofix/filevps/admin/internal/store"
 	db "github.com/clofix/filevps/worker/pkg/database"
+	"github.com/clofix/filevps/worker/pkg/proto"
 	"github.com/clofix/filevps/worker/pkg/scheduler"
 )
 
@@ -118,5 +119,5 @@ func TestDatabaseFailedProjectRetry(t *testing.T) {
 }
 
 func databaseProjectFixture(id string) model.Project {
-	return model.Project{Spec: db.Project{ID: id, Engine: "mysql", Version: "8.4", RAMMB: 512, CPU: 1, DiskMB: 512, Port: 26000, Host: "192.0.2.20"}, Owner: "root", Name: "test", WorkerID: "worker", State: "READY", Created: time.Now(), Databases: map[string]bool{"orders": true}, Users: map[string]map[string]string{}}
+	return model.Project{Spec: db.Project{ID: id, Engine: "mysql", Version: "8.4", RAMMB: 512, CPU: 1, DiskMB: 512, Port: proto.HostDatabaseBase, Host: "192.0.2.20"}, Owner: "root", Name: "test", WorkerID: "worker", State: "READY", Created: time.Now(), Databases: map[string]bool{"orders": true}, Users: map[string]map[string]string{}}
 }

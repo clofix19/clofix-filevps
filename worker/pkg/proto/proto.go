@@ -32,6 +32,8 @@ const (
 	ActionUninstallService       = "uninstall-service"
 	ActionCreateBackup           = "create-backup"
 	ActionDeleteBackup           = "delete-backup"
+	ActionExportBackup           = "export-backup"
+	ActionImportBackup           = "import-backup"
 	ActionSetPassword            = "set-password"
 	ActionKubernetesJob          = "kubernetes-job"
 )
@@ -205,6 +207,7 @@ type Operation struct {
 	ServiceAction   string             `json:"service_action,omitempty"`
 	ServiceID       string             `json:"service_id,omitempty"`
 	BackupID        string             `json:"backup_id,omitempty"`
+	BackupArtifact  []byte             `json:"backup_artifact,omitempty"`
 	WorkerID        string             `json:"worker_id,omitempty"`
 	WAFCategory     string             `json:"waf_category,omitempty"`
 	WAFEnabled      bool               `json:"waf_enabled,omitempty"`
@@ -214,11 +217,12 @@ type Operation struct {
 }
 
 type OpResult struct {
-	Execution  *ExecutionResult  `json:"execution,omitempty"`
-	OpID       string            `json:"op_id"`
-	OK         bool              `json:"ok"`
-	Error      string            `json:"error,omitempty"`
-	VolumeFile *VolumeFileResult `json:"volume_file,omitempty"`
+	Execution      *ExecutionResult  `json:"execution,omitempty"`
+	OpID           string            `json:"op_id"`
+	OK             bool              `json:"ok"`
+	Error          string            `json:"error,omitempty"`
+	VolumeFile     *VolumeFileResult `json:"volume_file,omitempty"`
+	BackupArtifact []byte            `json:"backup_artifact,omitempty"`
 }
 
 type InstanceStatus struct {

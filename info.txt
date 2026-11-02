@@ -1,0 +1,120 @@
+CloFix FileVPS — local stack quick reference
+============================================
+Updated for the Docker Desktop lab on this machine.
+Credentials live in `.env` / `license-server/.env` (not copied here).
+
+-------------------------------------------------------------------------------
+Admin UI (customer controller)
+-------------------------------------------------------------------------------
+Path on disk:  admin/web/admin-ui/   (Compose mounts ./admin/web → /app/web:ro)
+Service:       admin (clofix-controller)
+Login email:   from .env → CLOFIX_ADMIN_EMAIL
+
+URLs:
+  http://localhost:8080/login          Sign in (MFA only if enabled; rate-limited / honeypot / origin checks)
+  http://localhost:8080/register       Public client registration (rate-limited; bots tripped by honeypot)
+  http://localhost:8080/profile        My Profile (own info, MFA, allow/deny IP) — all kinds
+  Footer on console + auth pages: Powered by CloFix Infotech · host · local time
+  http://localhost:8080/               Dashboard (after login)
+  http://localhost:8080/instances      FileVPS
+  http://localhost:8080/services       Library (Quick Apps / Jenkins / web ZIPs)
+  http://localhost:8080/applications   Jobs & Functions
+  http://localhost:8080/kubernetes     CKS (lab: CLOFIX_KUBERNETES_FAKE=1)
+  http://localhost:8080/databases      Managed databases
+  http://localhost:8080/storage/s3     Object storage
+  http://localhost:8080/volumes        Volumes
+  http://localhost:8080/backups        Backups
+  http://localhost:8080/load-balancers Load balancers (NLB / ALB)
+  http://localhost:8080/dns            DNS Service (clofix.internal)
+  http://localhost:8080/health-checks  Health checks
+  http://localhost:8080/security       Protection / WAF / ports
+  http://localhost:8080/firewall       Host + VPS firewall
+  http://localhost:8080/workers        Workers
+  http://localhost:8080/billing        Billing & Payments
+  http://localhost:8080/settings       Settings (General, Pricing, NLB, License, …)
+
+API / TLS (same admin container):
+  http://localhost:8080/api/…          Admin JSON API (session cookie)
+  https://localhost:8443               Worker mTLS API (enrollment target: https://admin:8443)
+  http://localhost:8080/api/ca.pem     Controller CA (for worker enroll)
+
+HTML/JS/CSS edits under admin/web apply without rebuilding the image.
+Go API changes require rebuilding/restarting the admin container.
+
+-------------------------------------------------------------------------------
+License server (CloFix company-side)
+-------------------------------------------------------------------------------
+Path on disk:  license-server/
+Compose:       cd license-server && docker compose up -d --build
+Admin token:   license-server/.env → LICENSE_ADMIN_TOKEN (min 16 chars)
+
+URLs:
+  http://localhost:8090/               License admin console (plans / CFL keys)
+  http://localhost:8090/healthz        Health check
+  POST http://localhost:8090/api/validate   Customer controller validation API
+
+Wire into FileVPS:
+  Root .env → CLOFIX_LICENSE_SERVER_URL=http://host.docker.internal:8090
+              (or http://127.0.0.1:8090 if the admin container can reach it)
+  Root .env → CLOFIX_LICENSE_PUBLIC_URL=http://localhost:8090
+  Or set both under Admin UI → Settings → License, then Validate.
+
+Customer Installation ID is shown on Settings → License (ctl-…).
+Issue a CFL-… key bound to that ID from the license console.
+
+-------------------------------------------------------------------------------
+Other local service URLs
+-------------------------------------------------------------------------------
+  http://127.0.0.1:18080               Local NLB test listen (admin CLOFIX_NLB_LISTEN_MAP)
+  http://localhost:8333                Shared S3 gateway (SeaweedFS; loopback)
+  s3pool:9333 / :19333                 S3 master (in-compose DNS; bind 127.0.0.1 on host)
+  postgres db:5432                     Internal only (user clofix, DB clofix)
+  DNS 127.0.0.1:53                     CloFix zone (clofix.internal) via admin
+  http://127.0.0.1/                    Host HTTP for named clofix.internal proxies
+
+-------------------------------------------------------------------------------
+Worker published ports (local Compose = 100-slot lab subset)
+-------------------------------------------------------------------------------
+Cloud-scale code still allocates up to 5000 slots per range; Docker Desktop
+cannot publish the full ranges without hanging. Local publish:
+
+  SSH           127.0.0.1:22000–22099
+  HTTP (80)     127.0.0.1:27000–27099   (= SSH + 5000)
+  HTTPS (443)   127.0.0.1:32000–32099   (= SSH + 10000)
+  Custom map    127.0.0.1:37000–37099   (tcp/udp)
+  Managed apps  127.0.0.1:42000–42099   (gateway Basic auth)
+  Databases     127.0.0.1:47000–47099   (TLS listeners)
+
+Examples:
+  First VPS SSH 22000 → HTTP http://localhost:27000  HTTPS https://localhost:32000
+  Managed apps (published range 42000–42099; old 25000 URLs are obsolete):
+  Adminer example     → http://localhost:42000/
+  Jenkins example     → http://localhost:42001/   (Login shows gateway + initialAdminPassword)
+
+Private guest IPs (10.231.0.0/16) are not reachable from the Mac; use published ports.
+
+Worker hostname: clofix-local-worker
+Enroll (once):
+  curl -s http://localhost:8080/api/ca.pem -o /tmp/ca.pem
+  docker compose cp /tmp/ca.pem worker:/tmp/ca.pem
+  docker compose exec -it worker clofix-worker enroll --controller https://admin:8443 --ca /tmp/ca.pem
+
+-------------------------------------------------------------------------------
+Start / stop
+-------------------------------------------------------------------------------
+  FileVPS stack:     cp .env.example .env && docker compose up -d --build
+  License server:    cd license-server && cp .env.example .env && docker compose up -d --build
+  Logs:              docker compose logs -f admin worker
+  UI login:          open http://localhost:8080/login
+  License console:   open http://localhost:8090/
+
+-------------------------------------------------------------------------------
+Docs
+-------------------------------------------------------------------------------
+  README.md
+  docs/managed-apps.md
+  docs/managed-databases.md
+  docs/licensing.md
+  docs/cks.md
+  license-server/README.md
+  book.md

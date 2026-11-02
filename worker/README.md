@@ -34,9 +34,11 @@ In the local Compose setup, guest IPs such as `10.231.0.3` are private to the wo
 | Host port range | Guest port | Use |
 | --- | ---: | --- |
 | `22000–22099` | TCP 22 | SSH |
-| `23000–23099` | TCP 80 | HTTP |
-| `23100–23199` | TCP 443 | HTTPS |
-| `24000–24099` | selected TCP/UDP port | Manual mappings created in the UI |
+| `27000–31999` | TCP 80 | HTTP (SSH port + 5000) |
+| `32000–36999` | TCP 443 | HTTPS (SSH port + 10000) |
+| `37000–41999` | selected TCP/UDP port | Manual mappings created in the UI |
+| `42000–46999` | managed app gateway | Authenticated managed apps |
+| `47000–51999` | database TLS | Managed database listeners |
 
 The UI assigns a localhost host port for each manual mapping and shows it on the guest details page. The worker applies mapping changes while the guest is running.
 

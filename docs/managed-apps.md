@@ -3,8 +3,9 @@
 The Library at `/services` has two sections: Quick Apps deploy persistent managed
 sandboxes; VPS software installs packages into an existing VPS.
 
-Quick Apps includes Adminer, Uptime Kuma, Jenkins, and managed
-web deployments: Static website, PHP website, Node.js, Next.js, and WordPress.
+Quick Apps includes Adminer, Jenkins, Grafana, Prometheus, Loki, Jaeger,
+OpenTelemetry Collector, and managed web deployments: Static website, PHP
+website, Node.js, Next.js, and WordPress.
 The client chooses an app, names it, and presses Deploy. CloFix selects a prepared
 worker, generates login credentials, creates persistent storage and publishes an
 application URL. No client VPS or SSH account is created.
@@ -26,8 +27,9 @@ desired state is running; crashed apps retry at most once every 30 seconds.
 The client controls Open app, Login, Start/Stop, Restart, Logs, Data export and
 Delete from the Library. Login credentials are encrypted on the controller and
 only their SHA-256 hash is kept in the worker's gateway metadata. Apps may still
-have their own first-time setup, such as Uptime Kuma's administrator account,
-Jenkins' setup wizard, or Adminer's database login.
+have their own first-time setup, such as Jenkins' setup wizard or Adminer's database login.
+For Jenkins, Login also shows the unlock password from `/data/secrets/initialAdminPassword`
+once the worker has reported it.
 
 ## Prepare worker templates
 
@@ -54,23 +56,22 @@ endpoint; CloFix does not expose private host or RFC1918 database addresses to
 managed app namespaces.
 
 This prepares Adminer from Ubuntu packages. It uses Nginx and PHP-FPM, not PHP's
-development HTTP server. The default run also downloads the official Uptime Kuma
-release archive and Jenkins LTS war, plus the official Node.js Linux runtime, and
-verifies each SHA-256 before publishing the template. Templates are published
-atomically after preparation; existing templates are preserved. Package daemons
-are prevented from starting inside the provisioning chroot.
+development HTTP server. The default run also downloads the official Jenkins LTS
+war (SHA-256 verified) and official Grafana, Prometheus, Loki, Jaeger and
+OpenTelemetry Collector contrib archives before publishing each template.
+Templates are published atomically after preparation; existing templates are
+preserved. Package daemons are prevented from starting inside the provisioning
+chroot. Observability apps listen on sandbox port 8080 behind the CloFix gateway.
 
-To rebuild only those apps after an earlier skip:
+To rebuild only selected templates after an earlier skip:
 
 ```sh
-sudo env CLOFIX_MANAGED_TEMPLATES='uptime-kuma jenkins' \
+sudo env CLOFIX_MANAGED_TEMPLATES='jenkins grafana prometheus loki jaeger otel-collector' \
   ./scripts/build-managed-templates.sh
 ```
 
-Optional overrides still accept a prepared Uptime Kuma directory
-(`CLOFIX_UPTIME_KUMA_DIR`) and a pinned Node archive/SHA-256. A failed download
-skips that template instead of advertising it as ready. Preparation happens once
-per worker, not per client deploy.
+A failed download skips that template instead of advertising it as ready.
+Preparation happens once per worker, not per client deploy.
 
 The default state location is `/var/lib/clofix-filevps`; `CLOFIX_STATE_DIR` must be
 consistent between provisioning and the worker service. Templates live under
@@ -81,7 +82,7 @@ Requires Linux user namespaces, cgroup v2, overlayfs, loop devices, ext4 tools,
 
 ## URLs and network boundaries
 
-Development gateways use ports 25000–25099, mapped only to `127.0.0.1` by local
+Development gateways use ports 42000–46999, mapped only to `127.0.0.1` by local
 Compose. A worker advertises its external hostname using `CLOFIX_APP_PUBLIC_HOST`;
 the controller also supports that setting as a fallback, defaulting to `localhost`.
 
@@ -93,13 +94,13 @@ exposed directly. There are at most 64 simultaneous gateway requests per app.
 For production, configure an HTTPS ingress to the gateways and per-app domains.
 Set `CLOFIX_APP_PUBLIC_SCHEME=https` on the controller only when TLS termination is
 configured for the published addresses/ports. Automatic DNS, ACME certificates,
-custom domain routing and direct Internet publication are not implemented.
+custom domains can be attached (`PUT /api/managed-apps/{id}/domains`) and issued via ACME
+(`POST /api/certificates` with `target=managed-app`) when `CLOFIX_ACME_EMAIL` is set.
 
 Sandbox networking currently allows public IPv4 destinations and DNS through
 1.1.1.1/8.8.8.8. Host access, RFC1918/link-local/metadata ranges and cross-sandbox
 private traffic are blocked. IPv6 is disabled inside these application namespaces.
-Adminer cannot currently connect to private databases, and Uptime Kuma cannot
-monitor private network targets without an operator-designed connectivity policy.
+Adminer cannot currently connect to private databases without an operator-designed connectivity policy.
 
 ## Data exports and logs
 

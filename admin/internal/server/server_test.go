@@ -49,6 +49,9 @@ func do(h http.Handler, method, path, body, auth string) *httptest.ResponseRecor
 	if auth != "" {
 		r.Header.Set("Authorization", "Bearer "+auth)
 	}
+	if body != "" {
+		r.Header.Set("Content-Type", "application/json")
+	}
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 	return w

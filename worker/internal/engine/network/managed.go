@@ -2,16 +2,16 @@ package network
 
 import (
 	"fmt"
-	"net"
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/clofix/filevps/worker/pkg/proto"
 )
 
 // Managed app ports are served by an authenticated worker-side gateway, not DNAT.
 func (m *Manager) SetupManaged(id string, pid int, address string) error {
-	ip := net.ParseIP(address).To4()
-	if ip == nil || ip[0] != 10 || ip[1] != 231 || ip[2] != 128 || ip[3] < 2 || pid <= 0 {
+	if !proto.ValidManagedAddress(address) || pid <= 0 {
 		return fmt.Errorf("invalid managed network")
 	}
 	m.CleanupManaged(id)
@@ -45,11 +45,11 @@ func managedFirewall() error {
 	}
 	rules := `table inet clofix_managed {
  chain input { type filter hook input priority -20; policy accept;
-  ip saddr 10.231.128.0/24 ct state established,related accept
-  ip saddr 10.231.128.0/24 drop
+  ip saddr 10.231.128.0/17 ct state established,related accept
+  ip saddr 10.231.128.0/17 drop
  }
  chain forward { type filter hook forward priority -20; policy accept;
-  ip saddr 10.231.128.0/24 ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4 } drop
+  ip saddr 10.231.128.0/17 ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4 } drop
  }
 }`
 	cmd := exec.Command("nft", "-f", "-")

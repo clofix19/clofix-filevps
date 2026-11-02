@@ -10,6 +10,9 @@ import (
 	"time"
 )
 
+// Keep in sync with proto.HostDatabaseBase/Count (avoid importing proto: cycle).
+const hostDatabaseBase, hostDatabaseCount = 47000, 5000
+
 var ID = regexp.MustCompile(`^(dbp|dbj|dbb|dbu)-[a-f0-9]{32}$`)
 var Identifier = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,47}$`)
 
@@ -40,7 +43,7 @@ type Project struct {
 }
 
 func (p Project) Validate() error {
-	if !ID.MatchString(p.ID) || !strings.HasPrefix(p.ID, "dbp-") || !Engine(p.Engine) || p.RAMMB < 256 || p.RAMMB > 1048576 || math.IsNaN(p.CPU) || math.IsInf(p.CPU, 0) || p.CPU < 0.25 || p.CPU > 128 || p.DiskMB < 512 || p.DiskMB > 1048576 || p.Port < 26000 || p.Port > 26099 {
+	if !ID.MatchString(p.ID) || !strings.HasPrefix(p.ID, "dbp-") || !Engine(p.Engine) || p.RAMMB < 256 || p.RAMMB > 1048576 || math.IsNaN(p.CPU) || math.IsInf(p.CPU, 0) || p.CPU < 0.25 || p.CPU > 128 || p.DiskMB < 512 || p.DiskMB > 1048576 || p.Port < hostDatabaseBase || p.Port >= hostDatabaseBase+hostDatabaseCount {
 		return fmt.Errorf("invalid database project specification")
 	}
 	return nil

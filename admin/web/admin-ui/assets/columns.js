@@ -8,7 +8,7 @@
     'security-instances':['Select','VPS','State','Protection Mode','OWASP CRS WAF'],
     'iam-users-table':['Select','Username','Role','Status','Groups','Policies','Created'],
     'iam-groups-table':['Select','Group','Users','Policies'],
-    'iam-policies-table':['Select','Policy','Permissions'],
+    'iam-policies-table':['Select','Policy','Category','Description','Permissions'],
     's3-connections-table':['Select','Storage','Provider','Bucket','Endpoint'],
     'service-table':['Select','Service','Status','Ports','CPU','RAM (PSS estimate)','Swap','ZRAM'],
     'volume-table':['Select','Name','State','Usage / hard limit','Attached VPS'],

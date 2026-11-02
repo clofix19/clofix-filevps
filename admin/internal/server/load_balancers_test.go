@@ -160,7 +160,7 @@ func TestLoadBalancerHealthAutoscalingAndCooldown(t *testing.T) {
 	m.TakeOps("w1")
 	inst, _ := m.GetInstance(iid)
 	inst.State = proto.StateRunning
-	inst.Spec.SSHPort = p - 1000
+	inst.Spec.SSHPort = p - proto.HostHTTPOffset
 	m.SaveInstance(inst)
 	s.usage[iid] = proto.InstanceMetrics{CPUPercent: 90}
 	saved.LastScale = time.Now().Add(-3 * time.Minute)
@@ -171,7 +171,7 @@ func TestLoadBalancerHealthAutoscalingAndCooldown(t *testing.T) {
 	// A fresh scale operation prevents another scale out.
 	second, _ := m.GetInstance(saved.Instances[1])
 	second.State = proto.StateRunning
-	second.Spec.SSHPort = p - 1000
+	second.Spec.SSHPort = p - proto.HostHTTPOffset
 	m.SaveInstance(second)
 	s.usage[second.ID] = proto.InstanceMetrics{CPUPercent: 90}
 	s.reconcileLoadBalancers()
@@ -219,7 +219,7 @@ func TestLoadBalancerHitAutoscaling(t *testing.T) {
 	m.TakeOps("w1")
 	inst, _ := m.GetInstance(iid)
 	inst.State = proto.StateRunning
-	inst.Spec.SSHPort = p - 1000
+	inst.Spec.SSHPort = p - proto.HostHTTPOffset
 	m.SaveInstance(inst)
 	s.usage[iid] = proto.InstanceMetrics{CPUPercent: 10}
 	saved.ensureHits()
@@ -234,7 +234,7 @@ func TestLoadBalancerHitAutoscaling(t *testing.T) {
 	m.TakeOps("w1")
 	second, _ := m.GetInstance(saved.Instances[1])
 	second.State = proto.StateRunning
-	second.Spec.SSHPort = p - 1000
+	second.Spec.SSHPort = p - proto.HostHTTPOffset
 	m.SaveInstance(second)
 	s.usage[second.ID] = proto.InstanceMetrics{CPUPercent: 10}
 	saved.hits = &hitMinute{}
@@ -268,7 +268,7 @@ func TestLoadBalancerHitAutoscaling(t *testing.T) {
 	oid := only.Instances[0]
 	inst2, _ := m.GetInstance(oid)
 	inst2.State = proto.StateRunning
-	inst2.Spec.SSHPort = p - 1000
+	inst2.Spec.SSHPort = p - proto.HostHTTPOffset
 	m.SaveInstance(inst2)
 	s.usage[oid] = proto.InstanceMetrics{CPUPercent: 10}
 	only.ensureHits()

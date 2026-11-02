@@ -9,10 +9,10 @@ fieldset{grid-column:1/-1;border:1px solid #293a4d;border-radius:10px;margin:0 0
 <label>Maximum FileVPS<input id="vps" type="number" min="1" max="1000000" value="10" required></label>
 <label>Maximum workers<input id="workers" type="number" min="1" max="100000" value="3" required></label>
 <label>Jobs &amp; functions<input id="limit-applications" type="number" min="-1" max="1000000" value="10" placeholder="Not specified"></label>
-<label>Managed apps<input id="limit-managed-apps" type="number" min="-1" max="1000000" value="5" placeholder="Not specified"></label>
-<label>CKS clusters (EKS-style)<input id="limit-kubernetes-clusters" type="number" min="-1" max="1000000" placeholder="Not specified"></label>
-<label>CKS nodes<input id="limit-kubernetes-nodes" type="number" min="-1" max="1000000" placeholder="Not specified"></label>
-<label>CKS node pools<input id="limit-kubernetes-node-pools" type="number" min="-1" max="1000000" placeholder="Not specified"></label>
+<label>Managed apps<input id="limit-managed-apps" type="number" min="-1" max="1000000" value="10" placeholder="Not specified"></label>
+<label>CKS clusters (EKS-style)<input id="limit-kubernetes-clusters" type="number" min="-1" max="1000000" value="5" placeholder="Not specified"></label>
+<label>CKS nodes<input id="limit-kubernetes-nodes" type="number" min="-1" max="1000000" value="20" placeholder="Not specified"></label>
+<label>CKS node pools<input id="limit-kubernetes-node-pools" type="number" min="-1" max="1000000" value="10" placeholder="Not specified"></label>
 </div></fieldset>
 <fieldset><legend>Databases</legend><p>MySQL, PostgreSQL, MongoDB and Redis instances on opted-in Linux workers.</p><div class="grid">
 <label>Database instances<input id="limit-max-database-projects" type="number" min="-1" max="1000000" value="5" placeholder="Not specified"></label>
@@ -29,7 +29,7 @@ fieldset{grid-column:1/-1;border:1px solid #293a4d;border-radius:10px;margin:0 0
 <fieldset><legend>Networking</legend><p>DNS Service is the controller zone/record store. It does not listen on port 53.</p><div class="grid">
 <label>Maximum load balancers (NLB/ALB, including CKS attach)<input id="lbs" type="number" min="1" max="100000" value="5" required></label>
 <label>DNS zones<input id="limit-dns-zones" type="number" min="-1" max="1000000" value="1" placeholder="Not specified"></label>
-<label>DNS records<input id="limit-dns-records" type="number" min="-1" max="1000000" value="100" placeholder="Not specified"></label>
+<label>DNS records<input id="limit-dns-records" type="number" min="-1" max="1000000" value="200" placeholder="Not specified"></label>
 <label>Health check endpoints<input id="limit-health-checks" type="number" min="-1" max="1000000" value="10" placeholder="Not specified"></label>
 </div></fieldset>
 <fieldset><legend>Security</legend><div class="grid">

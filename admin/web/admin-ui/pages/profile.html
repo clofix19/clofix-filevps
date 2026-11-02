@@ -1,0 +1,80 @@
+{{define "content"}}
+<section class="page active" id="page-profile">
+  <div class="section-head"><div><p class="eyebrow">Account</p><h2>My Profile</h2><p>Update your sign-in details, Google Authenticator MFA, and login IP allow/deny lists. Applies to admin, partner, root and IAM users.</p></div></div>
+  <div class="settings-layout">
+    <nav class="settings-nav" aria-label="Profile sections">
+      <a href="#profile-overview" data-settings-link aria-controls="profile-overview" aria-current="location"><strong>Overview</strong><span>Status and current IP</span></a>
+      <a href="#profile-details" data-settings-link aria-controls="profile-details"><strong>Profile</strong><span>Name, email, password</span></a>
+      <a href="#profile-ips" data-settings-link aria-controls="profile-ips"><strong>Login IP rules</strong><span>Allow and deny lists</span></a>
+      <a href="#profile-mfa" data-settings-link aria-controls="profile-mfa"><strong>Authenticator MFA</strong><span>Google Authenticator QR</span></a>
+    </nav>
+    <div class="settings-content">
+      <div class="panel settings-section" id="profile-overview" data-settings-panel aria-labelledby="profile-heading-overview">
+        <div class="section-head"><div><h2 id="profile-heading-overview" tabindex="-1">Overview</h2><p>Signed-in identity and MFA status for this account.</p></div></div>
+        <div class="cards">
+          <div class="stat"><div class="stat-label">Signed in as</div><div class="stat-value" id="profile-kind">—</div><div class="stat-note" id="profile-role">Role</div></div>
+          <div class="stat"><div class="stat-label">MFA</div><div class="stat-value" id="profile-mfa-status">Off</div><div class="stat-note">Google Authenticator</div></div>
+          <div class="stat"><div class="stat-label">Your IP now</div><div class="stat-value" id="profile-client-ip" style="font-size:16px">—</div><div class="stat-note">Used for allow/deny checks</div></div>
+        </div>
+      </div>
+
+      <div class="panel settings-section" id="profile-details" data-settings-panel aria-labelledby="profile-heading-details" hidden>
+        <div class="section-head"><div><h2 id="profile-heading-details" tabindex="-1">Profile</h2><p>Change display name, username, email or password.</p></div></div>
+        <div class="form-grid">
+          <div class="form-field"><label for="profile-display-name">Display name</label><input id="profile-display-name" maxlength="80" placeholder="Optional name"></div>
+          <div class="form-field"><label for="profile-username">Username</label><input id="profile-username" maxlength="64" required></div>
+          <div class="form-field"><label for="profile-email">Email</label><input id="profile-email" type="email" maxlength="120" required></div>
+          <div class="form-field"><label for="profile-current-password">Current password</label><input id="profile-current-password" type="password" autocomplete="current-password" placeholder="Required only to change password"></div>
+          <div class="form-field"><label for="profile-new-password">New password</label><input id="profile-new-password" type="password" autocomplete="new-password" minlength="12" placeholder="Leave blank to keep"></div>
+        </div>
+        <div class="inline-fields"><button class="primary" id="profile-save" type="button">Save profile</button></div>
+        <div class="message" id="profile-message" role="status"></div>
+      </div>
+
+      <div class="panel settings-section" id="profile-ips" data-settings-panel aria-labelledby="profile-heading-ips" hidden>
+        <div class="section-head"><div><h2 id="profile-heading-ips" tabindex="-1">Login IP rules</h2><p>Empty allow list means any IP (except denied). Deny always wins. One IPv4/IPv6 or CIDR per line.</p></div></div>
+        <div class="form-grid">
+          <div class="form-field form-span"><label for="profile-allow-ips">Allow IPs</label><textarea id="profile-allow-ips" rows="4" placeholder="203.0.113.10&#10;10.0.0.0/8"></textarea></div>
+          <div class="form-field form-span"><label for="profile-deny-ips">Deny IPs</label><textarea id="profile-deny-ips" rows="4" placeholder="198.51.100.0/24"></textarea></div>
+        </div>
+        <div class="inline-fields"><button class="secondary" id="profile-save-ips" type="button">Save IP rules</button></div>
+        <div class="message" id="profile-ip-message" role="status"></div>
+      </div>
+
+      <div class="panel settings-section" id="profile-mfa" data-settings-panel aria-labelledby="profile-heading-mfa" hidden>
+        <div class="section-head"><div><h2 id="profile-heading-mfa" tabindex="-1">Google Authenticator (MFA)</h2><p>When MFA is enabled, sign-in asks for a 6-digit code after password. When disabled, password alone is enough.</p></div></div>
+        <div class="inline-fields" id="profile-mfa-actions">
+          <button class="primary" id="profile-mfa-setup" type="button">Set up MFA</button>
+          <button class="danger" id="profile-mfa-disable" type="button" hidden>Disable MFA</button>
+        </div>
+        <div id="profile-mfa-setup-box" hidden>
+          <div class="profile-mfa-setup-grid">
+            <div class="profile-mfa-qr-wrap">
+              <div id="profile-mfa-qr" class="profile-mfa-qr" aria-live="polite"></div>
+              <p class="muted">Scan with Google Authenticator</p>
+            </div>
+            <div>
+              <p class="muted">Or enter this secret manually:</p>
+              <code class="terminal-command" id="profile-mfa-secret"></code>
+              <p class="muted" id="profile-mfa-otpauth" style="overflow-wrap:anywhere;margin-top:10px;font-size:11px"></p>
+              <div class="inline-fields" style="margin-top:14px">
+                <label for="profile-mfa-code">Authenticator code</label>
+                <input id="profile-mfa-code" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code">
+                <button class="primary" id="profile-mfa-enable" type="button">Enable MFA</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="profile-mfa-disable-box" hidden>
+          <div class="inline-fields">
+            <label>Password <input id="profile-mfa-disable-password" type="password" autocomplete="current-password"></label>
+            <label>Code <input id="profile-mfa-disable-code" inputmode="numeric" maxlength="6" placeholder="123456"></label>
+            <button class="danger" id="profile-mfa-disable-confirm" type="button">Confirm disable</button>
+          </div>
+        </div>
+        <div class="message" id="profile-mfa-message" role="status"></div>
+      </div>
+    </div>
+  </div>
+</section>
+{{end}}

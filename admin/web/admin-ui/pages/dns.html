@@ -1,0 +1,69 @@
+{{define "content"}}
+<section class="page active" id="page-dns">
+  <div class="section-head"><div><p class="eyebrow">Networking</p><h2>DNS Service</h2><p>Automatic DNS records for FileVPS, load balancers, CKS clusters, databases, managed apps and workers. Manual records can be added to the same zone.</p></div></div>
+  <div class="settings-layout">
+    <nav class="settings-nav" aria-label="DNS sections">
+      <a href="#dns-overview" data-settings-link aria-controls="dns-overview" aria-current="location"><strong>Overview</strong><span>Zone and automatic coverage</span></a>
+      <a href="#dns-zone" data-settings-link aria-controls="dns-zone"><strong>Zone settings</strong><span>Domain, TTL and auto sources</span></a>
+      <a href="#dns-records" data-settings-link aria-controls="dns-records"><strong>Records</strong><span>Automatic and manual names</span></a>
+      <a href="#dns-zonefile" data-settings-link aria-controls="dns-zonefile"><strong>Zone file</strong><span>BIND-style export</span></a>
+    </nav>
+    <div class="settings-content">
+      <div class="panel settings-section" id="dns-overview" data-settings-panel aria-labelledby="dns-heading-overview">
+        <h2 id="dns-heading-overview" tabindex="-1">Overview</h2>
+        <p id="dns-overview-note" class="muted">Automatic records appear when a VPS, load balancer, CKS cluster, database, app or worker is created. CKS-attached load balancers also get <code>{service}.{cluster}.cks.{zone}</code> aliases. The controller answers this zone on <code>127.0.0.1:53</code> and HTTP names on <code>127.0.0.1:80</code>. Query with <code>dig @127.0.0.1 web.clofix.internal</code>. Per-name <code>/etc/hosts</code> entries are not required. On this Mac, one resolver file <code>/etc/resolver/clofix.internal</code> containing <code>nameserver 127.0.0.1</code> lets browsers open <code>http://web.clofix.internal/</code>.</p>
+        <div class="database-stats" id="dns-overview-stats"></div>
+      </div>
+      <div class="panel settings-section" id="dns-zone" data-settings-panel aria-labelledby="dns-heading-zone" hidden>
+        <h2 id="dns-heading-zone" tabindex="-1">Zone settings</h2>
+        <p>Names are created as <code>{id}.{service}.{zone}</code>. A publish address is used only when an ALB has no allocated IP.</p>
+        <form id="dns-zone-form">
+          <div class="form-grid">
+            <div class="form-field"><label for="dns-zone-domain">Zone</label><input id="dns-zone-domain" maxlength="253" required placeholder="clofix.internal"></div>
+            <div class="form-field"><label for="dns-zone-ttl">TTL · seconds</label><input id="dns-zone-ttl" type="number" min="30" max="86400" value="60" required></div>
+            <div class="form-field form-span"><label for="dns-zone-publish">Publish address · optional IPv4</label><input id="dns-zone-publish" maxlength="45" placeholder="Used for ALB records without an allocated IP"></div>
+          </div>
+          <label><input id="dns-auto-vps" type="checkbox" checked> Auto-add FileVPS</label>
+          <label><input id="dns-auto-lb" type="checkbox" checked> Auto-add load balancers</label>
+          <label><input id="dns-auto-cks" type="checkbox" checked> Auto-add CKS clusters</label>
+          <label><input id="dns-auto-db" type="checkbox" checked> Auto-add databases</label>
+          <label><input id="dns-auto-app" type="checkbox" checked> Auto-add managed apps</label>
+          <label><input id="dns-auto-worker" type="checkbox" checked> Auto-add workers</label>
+          <button class="primary" id="dns-zone-save" type="submit">Save zone</button>
+        </form>
+        <p class="message" id="dns-zone-message" role="status" aria-live="polite"></p>
+      </div>
+      <div class="panel settings-section" id="dns-records" data-settings-panel aria-labelledby="dns-heading-records" hidden>
+        <h2 id="dns-heading-records" tabindex="-1">Records</h2>
+        <p>Select a FileVPS, load balancer, CKS cluster, database, app or worker to point a name at that service. CKS Service lists the cluster plus Kubernetes Services and Ingresses. Port lists every mapped HTTP, HTTPS, lab, NodePort and guest port. Port is stored and exported as an SRV record.</p>
+        <form id="dns-record-form">
+          <input id="dns-record-id" type="hidden">
+          <div class="form-grid">
+            <div class="form-field"><label for="dns-record-resource">Target</label><select id="dns-record-resource"><option value="manual">Manual address</option><option value="vps">FileVPS</option><option value="lb">Load balancer</option><option value="cks">CKS cluster</option><option value="db">Database</option><option value="app">Managed app</option><option value="worker">Worker</option></select></div>
+            <div class="form-field"><label for="dns-record-target">Service</label><select id="dns-record-target"></select></div>
+            <div class="form-field"><label for="dns-record-name">Name</label><input id="dns-record-name" maxlength="253" required placeholder="www or host.clofix.internal"></div>
+            <div class="form-field"><label id="dns-record-port-label" for="dns-record-port">Port</label><select id="dns-record-port-map" hidden></select><input id="dns-record-port" type="number" min="0" max="65535" value="0" placeholder="22, 80, 3306"></div>
+            <div class="form-field"><label for="dns-record-type">Type</label><select id="dns-record-type"><option value="A">A</option><option value="AAAA">AAAA</option><option value="CNAME">CNAME</option><option value="TXT">TXT</option></select></div>
+            <div class="form-field"><label for="dns-record-value">Value</label><input id="dns-record-value" maxlength="255"></div>
+            <div class="form-field"><label for="dns-record-ttl">TTL</label><input id="dns-record-ttl" type="number" min="30" max="86400" value="60"></div>
+            <div class="form-field form-span"><label for="dns-record-description">Description · optional</label><input id="dns-record-description" maxlength="160"></div>
+          </div>
+          <div class="row-actions">
+            <button class="primary" id="dns-record-save" type="submit">Add record</button>
+            <button class="secondary" id="dns-record-cancel" type="button" hidden>Cancel</button>
+          </div>
+        </form>
+        <p class="message" id="dns-record-message" role="status" aria-live="polite"></p>
+        <div class="table-wrap"><table id="dns-record-table"></table></div>
+      </div>
+      <div class="panel settings-section" id="dns-zonefile" data-settings-panel aria-labelledby="dns-heading-zonefile" hidden>
+        <h2 id="dns-heading-zonefile" tabindex="-1">Zone file</h2>
+        <p>Download a BIND-style export. The live zone is also served on UDP/TCP 53 at 127.0.0.1.</p>
+        <button class="primary" id="dns-zonefile-download" type="button">Download zone file</button>
+        <p class="message" id="dns-zonefile-message" role="status" aria-live="polite"></p>
+        <pre id="dns-zonefile-view" class="log-view"></pre>
+      </div>
+    </div>
+  </div>
+</section>
+{{end}}

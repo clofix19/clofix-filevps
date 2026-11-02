@@ -15,6 +15,7 @@ import (
 	"time"
 
 	db "github.com/clofix/filevps/worker/pkg/database"
+	"github.com/clofix/filevps/worker/pkg/proto"
 )
 
 func TestMissingCredentialKeyFailsClosed(t *testing.T) {
@@ -96,7 +97,7 @@ func TestRealDatabaseEngines(t *testing.T) {
 				t.Fatal(e)
 			}
 			m.images[engine.name] = Image{Ref: strings.TrimSpace(string(raw)), Version: engine.version}
-			project := db.Project{ID: fmt.Sprintf("dbp-%032x", engineIndex+1), Engine: engine.name, Version: engine.version, RAMMB: 1024, CPU: 1, DiskMB: 2048, Port: 26000 + engineIndex, Host: "127.0.0.1"}
+			project := db.Project{ID: fmt.Sprintf("dbp-%032x", engineIndex+1), Engine: engine.name, Version: engine.version, RAMMB: 1024, CPU: 1, DiskMB: 2048, Port: proto.HostDatabaseBase + engineIndex, Host: "127.0.0.1"}
 			sequence := 0
 			run := func(op db.Operation) db.Result {
 				sequence++
@@ -271,7 +272,7 @@ func TestInterruptedProjectRejectsFurtherMutations(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	spec := db.Project{ID: "dbp-" + strings.Repeat("c", 32), Engine: "mysql", Version: "8.4", RAMMB: 512, CPU: 1, DiskMB: 1024, Port: 26000}
+	spec := db.Project{ID: "dbp-" + strings.Repeat("c", 32), Engine: "mysql", Version: "8.4", RAMMB: 512, CPU: 1, DiskMB: 1024, Port: proto.HostDatabaseBase}
 	credential, e := m.seal(spec.ID, secrets{Password: "encrypted-administrator-secret"})
 	if e != nil {
 		t.Fatal(e)

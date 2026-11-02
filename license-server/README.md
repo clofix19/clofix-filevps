@@ -61,7 +61,7 @@ Optional limits (`-1` unlimited, `0` not included, omitted unspecified):
 | `max_s3_connections` | Object-storage connections |
 | `max_backups` | Retained VPS, database and CKS etcd backups |
 | `max_applications` | Jobs & Functions |
-| `max_managed_apps` | Library / ZIP managed apps (Uptime Kuma and Jenkins stay unready until the worker template builder publishes them) |
+| `max_managed_apps` | Library / ZIP managed apps (Jenkins stays unready until the worker template builder publishes it) |
 | `max_dns_zones` | Controller DNS Service zones (not a public authoritative nameserver) |
 | `max_dns_records` | DNS Service records (auto + manual, including SRV ports) |
 | `max_kubernetes_clusters` | CKS clusters (unspecified stays unlimited, like DNS) |

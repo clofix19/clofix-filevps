@@ -607,9 +607,9 @@ func (s *Server) reconcileLoadBalancers() {
 				port := i.Spec.SSHPort
 				switch b.BackendPort {
 				case 80:
-					port += 1000
+					port = proto.HostHTTPPort(i.Spec.SSHPort)
 				case 443:
-					port += 1100
+					port = proto.HostHTTPSPort(i.Spec.SSHPort)
 				}
 				address := net.JoinHostPort(host, strconv.Itoa(port))
 				checkCount++
@@ -627,7 +627,7 @@ func (s *Server) reconcileLoadBalancers() {
 				}(iid, address)
 				continue
 			}
-			address := "http://" + net.JoinHostPort(host, strconv.Itoa(i.Spec.SSHPort+1000))
+			address := "http://" + net.JoinHostPort(host, strconv.Itoa(proto.HostHTTPPort(i.Spec.SSHPort)))
 			checkCount++
 			healthHost := ""
 			if len(b.Domains) > 0 {

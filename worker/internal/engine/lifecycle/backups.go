@@ -97,6 +97,75 @@ func (e *Engine) BackupStatuses() []proto.BackupInfo {
 	return out
 }
 
+const maxBackupMigrateBytes = 256 << 20
+
+func (e *Engine) ExportBackupArchive(backupID string) ([]byte, error) {
+	if !validID.MatchString(backupID) {
+		return nil, errors.New("invalid backup ID")
+	}
+	dir := e.backupDir(backupID)
+	b, err := os.ReadFile(filepath.Join(dir, "backup.json"))
+	if err != nil {
+		return nil, fmt.Errorf("backup not found: %w", err)
+	}
+	var manifest backupManifest
+	if err := json.Unmarshal(b, &manifest); err != nil || manifest.Info.State != "READY" {
+		return nil, errors.New("backup is not ready")
+	}
+	archive := filepath.Join(dir, "upper.tar.gz")
+	st, err := os.Stat(archive)
+	if err != nil {
+		return nil, err
+	}
+	if st.Size() > maxBackupMigrateBytes {
+		return nil, fmt.Errorf("backup exceeds the %d MiB cross-worker migrate limit; restore on the source worker or raise the limit", maxBackupMigrateBytes>>20)
+	}
+	bundle := filepath.Join(os.TempDir(), "clofix-migrate-"+backupID+".tar")
+	cmd := exec.Command("tar", "-cf", bundle, "-C", dir, "backup.json", "upper.tar.gz")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("pack backup: %s: %w", string(out), err)
+	}
+	defer os.Remove(bundle)
+	return os.ReadFile(bundle)
+}
+
+func (e *Engine) ImportBackupArchive(backupID string, artifact []byte) error {
+	if !validID.MatchString(backupID) {
+		return errors.New("invalid backup ID")
+	}
+	if len(artifact) == 0 || len(artifact) > maxBackupMigrateBytes+1<<20 {
+		return errors.New("invalid backup artifact")
+	}
+	dir := e.backupDir(backupID)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	bundle := filepath.Join(os.TempDir(), "clofix-import-"+backupID+".tar")
+	if err := os.WriteFile(bundle, artifact, 0o600); err != nil {
+		return err
+	}
+	defer os.Remove(bundle)
+	cmd := exec.Command("tar", "-xf", bundle, "-C", dir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		_ = os.RemoveAll(dir)
+		return fmt.Errorf("unpack backup: %s: %w", string(out), err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "backup.json"))
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		return err
+	}
+	var manifest backupManifest
+	if err := json.Unmarshal(b, &manifest); err != nil {
+		_ = os.RemoveAll(dir)
+		return errors.New("imported backup metadata is invalid")
+	}
+	manifest.Info.State = "READY"
+	manifest.Info.Error = ""
+	raw, _ := json.MarshalIndent(manifest, "", "  ")
+	return os.WriteFile(filepath.Join(dir, "backup.json"), raw, 0o600)
+}
+
 func (e *Engine) restoreBackup(id, backupID string) error {
 	if !validID.MatchString(backupID) {
 		return errors.New("invalid backup ID")

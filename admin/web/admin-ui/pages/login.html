@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0a0f16">
+  <meta name="robots" content="noindex,nofollow">
+  <meta http-equiv="Referrer-Policy" content="no-referrer">
+  <title>CloFix · Sign in</title>
+  <link rel="icon" type="image/svg+xml" href="/clofix-mark.svg">
+  <script>(function(){try{var ok={dark:1,light:1,midnight:1,slate:1,contrast:1,warm:1};var saved=localStorage.getItem('cf_theme');document.documentElement.dataset.theme=ok[saved]?saved:(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark')}catch(e){document.documentElement.dataset.theme='dark'}})();</script>
+  <link rel="stylesheet" href="/assets/app.css?v=20261102-themes">
+  <link rel="stylesheet" href="/assets/refresh.css?v=20261102-footer-fixed">
+</head>
+<body class="auth-body" data-page="login">
+  <main class="auth-shell">
+    <a class="auth-brand" href="/login" aria-label="CloFix Cloud">
+      <img src="/clofix-logo.png" alt="CloFix">
+    </a>
+    <section class="auth-card">
+      <p class="eyebrow">CloFix Cloud</p>
+      <h1>Sign in</h1>
+      <p class="muted">Use your CloFix email and password. Worker enrollment tokens are unchanged.</p>
+      <form id="login-form" class="auth-form" autocomplete="on">
+        <label for="login-email">Email</label>
+        <input id="login-email" name="email" type="email" autocomplete="username" required maxlength="120">
+        <label for="login-password">Password</label>
+        <input id="login-password" name="password" type="password" autocomplete="current-password" required minlength="12" maxlength="128">
+        <div class="hp-field" aria-hidden="true">
+          <label for="login-website">Website</label>
+          <input id="login-website" name="website" type="text" tabindex="-1" autocomplete="off">
+        </div>
+        <button class="primary" type="submit">Sign in</button>
+        <p class="message" id="login-message" role="status"></p>
+      </form>
+      <!-- Shown only after email+password succeed AND this user has MFA enabled -->
+      <form id="login-mfa-form" class="auth-form" hidden aria-hidden="true">
+        <p class="muted">Authenticator MFA is enabled for this account. Enter the 6-digit Google Authenticator code.</p>
+        <input id="login-mfa-token" type="hidden">
+        <label for="login-mfa-code">Authenticator code</label>
+        <input id="login-mfa-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required>
+        <div class="hp-field" aria-hidden="true">
+          <label for="login-mfa-website">Website</label>
+          <input id="login-mfa-website" name="website" type="text" tabindex="-1" autocomplete="off">
+        </div>
+        <button class="primary" type="submit">Verify and sign in</button>
+        <button class="secondary" id="login-mfa-back" type="button">Back</button>
+        <p class="message" id="login-mfa-message" role="status"></p>
+      </form>
+      <p class="auth-alt">New client? <a href="/register">Create a root account</a></p>
+    </section>
+  </main>
+  <footer class="site-footer" role="contentinfo">
+    <div class="site-footer-inner">
+      <span>Powered by <strong>CloFix Infotech</strong></span>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <span>CloFix Cloud Console</span>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <span id="footer-host">—</span>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <time id="footer-clock">—</time>
+    </div>
+  </footer>
+  <script src="/assets/auth-pages.js?v=3" defer></script>
+  <script src="/assets/site-footer.js?v=1" defer></script>
+</body>
+</html>

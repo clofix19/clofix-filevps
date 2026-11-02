@@ -94,7 +94,7 @@ func ensureBridge() error {
 func (m *Manager) Setup(id string, pid int, address string, sshPort int, mappings []proto.PortMapping) error {
 	parsed := net.ParseIP(address).To4()
 	_, network, _ := net.ParseCIDR(subnet)
-	if parsed == nil || !network.Contains(parsed) || parsed[3] < 2 || sshPort < 22000 || sshPort > 22199 || pid <= 0 {
+	if parsed == nil || !network.Contains(parsed) || parsed[3] < 2 || !proto.ValidHostSSHPort(sshPort) || pid <= 0 {
 		return fmt.Errorf("invalid instance network settings")
 	}
 	// Reconciliation may be recreating an instance after the worker process restarted.
@@ -141,7 +141,7 @@ func (m *Manager) Setup(id string, pid int, address string, sshPort int, mapping
 func (m *Manager) SyncPorts(id, address string, sshPort int, mappings []proto.PortMapping) error {
 	for _, mapping := range mappings {
 		protocol := strings.ToLower(mapping.Protocol)
-		if (protocol != "tcp" && protocol != "udp") || mapping.HostPort < 24000 || mapping.HostPort > 24099 || mapping.GuestPort < 1 || mapping.GuestPort > 65535 {
+		if (protocol != "tcp" && protocol != "udp") || !proto.ValidHostCustomPort(mapping.HostPort) || mapping.GuestPort < 1 || mapping.GuestPort > 65535 {
 			return fmt.Errorf("invalid port mapping %s %d:%d", protocol, mapping.HostPort, mapping.GuestPort)
 		}
 	}
@@ -156,8 +156,8 @@ func (m *Manager) SyncPorts(id, address string, sshPort int, mappings []proto.Po
 		host, guest int
 	}{
 		{"tcp", sshPort, 22},
-		{"tcp", sshPort + 1000, 80},
-		{"tcp", sshPort + 1100, 443},
+		{"tcp", proto.HostHTTPPort(sshPort), 80},
+		{"tcp", proto.HostHTTPSPort(sshPort), 443},
 	} {
 		if err := add(mapping.protocol, mapping.host, mapping.guest); err != nil {
 			return err

@@ -1,0 +1,48 @@
+{{define "content"}}
+<section class="page active">
+<div class="section-head"><div><p class="eyebrow">Platform</p><h2>Log Service</h2><p>Live tails for VPS, load balancer, database, Library and worker logs. History is the latest bounded tail — this is not a multi-day warehouse.</p></div><a class="secondary" href="/settings#notification-channels">Configure alert channels</a></div>
+<p class="message" id="logs-message" role="status" aria-live="polite"></p>
+<div class="settings-layout">
+  <nav class="settings-nav" aria-label="Log service sections">
+    <a href="#logs-sources" data-settings-link aria-controls="logs-sources" aria-current="location"><strong>Sources</strong><span>Auto-listed and custom paths</span></a>
+    <a href="#logs-live" data-settings-link aria-controls="logs-live"><strong>Live</strong><span>Filter, pause and download</span></a>
+    <a href="#logs-analysis" data-settings-link aria-controls="logs-analysis"><strong>Analysis</strong><span>Error, warn and keyword counts</span></a>
+    <a href="#logs-alerts" data-settings-link aria-controls="logs-alerts"><strong>Alerts</strong><span>Keyword and level notifications</span></a>
+  </nav>
+  <div class="settings-content">
+    <div class="panel settings-section" id="logs-sources" data-settings-panel aria-labelledby="logs-heading-sources">
+      <div class="section-head"><h3 id="logs-heading-sources" tabindex="-1">Sources</h3><button class="primary" id="logs-add-source" type="button">＋ Add source</button></div>
+      <p class="muted">Existing VPS, service, WAF, Library and job logs appear automatically. Add a custom source with a resource and an absolute log path on that server.</p>
+      <div class="table-wrap"><table id="logs-sources-table"></table></div>
+    </div>
+    <div class="panel settings-section" id="logs-live" data-settings-panel aria-labelledby="logs-heading-live" hidden>
+      <div class="section-head"><h3 id="logs-heading-live" tabindex="-1">Live tail</h3><div class="inline-fields"><button class="secondary" id="logs-pause" type="button">Pause</button><button class="secondary" id="logs-download" type="button">Download</button></div></div>
+      <div class="form-grid">
+        <div class="form-field form-span"><label for="logs-live-source">Source</label><select id="logs-live-source"></select></div>
+        <div class="form-field"><label for="logs-live-q">Keyword</label><input id="logs-live-q" placeholder="error, timeout, 502"></div>
+        <div class="form-field"><label for="logs-live-level">Level</label><select id="logs-live-level"><option value="">Any</option><option value="error">Error / fatal / crit</option><option value="warn">Warn</option><option value="info">Info</option></select></div>
+      </div>
+      <p class="muted" id="logs-live-meta">Pick a source. The tail refreshes every 5 seconds while this panel is open.</p>
+      <pre id="logs-live-output" class="log-view"></pre>
+    </div>
+    <div class="panel settings-section" id="logs-analysis" data-settings-panel aria-labelledby="logs-heading-analysis" hidden>
+      <div class="section-head"><h3 id="logs-heading-analysis" tabindex="-1">Analysis</h3></div>
+      <div class="form-grid">
+        <div class="form-field form-span"><label for="logs-analysis-q">Keyword count</label><input id="logs-analysis-q" placeholder="optional keyword"></div>
+      </div>
+      <p class="muted" id="logs-analysis-totals">Counts use the current live tail of each visible source.</p>
+      <div class="table-wrap"><table id="logs-analysis-table"></table></div>
+    </div>
+    <div class="panel settings-section" id="logs-alerts" data-settings-panel aria-labelledby="logs-heading-alerts" hidden>
+      <div class="section-head"><h3 id="logs-heading-alerts" tabindex="-1">Alerts</h3><button class="primary" id="logs-add-alert" type="button">＋ Add alert</button></div>
+      <p class="muted" id="logs-channels-hint">Matching new lines notify every enabled Settings channel (Slack, Google Chat, Discord, Teams or webhook). Configure channels if none are enabled.</p>
+      <div class="table-wrap"><table id="logs-alerts-table"></table></div>
+      <h3>Alert history</h3>
+      <div class="table-wrap"><table id="logs-events-table"></table></div>
+    </div>
+  </div>
+</div>
+</section>
+<dialog class="terminal-dialog form-dialog" id="logs-source-dialog" aria-labelledby="logs-source-title"><form id="logs-source-form"><div class="section-head"><h2 id="logs-source-title">Add source</h2><button class="secondary" id="logs-source-close" type="button">Close</button></div><div class="form-grid"><div class="form-field"><label for="logs-source-name">Name</label><input id="logs-source-name" maxlength="80" required></div><div class="form-field"><label for="logs-source-kind">Type</label><select id="logs-source-kind"><option value="vps">VPS</option><option value="lb">Load balancer</option><option value="database">Database</option><option value="managed-app">Managed app</option><option value="worker">Worker host</option></select></div><div class="form-field"><label for="logs-source-resource">Resource</label><select id="logs-source-resource" required></select></div><div class="form-field form-span"><label for="logs-source-path">Server log path</label><input id="logs-source-path" placeholder="/var/log/nginx/error.log" required><small class="muted" id="logs-source-help">Absolute path on the selected resource. Worker host paths must stay under /var/log.</small></div></div><p class="message" id="logs-source-message" role="status" aria-live="polite"></p><button class="primary" id="logs-source-save" type="submit">Save source</button><button class="secondary" id="logs-source-reset" type="button">Cancel</button></form></dialog>
+<dialog class="terminal-dialog form-dialog" id="logs-alert-dialog" aria-labelledby="logs-alert-title"><form id="logs-alert-form"><div class="section-head"><h2 id="logs-alert-title">Add alert</h2><button class="secondary" id="logs-alert-close" type="button">Close</button></div><div class="form-grid"><div class="form-field"><label for="logs-alert-name">Name</label><input id="logs-alert-name" maxlength="80" required></div><div class="form-field"><label for="logs-alert-source">Source</label><select id="logs-alert-source" required></select></div><div class="form-field"><label for="logs-alert-match">Keyword</label><input id="logs-alert-match" placeholder="error, timeout"></div><div class="form-field"><label for="logs-alert-level">Level</label><select id="logs-alert-level"><option value="">Any</option><option value="error">Error / fatal / crit</option><option value="warn">Warn</option><option value="info">Info</option></select></div><div class="form-field"><label for="logs-alert-threshold">Matching new lines before fire</label><input id="logs-alert-threshold" type="number" min="1" max="50" value="1" required></div><div class="form-field"><label for="logs-alert-cooldown">Cooldown seconds</label><input id="logs-alert-cooldown" type="number" min="0" max="86400" value="300" required></div><label><input id="logs-alert-enabled" type="checkbox" checked> Enable alert</label></div><p class="message" id="logs-alert-message" role="status" aria-live="polite"></p><button class="primary" id="logs-alert-save" type="submit">Save alert</button><button class="secondary" id="logs-alert-reset" type="button">Cancel</button><button class="danger" id="logs-alert-delete" type="button" hidden>Delete alert</button></form><p class="muted">Notifications reuse Settings → Notification channels. The same repeating tail does not spam during cooldown.</p></dialog>
+{{end}}

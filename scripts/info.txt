@@ -1,0 +1,33 @@
+cd "/Users/sharifulislam/MEGA/infolytx/A-DevOps Consultant/nginx-waf/backup/clofix-filevps"
+
+# .env na thakle
+cp -n .env.example .env
+
+# pura stack + worker
+docker compose up -d --build
+
+# shudhu worker
+docker compose up -d worker
+
+# status / logs
+docker compose ps
+docker compose logs -f worker
+
+# --- DNS fix (jodi apt Ign: ports.ubuntu.com hoy) ---
+# Docker Desktop → Settings → Docker Engine → JSON e add:
+#   "dns": ["8.8.8.8", "1.1.1.1"]
+# Apply & Restart, then:
+docker compose down
+docker compose up -d
+# worker DNS check (expected: IP print hobe)
+docker compose exec -T worker getent hosts ports.ubuntu.com
+
+# --- Quick App templates (Grafana / Prometheus / Loki / Jaeger / OTel) ---
+docker cp scripts/build-managed-templates.sh clofix-filevps-worker-1:/tmp/build-managed-templates.sh
+
+docker compose exec -T worker bash -lc '
+  apt-get update &&
+  DEBIAN_FRONTEND=noninteractive apt-get install -y debootstrap python3 curl ca-certificates tar &&
+  env CLOFIX_MANAGED_TEMPLATES="grafana prometheus loki jaeger otel-collector" \
+    sh /tmp/build-managed-templates.sh
+'

@@ -1,0 +1,35 @@
+{{define "content"}}
+<section class="page active" id="page-vpc">
+  <div class="section-head"><div><p class="eyebrow">Networking</p><h2>VPC</h2><p>Private IPv4 blocks on the FileVPS bridge <code>10.231.0.0/16</code>. The default block cannot be deleted. Extra blocks must be non-overlapping subnets of that range.</p></div></div>
+  <div class="settings-layout">
+    <nav class="settings-nav" aria-label="VPC sections">
+      <a href="#vpc-overview" data-settings-link aria-controls="vpc-overview" aria-current="location"><strong>Overview</strong><span>Default block and extra subnets</span></a>
+      <a href="#vpc-blocks" data-settings-link aria-controls="vpc-blocks"><strong>IP blocks</strong><span>Create, edit and delete extra VPCs</span></a>
+    </nav>
+    <div class="settings-content">
+      <div class="panel settings-section" id="vpc-overview" data-settings-panel aria-labelledby="vpc-heading-overview">
+        <h2 id="vpc-heading-overview" tabindex="-1">Overview</h2>
+        <p id="vpc-overview-note" class="muted">New FileVPS, managed app, and database resources take an address from the default VPC unless another block is selected. Guest traffic still uses gateway <code>10.231.0.1</code>. Managed apps stay on <code>10.231.128.0/24</code>.</p>
+        <div class="database-stats" id="vpc-overview-stats"></div>
+      </div>
+      <div class="panel settings-section" id="vpc-blocks" data-settings-panel aria-labelledby="vpc-heading-blocks" hidden>
+        <h2 id="vpc-heading-blocks" tabindex="-1">IP blocks</h2>
+        <p>Name and CIDR for extra VPCs, for example <code>10.231.20.0/24</code>. The default CIDR cannot be changed. Delete is blocked while the block still has VPS, database, or app addresses.</p>
+        <form id="vpc-form">
+          <input id="vpc-id" type="hidden">
+          <div class="form-grid">
+            <div class="form-field"><label for="vpc-name">Name</label><input id="vpc-name" maxlength="80" required placeholder="App subnet"></div>
+            <div class="form-field"><label for="vpc-cidr">CIDR</label><input id="vpc-cidr" maxlength="18" required placeholder="10.231.20.0/24"></div>
+          </div>
+          <div class="row-actions">
+            <button class="primary" id="vpc-save" type="submit">Create VPC</button>
+            <button class="secondary" id="vpc-cancel" type="button" hidden>Cancel</button>
+          </div>
+        </form>
+        <p class="message" id="vpc-message" role="status" aria-live="polite"></p>
+        <div class="table-wrap"><table id="vpc-table"></table></div>
+      </div>
+    </div>
+  </div>
+</section>
+{{end}}

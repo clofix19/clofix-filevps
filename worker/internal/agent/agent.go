@@ -294,7 +294,7 @@ func (a *Agent) executor(ctx context.Context) {
 				continue
 			}
 			if op.Action == "managed-app" {
-				if op.Managed != nil && (op.ServiceAction == "deploy" || op.ServiceAction == "start" || op.ServiceAction == "restart") && a.Managed.NeedsReservation(op.Managed.ID) {
+				if op.Managed != nil && (op.ServiceAction == "deploy" || op.ServiceAction == "start" || op.ServiceAction == "restart") && a.Managed.NeedsReservation(op.Managed.ID) && !a.Kubernetes.Fake {
 					cp := a.capacity()
 					_, err := scheduler.Place([]scheduler.Candidate{{ID: "self", Active: true, LastHeartbeat: time.Now(), Capacity: cp}}, scheduler.Request{RAM: uint64(op.Managed.RAMMB) << 20, CPU: op.Managed.CPU}, scheduler.DefaultConfig(), time.Now())
 					if err != nil {
@@ -352,14 +352,20 @@ func (a *Agent) executor(ctx context.Context) {
 			}
 			err := a.admit(op)
 			var volumeFile *proto.VolumeFileResult
+			var backupArtifact []byte
 			if err == nil && op.VolumeFile != nil {
 				result, fileErr := a.Engine.ManageVolumeFile(*op.VolumeFile)
 				volumeFile, err = &result, fileErr
+			} else if err == nil && op.Action == proto.ActionExportBackup {
+				backupArtifact, err = a.Engine.ExportBackupArchive(op.BackupID)
+			} else if err == nil && op.Action == proto.ActionImportBackup {
+				err = a.Engine.ImportBackupArchive(op.BackupID, op.BackupArtifact)
 			} else if err == nil {
 				err = a.Engine.Apply(op)
 			}
 			r := proto.OpResult{OpID: op.ID, OK: err == nil}
 			r.VolumeFile = volumeFile
+			r.BackupArtifact = backupArtifact
 			if err != nil {
 				r.Error = err.Error()
 				log.Printf("op %s %s: %v", op.ID, op.Action, err)

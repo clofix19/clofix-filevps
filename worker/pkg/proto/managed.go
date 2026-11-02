@@ -27,8 +27,12 @@ type WebDeployment struct {
 
 var ManagedTemplates = []ManagedTemplate{
 	{"adminer", "Adminer", "Browser-based database management", 256},
-	{"uptime-kuma", "Uptime Kuma", "Website monitoring and status dashboards", 512},
 	{"jenkins", "Jenkins", "Automation server for CI/CD jobs and pipelines", 1024},
+	{"grafana", "Grafana", "Dashboards and visualization for metrics, logs and traces", 768},
+	{"prometheus", "Prometheus", "Metrics collection and time-series monitoring", 512},
+	{"loki", "Loki", "Log aggregation compatible with Grafana", 512},
+	{"jaeger", "Jaeger", "Distributed tracing UI and collector (all-in-one)", 512},
+	{"otel-collector", "OpenTelemetry Collector", "OTLP receiver and telemetry pipeline (contrib)", 256},
 	{"web-static", "Static website", "Upload a ZIP containing HTML, CSS, JavaScript and assets", 128},
 	{"web-php", "PHP website", "Upload a ZIP containing a PHP application", 256},
 	{"web-nodejs", "Node.js application", "Production ZIP with package.json and node_modules", 512},
@@ -50,10 +54,10 @@ type ManagedSpec struct {
 }
 
 func ValidateManaged(s ManagedSpec) error {
-	if !managedID.MatchString(s.ID) || s.RAMMB < 128 || s.RAMMB > 4096 || math.IsNaN(s.CPU) || math.IsInf(s.CPU, 0) || s.CPU < 0.25 || s.CPU > 4 || s.Port < 25000 || s.Port > 25099 || len(s.GatewayHash) != 64 {
+	if !managedID.MatchString(s.ID) || s.RAMMB < 128 || s.RAMMB > 4096 || math.IsNaN(s.CPU) || math.IsInf(s.CPU, 0) || s.CPU < 0.25 || s.CPU > 4 || !ValidHostManagedPort(s.Port) || len(s.GatewayHash) != 64 {
 		return fmt.Errorf("invalid managed app specification")
 	}
-	if s.Address != fmt.Sprintf("10.231.128.%d", s.Port-25000+2) {
+	if want, err := ManagedAddress(s.Port); err != nil || s.Address != want {
 		return fmt.Errorf("invalid managed app address")
 	}
 	if decoded, err := hex.DecodeString(s.GatewayHash); err != nil || len(decoded) != 32 {
@@ -91,4 +95,8 @@ type ManagedStatus struct {
 	Ready       bool      `json:"ready"`
 	Created     time.Time `json:"created"`
 	Logs        string    `json:"logs,omitempty"`
+	// AppUsername/AppPassword carry template-specific login details when available
+	// (for example Jenkins /data/secrets/initialAdminPassword). Never returned on list APIs.
+	AppUsername string `json:"app_username,omitempty"`
+	AppPassword string `json:"app_password,omitempty"`
 }

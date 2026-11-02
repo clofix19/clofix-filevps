@@ -8,8 +8,8 @@ import (
 func TestIAMPermissionCatalogCoversResources(t *testing.T) {
 	details := iamPermissionDetails()
 	for _, permission := range iamPermissionCatalog() {
-		if details[permission].Label == "" || details[permission].Description == "" {
-			t.Fatalf("missing permission description: %s", permission)
+		if details[permission].Label == "" || details[permission].Description == "" || details[permission].Category == "" {
+			t.Fatalf("missing permission description or category: %s", permission)
 		}
 	}
 	routes := map[string]string{
@@ -73,6 +73,25 @@ func TestIAMPermissionCatalogAPIAndPolicySave(t *testing.T) {
 	}
 	if len(catalog.Permissions) != len(iamPermissionSet) || len(catalog.Details) != len(iamPermissionSet) {
 		t.Fatal("catalog/description count mismatch")
+	}
+	builtIn := iamBuiltInPolicies()
+	if len(builtIn) < 10 {
+		t.Fatalf("expected expanded built-in policy templates, got %d", len(builtIn))
+	}
+	seen := map[string]bool{}
+	for _, policy := range builtIn {
+		name, _ := policy["name"].(string)
+		category, _ := policy["category"].(string)
+		perms, _ := policy["permissions"].([]string)
+		if name == "" || category == "" || len(perms) == 0 || seen[name] {
+			t.Fatalf("invalid built-in policy: %+v", policy)
+		}
+		seen[name] = true
+		for _, permission := range perms {
+			if !iamPermissionSet[permission] {
+				t.Fatalf("built-in %s references unknown permission %s", name, permission)
+			}
+		}
 	}
 	body := `{"name":"ApplicationsAndBackups","permissions":["applications:read","applications:manage","backups:read","backups:manage","iam:manage","read:*"]}`
 	if saved := do(h, "POST", "/api/iam/policies", body, tok); saved.Code != 200 {

@@ -320,7 +320,13 @@ func (m *Manager) start(a *record) error {
 	if err := os.WriteFile(dnsPath, []byte("nameserver 1.1.1.1\nnameserver 8.8.8.8\n"), 0644); err != nil {
 		return fail(err)
 	}
-	envValues := map[string]string{"HOME": "/data", "DATA_DIR": "/data", "UPTIME_KUMA_PORT": "8080", "UPTIME_KUMA_HOST": "0.0.0.0", "UPTIME_KUMA_DATA_DIR": "/data", "NODE_ENV": "production", "JENKINS_HOME": "/data", "CLOFIX_ENTRY": a.Spec.Deployment.Entry}
+	envValues := map[string]string{
+		"HOME": "/data", "DATA_DIR": "/data", "NODE_ENV": "production", "JENKINS_HOME": "/data",
+		"UPTIME_KUMA_PORT": "8080", "UPTIME_KUMA_HOST": "0.0.0.0", "UPTIME_KUMA_DATA_DIR": "/data",
+		"GF_SERVER_HTTP_PORT": "8080", "GF_SERVER_HTTP_ADDR": "0.0.0.0", "GF_PATHS_DATA": "/data",
+		"GF_PATHS_LOGS": "/data/log", "GF_PATHS_PLUGINS": "/data/plugins", "GF_PATHS_PROVISIONING": "/data/provisioning",
+		"CLOFIX_ENTRY": a.Spec.Deployment.Entry,
+	}
 	if a.Spec.Deployment.Runtime == "wordpress" {
 		envValues["CLOFIX_WORDPRESS_BUNDLED"] = "1"
 	}
@@ -490,6 +496,55 @@ func (m *Manager) Reconcile() {
 		}
 	}
 }
+// jenkinsInitialPassword reads Jenkins unlock secret from the mounted data volume,
+// mounting data.img if needed. Falls back to the last password printed in app.log.
+func (m *Manager) jenkinsInitialPassword(id string) string {
+	_ = m.ensureData(id)
+	path := filepath.Join(m.path(id), "data", "secrets", "initialAdminPassword")
+	if pw, err := os.ReadFile(path); err == nil {
+		if secret := strings.TrimSpace(string(pw)); secret != "" {
+			return secret
+		}
+	}
+	logBytes, err := os.ReadFile(filepath.Join(m.path(id), "app.log"))
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(string(logBytes), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if len(line) == 32 && isHexString(line) {
+			// Prefer the line that follows the setup-wizard banner.
+			prev := ""
+			if i > 0 {
+				prev = lines[i-1]
+			}
+			if i > 1 {
+				prev = lines[i-2] + prev
+			}
+			if strings.Contains(strings.ToLower(prev), "password") {
+				return line
+			}
+		}
+	}
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if len(line) == 32 && isHexString(line) {
+			return line
+		}
+	}
+	return ""
+}
+
+func isHexString(v string) bool {
+	for _, r := range v {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
+			return false
+		}
+	}
+	return v != ""
+}
+
 func (m *Manager) Statuses() []proto.ManagedStatus {
 	m.Lock()
 	defer m.Unlock()
@@ -516,6 +571,12 @@ func (m *Manager) Statuses() []proto.ManagedStatus {
 			b = b[len(b)-(64<<10):]
 		}
 		s.Logs = string(b)
+		if a.Spec.Template == "jenkins" {
+			if secret := m.jenkinsInitialPassword(a.Spec.ID); secret != "" {
+				s.AppUsername = "admin"
+				s.AppPassword = secret
+			}
+		}
 		out = append(out, s)
 	}
 	return out

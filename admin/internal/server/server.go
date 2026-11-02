@@ -73,6 +73,12 @@ type Server struct {
 	volumeFileMu    sync.Mutex
 	volumeFileWait  map[string]volumeFileWaiter
 	backups         map[string]proto.BackupInfo
+	certificates    *certificateStore
+	platform        *platformStore
+	images          *imageCatalog
+	s3Pool          *s3PoolSettings
+	mfaMu           sync.Mutex
+	mfaPending      map[string]mfaChallenge
 }
 
 type volumeFileWaiter struct {
@@ -85,7 +91,7 @@ func New(s store.Store, ca *pki.CA, adminToken, uiDir string) *Server {
 	if dataDir == "" {
 		dataDir = "/var/lib/clofix-controller"
 	}
-	server := &Server{license: loadControllerLicense(dataDir), monitoring: loadMonitoring(dataDir), balancers: loadBalancers(dataDir), applications: loadServerless(dataDir), billing: loadBilling(dataDir), dns: loadDNS(dataDir), vpcs: loadVPCs(dataDir), sshKeys: loadSSHKeys(dataDir), logs: loadLogs(dataDir), firewall: loadFirewall(dataDir), efs: loadEFS(dataDir), Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), S3MasterAddress: os.Getenv("CLOFIX_S3_MASTER_ADDRESS"), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}, backups: map[string]proto.BackupInfo{}}
+	server := &Server{license: loadControllerLicense(dataDir), monitoring: loadMonitoring(dataDir), balancers: loadBalancers(dataDir), applications: loadServerless(dataDir), billing: loadBilling(dataDir), dns: loadDNS(dataDir), vpcs: loadVPCs(dataDir), sshKeys: loadSSHKeys(dataDir), logs: loadLogs(dataDir), firewall: loadFirewall(dataDir), efs: loadEFS(dataDir), Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), S3MasterAddress: os.Getenv("CLOFIX_S3_MASTER_ADDRESS"), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}, backups: map[string]proto.BackupInfo{}, certificates: loadCertificates(dataDir), platform: loadPlatform(dataDir), images: loadImageCatalog(dataDir), s3Pool: loadS3PoolSettings(dataDir)}
 	server.initDatabases(dataDir)
 	server.initKubernetes(dataDir)
 	return server
@@ -114,6 +120,10 @@ func fail(w http.ResponseWriter, code int, msg string) {
 func (s *Server) AdminHandler() http.Handler {
 	mux := http.NewServeMux()
 	s.licenseRoutes(mux)
+	s.certificateRoutes(mux)
+	s.platformRoutes(mux)
+	s.imageCatalogRoutes(mux)
+	s.s3PoolRoutes(mux)
 	s.monitoringRoutes(mux)
 	s.logRoutes(mux)
 	s.firewallRoutes(mux)
@@ -134,8 +144,14 @@ func (s *Server) AdminHandler() http.Handler {
 	})
 	mux.HandleFunc("POST /api/auth/register", s.registerAuth)
 	mux.HandleFunc("POST /api/auth/login", s.loginAuth)
+	mux.HandleFunc("POST /api/auth/login/mfa", s.loginMFAAuth)
 	mux.HandleFunc("POST /api/auth/logout", s.auth(s.logoutAuth))
 	mux.HandleFunc("GET /api/auth/me", s.auth(s.meAuth))
+	mux.HandleFunc("GET /api/profile", s.auth(s.getProfile))
+	mux.HandleFunc("PUT /api/profile", s.auth(s.updateProfile))
+	mux.HandleFunc("POST /api/profile/mfa/setup", s.auth(s.setupProfileMFA))
+	mux.HandleFunc("POST /api/profile/mfa/enable", s.auth(s.enableProfileMFA))
+	mux.HandleFunc("POST /api/profile/mfa/disable", s.auth(s.disableProfileMFA))
 	mux.HandleFunc("GET /api/accounts", s.auth(s.listAccounts))
 	mux.HandleFunc("POST /api/accounts", s.auth(s.createAccountUser))
 	mux.HandleFunc("POST /api/enrollment-tokens", s.auth(s.createToken))
@@ -162,6 +178,7 @@ func (s *Server) AdminHandler() http.Handler {
 	mux.HandleFunc("GET /api/instances", s.auth(s.listInstances))
 	mux.HandleFunc("GET /api/backups", s.auth(s.listBackups))
 	mux.HandleFunc("POST /api/instances/{id}/backups", s.auth(s.createBackup))
+	mux.HandleFunc("POST /api/backups/{id}/migrate", s.auth(s.migrateBackup))
 	mux.HandleFunc("DELETE /api/backups/{id}", s.auth(s.deleteBackup))
 	mux.HandleFunc("GET /api/volumes", s.auth(s.listVolumes))
 	mux.HandleFunc("POST /api/volumes", s.auth(s.createVolume))
@@ -304,12 +321,17 @@ func (s *Server) uiHandler() http.Handler {
 			return
 		}
 		if cleanURL == "/login" || cleanURL == "/register" {
+			setAuthSecurityHeaders(w)
+			if s.authPageRateLimited(r) {
+				w.Header().Set("Retry-After", "60")
+				http.Error(w, "too many requests", http.StatusTooManyRequests)
+				return
+			}
 			if _, ok := s.authenticate(r); ok {
 				http.Redirect(w, r, "/", http.StatusSeeOther)
 				return
 			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Header().Set("Cache-Control", "no-store")
 			http.ServeFile(w, r, filepath.Join(s.UIDir, "pages", strings.TrimPrefix(cleanURL, "/")+".html"))
 			return
 		}
@@ -380,6 +402,8 @@ func uiPage(route string) (page, title, instanceID string, ok bool) {
 		return "vpc", "VPC", "", true
 	case "/iam":
 		return "iam", "Identity and Access Management", "", true
+	case "/profile":
+		return "profile", "My Profile", "", true
 	case "/users":
 		return "users", "Users", "", true
 	case "/logs":
@@ -584,7 +608,7 @@ func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		path := r.URL.Path
-		if path == "/api/auth/me" || path == "/api/iam/me" || path == "/api/auth/logout" {
+		if path == "/api/auth/me" || path == "/api/iam/me" || path == "/api/auth/logout" || strings.HasPrefix(path, "/api/profile") {
 			r = r.WithContext(context.WithValue(r.Context(), iamPrincipalContextKey{}, p))
 			h(w, r)
 			return
@@ -2084,10 +2108,10 @@ type createReq struct {
 }
 
 const (
-	sshPortBase         = 22000
-	sshPortCount        = 100
-	customHostPortBase  = 24000
-	customHostPortCount = 100
+	sshPortBase         = proto.HostSSHBase
+	sshPortCount        = proto.HostSSHCount
+	customHostPortBase  = proto.HostCustomBase
+	customHostPortCount = proto.HostCustomCount
 )
 
 func (s *Server) addPortMapping(w http.ResponseWriter, r *http.Request) {
@@ -2245,8 +2269,11 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 			fail(w, http.StatusNotFound, "ready backup not found")
 			return
 		}
-		if in.WorkerID == "" || in.WorkerID != backup.WorkerID {
-			fail(w, http.StatusConflict, "backup restore must run on its source worker; cross-worker restore is not available")
+		if in.WorkerID == "" {
+			in.WorkerID = backup.WorkerID
+		}
+		if in.WorkerID != backup.WorkerID {
+			fail(w, http.StatusConflict, "backup is still on worker "+backup.WorkerID+"; POST /api/backups/"+backup.ID+"/migrate with target worker_id first")
 			return
 		}
 		sp.BackupID = backup.ID

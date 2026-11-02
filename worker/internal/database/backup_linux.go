@@ -21,9 +21,6 @@ import (
 )
 
 func (m *Manager) backupOperation(ctx context.Context, r record, op db.Operation) (json.RawMessage, error) {
-	if r.Spec.Engine == "redis" {
-		return nil, fmt.Errorf("Redis backup and restore are not implemented")
-	}
 	if op.Action == "restore" {
 		return m.restore(ctx, r, op)
 	}
@@ -137,6 +134,12 @@ func (m *Manager) backupOperation(ctx context.Context, r record, op db.Operation
 				}
 			}
 		}
+	case "redis":
+		format = "rdb"
+		if b.Scope == "schema" {
+			return nil, fmt.Errorf("Redis has no schema-only backup; use full")
+		}
+		args = append(args, container(r.Spec.ID), "sh", "-c", `REDISCLI_AUTH=$(cat /run/clofix/admin-password) redis-cli -h 127.0.0.1 -p 6379 --rdb /tmp/clofix-dump.rdb && cat /tmp/clofix-dump.rdb && rm -f /tmp/clofix-dump.rdb`)
 	}
 	pipeReader, pipeWriter := io.Pipe()
 	command := exec.CommandContext(ctx, "docker", args...)
@@ -229,6 +232,9 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 func (b *limitedBuffer) String() string { return string(b.buf) }
 
 func (m *Manager) restore(ctx context.Context, r record, op db.Operation) (json.RawMessage, error) {
+	if r.Spec.Engine == "redis" {
+		return m.restoreRedis(ctx, r, op)
+	}
 	restore := op.Restore
 	if restore == nil || !restore.ConfirmOverwrite || !db.ID.MatchString(restore.BackupID) || len(restore.Key) != 32 || restore.LimitBytes < 1 {
 		return nil, fmt.Errorf("confirmed restore and valid backup reference required")
@@ -485,6 +491,48 @@ func (m *Manager) restore(ctx context.Context, r record, op db.Operation) (json.
 	}
 	safeToResume = true
 	raw, _ := json.Marshal(map[string]any{"database": op.Database, "staging_verified": true})
+	return raw, nil
+}
+
+func (m *Manager) restoreRedis(ctx context.Context, r record, op db.Operation) (json.RawMessage, error) {
+	restore := op.Restore
+	if restore == nil || !restore.ConfirmOverwrite || !db.ID.MatchString(restore.BackupID) || len(restore.Key) != 32 || restore.LimitBytes < 1 {
+		return nil, fmt.Errorf("confirmed restore and valid backup reference required")
+	}
+	if restore.Format != "" && restore.Format != "rdb" {
+		return nil, fmt.Errorf("Redis restore requires rdb format")
+	}
+	file := filepath.Join(m.path(r.Spec.ID), "backups", restore.BackupID+".enc")
+	source, e := os.Open(file)
+	if e != nil {
+		return nil, e
+	}
+	defer source.Close()
+	plain := filepath.Join(os.TempDir(), "clofix-redis-"+restore.BackupID+".rdb")
+	out, e := os.Create(plain)
+	if e != nil {
+		return nil, e
+	}
+	_, e = db.Decrypt(out, source, restore.Key, restore.BackupID, restore.LimitBytes)
+	out.Close()
+	if e != nil {
+		os.Remove(plain)
+		return nil, e
+	}
+	defer os.Remove(plain)
+	m.pauseConnections(r.Spec.ID, true)
+	defer m.pauseConnections(r.Spec.ID, false)
+	if _, e = m.redis(ctx, r, "SHUTDOWN", "NOSAVE"); e != nil {
+		// continue; container may already be restarting
+	}
+	cmd := exec.CommandContext(ctx, "docker", "cp", plain, container(r.Spec.ID)+":/data/dump.rdb")
+	if outb, err := cmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("redis dump replace failed: %s: %w", string(outb), err)
+	}
+	if err := exec.CommandContext(ctx, "docker", "start", container(r.Spec.ID)).Run(); err != nil {
+		return nil, fmt.Errorf("could not restart Redis after restore: %w", err)
+	}
+	raw, _ := json.Marshal(map[string]any{"database": op.Database, "format": "rdb", "restored": true})
 	return raw, nil
 }
 

@@ -84,6 +84,9 @@ func (s *Server) authenticate(r *http.Request) (iamPrincipal, bool) {
 	if err != nil || user.Status != "active" {
 		return iamPrincipal{}, false
 	}
+	if loginIPAllowed(user, clientIP(r)) != nil {
+		return iamPrincipal{}, false
+	}
 	return s.principalFromUser(user), true
 }
 
@@ -117,6 +120,8 @@ func permissionResource(path string) string {
 		return "dns"
 	case strings.HasPrefix(path, "/api/vpcs"):
 		return "vpc"
+	case strings.HasPrefix(path, "/api/profile"):
+		return "iam"
 	case strings.HasPrefix(path, "/api/iam"), strings.HasPrefix(path, "/api/auth/me"), strings.HasPrefix(path, "/api/accounts"):
 		if strings.HasPrefix(path, "/api/accounts") {
 			return "accounts"
@@ -263,11 +268,44 @@ func (s *Server) listIAMPolicies(w http.ResponseWriter, r *http.Request) {
 		}
 		v = filtered
 	}
-	builtIn := []map[string]any{
-		{"name": "CloFixFullAdministrator", "permissions": []string{"*"}},
-		{"name": "CloFixReadOnly", "permissions": []string{"read:*"}},
+	writeJSON(w, 200, map[string]any{"policies": v, "permissions": iamPermissionCatalog(), "permission_details": iamPermissionDetails(), "built_in": iamBuiltInPolicies()})
+}
+
+// iamBuiltInPolicies are read-only templates shown on the Policies panel.
+// They are not stored; operators copy scopes into a custom policy.
+func iamBuiltInPolicies() []map[string]any {
+	return []map[string]any{
+		{"name": "CloFixFullAdministrator", "description": "All API resource scopes", "category": "Global", "permissions": []string{"*"}},
+		{"name": "CloFixReadOnly", "description": "View every resource without changes", "category": "Global", "permissions": []string{"read:*"}},
+		{"name": "CloFixComputeOperator", "description": "FileVPS, workers, Library apps, Jobs & Functions, CKS and VPS backups", "category": "Compute", "permissions": []string{
+			"instances:manage", "workers:manage", "managed-apps:manage", "applications:manage", "services:manage", "kubernetes:manage", "backups:manage",
+		}},
+		{"name": "CloFixVPSOperator", "description": "Day-to-day FileVPS, services, security controls, volumes and backups", "category": "Compute", "permissions": []string{
+			"instances:manage", "services:manage", "security:manage", "volumes:manage", "backups:manage",
+		}},
+		{"name": "CloFixCKSOperator", "description": "CloFix Kubernetes Service clusters and workloads", "category": "Compute", "permissions": []string{"kubernetes:manage"}},
+		{"name": "CloFixLibraryOperator", "description": "Managed Quick Apps and VPS software catalog actions", "category": "Compute", "permissions": []string{"managed-apps:manage", "services:manage"}},
+		{"name": "CloFixJobsOperator", "description": "Jobs & Functions applications and runs", "category": "Compute", "permissions": []string{"applications:manage"}},
+		{"name": "CloFixStorageOperator", "description": "Volumes, S3/EFS, managed databases and backups", "category": "Storage", "permissions": []string{
+			"volumes:manage", "storage:manage", "databases:manage", "backups:manage",
+		}},
+		{"name": "CloFixDatabaseAdmin", "description": "Managed database projects, users, backups and schedules", "category": "Storage", "permissions": []string{"databases:manage"}},
+		{"name": "CloFixObjectStorageAdmin", "description": "S3 connections, objects and EFS shares", "category": "Storage", "permissions": []string{"storage:manage"}},
+		{"name": "CloFixNetworkOperator", "description": "Load balancers, DNS, VPC and health checks", "category": "Networking", "permissions": []string{
+			"load-balancers:manage", "dns:manage", "vpc:manage", "health-checks:manage",
+		}},
+		{"name": "CloFixLoadBalancerAdmin", "description": "NLB/ALB listeners, IP pool and autoscaling backends", "category": "Networking", "permissions": []string{"load-balancers:manage"}},
+		{"name": "CloFixDNSAdmin", "description": "Controller DNS zone and records", "category": "Networking", "permissions": []string{"dns:manage"}},
+		{"name": "CloFixSecurityOperator", "description": "Protection Mode, WAF, ports, host firewall and log service", "category": "Security", "permissions": []string{"security:manage", "logs:manage"}},
+		{"name": "CloFixSecurityAuditor", "description": "Read security settings, firewall, IAM and logs", "category": "Security", "permissions": []string{"security:read", "iam:read", "logs:read", "accounts:read"}},
+		{"name": "CloFixIAMAdmin", "description": "IAM users, groups, policies and access keys (Full Administrator role still required)", "category": "Security", "permissions": []string{"iam:manage"}},
+		{"name": "CloFixAccountsAdmin", "description": "Partner and client account records", "category": "Security", "permissions": []string{"accounts:manage"}},
+		{"name": "CloFixBillingOperator", "description": "Invoices, wallets, payments and pricing catalog", "category": "Platform", "permissions": []string{"billing:manage", "pricing:manage"}},
+		{"name": "CloFixBillingViewer", "description": "View billing and pricing without changes", "category": "Platform", "permissions": []string{"billing:read", "pricing:read"}},
+		{"name": "CloFixLicenseAdmin", "description": "License server URL, key and validation", "category": "Platform", "permissions": []string{"license:manage"}},
+		{"name": "CloFixWorkerAdmin", "description": "Worker inventory, enrollment tokens, drain and revoke", "category": "Platform", "permissions": []string{"workers:manage"}},
+		{"name": "CloFixPlatformViewer", "description": "Read platform, license and worker inventory", "category": "Platform", "permissions": []string{"platform:read", "license:read", "workers:read"}},
 	}
-	writeJSON(w, 200, map[string]any{"policies": v, "permissions": iamPermissionCatalog(), "permission_details": iamPermissionDetails(), "built_in": builtIn})
 }
 func decodeIAM(w http.ResponseWriter, r *http.Request, dst any) bool {
 	if e := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(dst); e != nil {

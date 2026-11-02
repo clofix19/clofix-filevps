@@ -58,7 +58,7 @@ func TestManagedNativeLifecycle(t *testing.T) {
 	}
 	password := "managed-smoke-password"
 	sum := sha256.Sum256([]byte(password))
-	spec := proto.ManagedSpec{ID: fmt.Sprintf("ma-%016x", uint64(time.Now().UnixNano())), Template: "adminer", RAMMB: 128, CPU: 0.5, Address: "10.231.128.101", Port: 25099, GatewayHash: hex.EncodeToString(sum[:])}
+	spec := proto.ManagedSpec{ID: fmt.Sprintf("ma-%016x", uint64(time.Now().UnixNano())), Template: "adminer", RAMMB: 128, CPU: 0.5, Address: "10.231.128.101", Port: proto.HostManagedBase + 99, GatewayHash: hex.EncodeToString(sum[:])}
 	op := func(action string) error {
 		return manager.Apply(proto.Operation{ID: "test/" + action, Action: "managed-app", Managed: &spec, ServiceAction: action})
 	}
@@ -77,7 +77,7 @@ func TestManagedNativeLifecycle(t *testing.T) {
 	if err = op("deploy"); err != nil {
 		t.Fatal("deploy:", err)
 	}
-	endpoint := "http://127.0.0.1:25099/"
+	endpoint := fmt.Sprintf("http://127.0.0.1:%d/", proto.HostManagedBase+99)
 	client := &http.Client{Timeout: 2 * time.Second}
 	request := func(path string, auth bool) (*http.Response, error) {
 		req, _ := http.NewRequest("GET", endpoint+path, nil)

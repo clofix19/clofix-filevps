@@ -273,18 +273,20 @@ func (p *Postgres) Audit(actor, action, target, result string) error {
 
 func scanIAMUser(s scanner) (IAMUser, error) {
 	var u IAMUser
-	var groups, policies []byte
-	var email, account sql.NullString
-	err := s.Scan(&u.ID, &u.Username, &u.Role, &u.Status, &groups, &policies, &u.Created, &email, &u.PasswordHash, &u.Kind, &account)
+	var groups, policies, allowIPs, denyIPs []byte
+	var email, account, display sql.NullString
+	err := s.Scan(&u.ID, &u.Username, &u.Role, &u.Status, &groups, &policies, &u.Created, &email, &u.PasswordHash, &u.Kind, &account, &display, &u.MFAEnabled, &u.MFASecret, &allowIPs, &denyIPs)
 	if err == nil {
 		_ = json.Unmarshal(groups, &u.GroupIDs)
 		_ = json.Unmarshal(policies, &u.PolicyIDs)
-		u.Email, u.AccountID = email.String, account.String
+		_ = json.Unmarshal(allowIPs, &u.AllowIPs)
+		_ = json.Unmarshal(denyIPs, &u.DenyIPs)
+		u.Email, u.AccountID, u.DisplayName = email.String, account.String, display.String
 	}
 	return u, err
 }
 
-const iamUserCols = `id,username,role,status,group_ids,policy_ids,created,email,password_hash,kind,account_id`
+const iamUserCols = `id,username,role,status,group_ids,policy_ids,created,email,password_hash,kind,account_id,display_name,mfa_enabled,mfa_secret,allow_ips,deny_ips`
 
 func (p *Postgres) ListIAMUsers() ([]IAMUser, error) {
 	rows, err := p.db.Query(`SELECT ` + iamUserCols + ` FROM cf_iam_users ORDER BY username`)
@@ -319,7 +321,9 @@ func (p *Postgres) GetIAMUserByEmail(email string) (IAMUser, error) {
 func (p *Postgres) SaveIAMUser(v IAMUser) error {
 	g, _ := json.Marshal(v.GroupIDs)
 	ps, _ := json.Marshal(v.PolicyIDs)
-	_, err := p.db.Exec(`INSERT INTO cf_iam_users(id,username,role,status,group_ids,policy_ids,created,email,password_hash,kind,account_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT(id) DO UPDATE SET username=$2,role=$3,status=$4,group_ids=$5,policy_ids=$6,email=$8,password_hash=$9,kind=$10,account_id=$11`, v.ID, v.Username, v.Role, v.Status, g, ps, v.Created, nullString(v.Email), v.PasswordHash, v.Kind, nullString(v.AccountID))
+	allow, _ := json.Marshal(v.AllowIPs)
+	deny, _ := json.Marshal(v.DenyIPs)
+	_, err := p.db.Exec(`INSERT INTO cf_iam_users(id,username,role,status,group_ids,policy_ids,created,email,password_hash,kind,account_id,display_name,mfa_enabled,mfa_secret,allow_ips,deny_ips) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) ON CONFLICT(id) DO UPDATE SET username=$2,role=$3,status=$4,group_ids=$5,policy_ids=$6,email=$8,password_hash=$9,kind=$10,account_id=$11,display_name=$12,mfa_enabled=$13,mfa_secret=$14,allow_ips=$15,deny_ips=$16`, v.ID, v.Username, v.Role, v.Status, g, ps, v.Created, nullString(v.Email), v.PasswordHash, v.Kind, nullString(v.AccountID), v.DisplayName, v.MFAEnabled, v.MFASecret, allow, deny)
 	return err
 }
 func (p *Postgres) DeleteIAMUser(id string) error {

@@ -114,7 +114,10 @@ func New(root string) (*Manager, error) {
 	}
 	for id, r := range m.records {
 		if id != r.Spec.ID || r.Spec.Validate() != nil {
-			return nil, fmt.Errorf("invalid persisted database project")
+			// Lab/upgrade safety: drop stale records (e.g. pre-47000 listener ports)
+			// instead of blocking worker enrollment and CKS advertising.
+			delete(m.records, id)
+			continue
 		}
 		if _, err := m.secret(r); err != nil {
 			return nil, fmt.Errorf("database credentials cannot be decrypted; restore the original worker key")

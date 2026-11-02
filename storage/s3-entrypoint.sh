@@ -11,6 +11,8 @@ esac
 mkdir -p /etc/seaweedfs
 printf '{"identities":[{"name":"clofix","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}\n' \
 	"$S3_ACCESS_KEY" "$S3_SECRET_KEY" > /etc/seaweedfs/s3.json
-exec weed server -dir=/data -master.defaultReplication=000 -volume=false \
+# 000 = single copy (lab). Production: set S3_DEFAULT_REPLICATION=001 (2 copies) when ≥2 volume servers exist.
+: "${S3_DEFAULT_REPLICATION:=000}"
+exec weed server -dir=/data -master.defaultReplication="$S3_DEFAULT_REPLICATION" -volume=false \
 	-master.port=9333 -master.port.grpc=19333 -filer -s3 -s3.port=8333 \
 	-s3.config=/etc/seaweedfs/s3.json

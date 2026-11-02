@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/smtp"
 	"net/url"
 	"os"
 	"os/exec"
@@ -136,7 +137,7 @@ func validMonitorHTTP(raw string) bool {
 func (s *Server) saveAlertChannel(w http.ResponseWriter, r *http.Request) {
 	var c alertChannel
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&c) != nil || strings.TrimSpace(c.Name) == "" || len(c.Name) > 80 || !validAlertChannelType(c.Type) {
-		fail(w, 400, "name and channel type (slack, google-chat, discord, teams or webhook) required")
+		fail(w, 400, "name and channel type (slack, google-chat, discord, teams, webhook, telegram or email) required")
 		return
 	}
 	d := s.monitoring
@@ -277,7 +278,7 @@ func sendHealthAlert(ctx context.Context, c alertChannel, event healthEvent) str
 
 func validAlertChannelType(kind string) bool {
 	switch kind {
-	case "slack", "google-chat", "discord", "teams", "webhook":
+	case "slack", "google-chat", "discord", "teams", "webhook", "telegram", "email":
 		return true
 	}
 	return false
@@ -320,6 +321,19 @@ func validateAlertWebhook(kind, raw string) error {
 		if !ok || !(host == "outlook.office.com" || strings.HasSuffix(host, ".webhook.office.com") || strings.HasSuffix(host, ".webhook.office365.com")) || !strings.Contains(u.Path, "/webhook") {
 			return errString("use an official Microsoft Teams incoming webhook URL")
 		}
+	case "telegram":
+		u, ok := officialHTTPSWebhook(raw)
+		if !ok || u.Hostname() != "api.telegram.org" || !strings.Contains(u.Path, "/sendMessage") || u.Query().Get("chat_id") == "" {
+			return errString("use https://api.telegram.org/bot<token>/sendMessage?chat_id=<id> as the webhook URL")
+		}
+	case "email":
+		if strings.HasPrefix(raw, "mailto:") && strings.Contains(raw, "@") {
+			return nil
+		}
+		if _, ok := officialHTTPSWebhook(raw); ok {
+			return nil
+		}
+		return errString("use mailto:ops@example.com or an HTTPS email-bridge webhook URL")
 	default:
 		return errString("unsupported channel type")
 	}
@@ -340,6 +354,12 @@ func alertWebhookPayload(kind, text string, extra map[string]any) map[string]any
 }
 
 func sendWebhookAlert(ctx context.Context, c alertChannel, text string, extra map[string]any) string {
+	if c.Type == "email" && strings.HasPrefix(c.Webhook, "mailto:") {
+		if os.Getenv("CLOFIX_SMTP_HOST") == "" {
+			return "email channel saved; set CLOFIX_SMTP_HOST (and optional CLOFIX_SMTP_USER/CLOFIX_SMTP_PASSWORD) to deliver mail"
+		}
+		return sendSMTPAlert(c.Webhook, text)
+	}
 	raw, _ := json.Marshal(alertWebhookPayload(c.Type, text, extra))
 	req, e := http.NewRequestWithContext(ctx, "POST", c.Webhook, bytes.NewReader(raw))
 	if e != nil {
@@ -355,6 +375,35 @@ func sendWebhookAlert(ctx context.Context, c alertChannel, text string, extra ma
 	io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Sprintf("webhook returned HTTP %d", response.StatusCode)
+	}
+	return "delivered"
+}
+
+func sendSMTPAlert(mailtoURL, text string) string {
+	addr := strings.TrimPrefix(mailtoURL, "mailto:")
+	if i := strings.IndexAny(addr, "?&"); i >= 0 {
+		addr = addr[:i]
+	}
+	host := os.Getenv("CLOFIX_SMTP_HOST")
+	if !strings.Contains(host, ":") {
+		host += ":587"
+	}
+	from := os.Getenv("CLOFIX_SMTP_FROM")
+	if from == "" {
+		from = "alerts@clofix.local"
+	}
+	msg := []byte("To: " + addr + "\r\nFrom: " + from + "\r\nSubject: CloFix health alert\r\n\r\n" + text + "\r\n")
+	authUser := os.Getenv("CLOFIX_SMTP_USER")
+	password := os.Getenv("CLOFIX_SMTP_PASSWORD")
+	var err error
+	if authUser != "" {
+		auth := smtp.PlainAuth("", authUser, password, strings.Split(host, ":")[0])
+		err = smtp.SendMail(host, auth, from, []string{addr}, msg)
+	} else {
+		err = smtp.SendMail(host, nil, from, []string{addr}, msg)
+	}
+	if err != nil {
+		return "SMTP delivery failed: " + err.Error()
 	}
 	return "delivered"
 }

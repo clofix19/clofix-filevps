@@ -81,11 +81,16 @@ type IAMUser struct {
 	Kind         string    `json:"kind,omitempty"` // admin|partner|root|iam
 	Email        string    `json:"email,omitempty"`
 	Username     string    `json:"username"`
+	DisplayName  string    `json:"display_name,omitempty"`
 	PasswordHash string    `json:"-"`
 	Role         string    `json:"role"`   // IAM User|Read Only|Full Administrator
 	Status       string    `json:"status"` // active|inactive
 	GroupIDs     []string  `json:"group_ids"`
 	PolicyIDs    []string  `json:"policy_ids"`
+	MFAEnabled   bool      `json:"mfa_enabled,omitempty"`
+	MFASecret    string    `json:"-"` // Google Authenticator TOTP secret (base32)
+	AllowIPs     []string  `json:"allow_ips,omitempty"`
+	DenyIPs      []string  `json:"deny_ips,omitempty"`
 	Created      time.Time `json:"created"`
 }
 

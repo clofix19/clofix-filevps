@@ -349,7 +349,7 @@ func (s *Server) createDatabaseProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.Spec.ID = "dbp-" + randHex(16)
-	in.Spec.Port = 26000
+	in.Spec.Port = proto.HostDatabaseBase
 	if in.VPCID != "" {
 		in.Spec.VPCID = in.VPCID
 	}
@@ -412,10 +412,10 @@ func (s *Server) createDatabaseProject(w http.ResponseWriter, r *http.Request) {
 			usedPorts[p.Spec.Port] = true
 		}
 	}
-	for usedPorts[in.Spec.Port] && in.Spec.Port <= 26099 {
+	for usedPorts[in.Spec.Port] && in.Spec.Port <= proto.HostDatabaseEnd() {
 		in.Spec.Port++
 	}
-	if in.Spec.Port > 26099 {
+	if in.Spec.Port > proto.HostDatabaseEnd() {
 		fail(w, 409, "database listener ports exhausted")
 		return
 	}

@@ -23,7 +23,7 @@ func TestManagedDeployCredentialsAndFencedResults(t *testing.T) {
 	}
 	var app managedApp
 	_ = json.Unmarshal(response.Body.Bytes(), &app)
-	if app.ID == "" || app.URL != "http://localhost:25000/" || app.Spec.GatewayHash != "" || len(app.Credential) != 0 {
+	if app.ID == "" || app.URL != "http://localhost:42000/" || app.Spec.GatewayHash != "" || len(app.Credential) != 0 {
 		t.Fatalf("invalid deployment response: %+v", app)
 	}
 	credentials := do(h, "POST", "/api/managed-apps/"+app.ID+"/credentials", `{}`, tok)
@@ -84,7 +84,7 @@ func TestManagedNoUnpreparedDeployment(t *testing.T) {
 }
 func TestManagedPublicURLRejectsInjectedHosts(t *testing.T) {
 	for _, host := range []string{"https://evil.test", "evil.test/path", "user@evil.test", "javascript:alert(1)", "evil.test\nHeader:x"} {
-		if managedAppURL(host, 25000) != "" {
+		if managedAppURL(host, proto.HostManagedBase) != "" {
 			t.Fatal("invalid public host accepted", host)
 		}
 	}
@@ -94,6 +94,32 @@ func TestJavaApplicationServersInLibrary(t *testing.T) {
 		if !serviceCatalog[key] {
 			t.Fatal("Java application server missing from catalog", key)
 		}
+	}
+}
+func TestManagedDeployOnKubernetesFakeWhenFull(t *testing.T) {
+	t.Setenv("CLOFIX_DATA_DIR", t.TempDir())
+	s, m := newSrv(t)
+	_ = m.UpsertWorker(store.Worker{ID: "managed-worker", Status: "active", LastHeartbeat: time.Now(), Capacity: scheduler.Capacity{
+		ManagedTemplates: []string{"jenkins"}, KubernetesFake: true,
+		RAMTotal: 8 << 30, MemAvailable: 7 << 30, RAMCommitted: 8 << 30,
+		CPUCores: 2, CPUAllocated: 2, DiskTotal: 20 << 30, DiskFree: 10 << 30,
+	}})
+	response := do(s.AdminHandler(), "POST", "/api/managed-apps", `{"name":"Jenkins","template":"jenkins"}`, tok)
+	if response.Code != 202 {
+		t.Fatalf("lab fake deploy %d: %s", response.Code, response.Body.String())
+	}
+}
+func TestManagedDeployRejectedWhenFullWithoutFake(t *testing.T) {
+	t.Setenv("CLOFIX_DATA_DIR", t.TempDir())
+	s, m := newSrv(t)
+	_ = m.UpsertWorker(store.Worker{ID: "managed-worker", Status: "active", LastHeartbeat: time.Now(), Capacity: scheduler.Capacity{
+		ManagedTemplates: []string{"jenkins"},
+		RAMTotal: 8 << 30, MemAvailable: 7 << 30, RAMCommitted: 8 << 30,
+		CPUCores: 2, CPUAllocated: 2, DiskTotal: 20 << 30, DiskFree: 10 << 30,
+	}})
+	response := do(s.AdminHandler(), "POST", "/api/managed-apps", `{"name":"Jenkins","template":"jenkins"}`, tok)
+	if response.Code != 409 {
+		t.Fatalf("full worker without lab fake accepted: %d %s", response.Code, response.Body.String())
 	}
 }
 func TestJenkinsManagedTemplate(t *testing.T) {
@@ -106,5 +132,45 @@ func TestJenkinsManagedTemplate(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("Jenkins Quick App template missing")
+	}
+}
+func TestObservabilityManagedTemplates(t *testing.T) {
+	want := map[string]int64{"grafana": 768, "prometheus": 512, "loki": 512, "jaeger": 512, "otel-collector": 256}
+	for _, template := range proto.ManagedTemplates {
+		if min, ok := want[template.ID]; ok {
+			if template.RAMMB < min {
+				t.Fatalf("%s RAM too low: %d", template.ID, template.RAMMB)
+			}
+			delete(want, template.ID)
+		}
+	}
+	for id := range want {
+		t.Fatalf("missing Quick App template %s", id)
+	}
+}
+func TestJenkinsInitialAdminPasswordInLogin(t *testing.T) {
+	t.Setenv("CLOFIX_DATA_DIR", t.TempDir())
+	s, m := newSrv(t)
+	h := s.AdminHandler()
+	_ = m.UpsertWorker(store.Worker{ID: "managed-worker", Status: "active", LastHeartbeat: time.Now(), Capacity: scheduler.Capacity{ManagedTemplates: []string{"jenkins"}, KubernetesFake: true, RAMTotal: 8 << 30, MemAvailable: 7 << 30, CPUCores: 8, DiskTotal: 20 << 30, DiskFree: 10 << 30}})
+	response := do(h, "POST", "/api/managed-apps", `{"name":"Jenkins","template":"jenkins"}`, tok)
+	if response.Code != 202 {
+		t.Fatalf("deploy %d: %s", response.Code, response.Body.String())
+	}
+	var app managedApp
+	_ = json.Unmarshal(response.Body.Bytes(), &app)
+	s.recordManagedApps("managed-worker", []proto.ManagedStatus{{ID: app.ID, State: "RUNNING", Desired: "running", Ready: true, AppUsername: "admin", AppPassword: "jenkins-unlock-secret"}})
+	credentials := do(h, "POST", "/api/managed-apps/"+app.ID+"/credentials", `{}`, tok)
+	if credentials.Code != 200 {
+		t.Fatal(credentials.Body.String())
+	}
+	var login map[string]string
+	_ = json.Unmarshal(credentials.Body.Bytes(), &login)
+	if login["username"] != "client" || login["password"] == "" || login["app_username"] != "admin" || login["app_password"] != "jenkins-unlock-secret" {
+		t.Fatalf("jenkins unlock missing from login: %+v", login)
+	}
+	listed := do(h, "GET", "/api/managed-apps", "", tok)
+	if listed.Code != 200 || strings.Contains(listed.Body.String(), "jenkins-unlock-secret") {
+		t.Fatal("app password leaked on list")
 	}
 }
