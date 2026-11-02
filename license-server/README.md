@@ -59,11 +59,14 @@ Optional limits (`-1` unlimited, `0` not included, omitted unspecified):
 | `max_volumes` | Persistent volumes |
 | `max_storage_gb` | Controller allocation: VPS disk, volumes, backups (not a guest or S3 hard cap) |
 | `max_s3_connections` | Object-storage connections |
-| `max_backups` | Retained VPS + database backups |
+| `max_backups` | Retained VPS, database and CKS etcd backups |
 | `max_applications` | Jobs & Functions |
 | `max_managed_apps` | Library / ZIP managed apps (Uptime Kuma and Jenkins stay unready until the worker template builder publishes them) |
 | `max_dns_zones` | Controller DNS Service zones (not a public authoritative nameserver) |
 | `max_dns_records` | DNS Service records (auto + manual, including SRV ports) |
+| `max_kubernetes_clusters` | CKS clusters (unspecified stays unlimited, like DNS) |
+| `max_kubernetes_nodes` | CKS nodes across all pools |
+| `max_kubernetes_node_pools` | CKS node pools |
 | `max_health_checks` | Custom health-check endpoints (not derived worker/LB checks) |
 | `max_notification_channels` | Alert channels |
 | `max_iam_users` / `max_iam_groups` / `max_iam_policies` / `max_access_keys` | IAM |

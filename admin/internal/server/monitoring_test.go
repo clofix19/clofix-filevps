@@ -125,7 +125,7 @@ func TestMonitoringValidationAndUI(t *testing.T) {
 		}
 	}
 	for _, path := range []string{"/health-checks", "/settings"} {
-		w := do(h, "GET", path, "", "")
+		w := do(h, "GET", path, "", tok)
 		if w.Code != 200 {
 			t.Fatal(path, w.Code)
 		}

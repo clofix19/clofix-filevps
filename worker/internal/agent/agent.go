@@ -11,8 +11,10 @@ import (
 	"fmt"
 	database "github.com/clofix/filevps/worker/internal/database"
 	"github.com/clofix/filevps/worker/internal/execution"
+	wk8s "github.com/clofix/filevps/worker/internal/kubernetes"
 	"github.com/clofix/filevps/worker/internal/managed"
 	db "github.com/clofix/filevps/worker/pkg/database"
+	k8s "github.com/clofix/filevps/worker/pkg/kubernetes"
 	"log"
 	"net/http"
 	"os"
@@ -34,6 +36,8 @@ type Agent struct {
 	databaseStatuses []db.Status
 	databaseEngines  map[string]string
 	databaseProjects []string
+	Kubernetes       *wk8s.Manager
+	kubernetesSlot   chan struct{}
 	Managed          *managed.Manager
 	Cfg              config.Config
 	Engine           *lifecycle.Engine
@@ -73,8 +77,12 @@ func New(cfg config.Config, eng *lifecycle.Engine) (*Agent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("databases: %w", err)
 	}
+	kube, err := wk8s.New(config.StateDir())
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes: %w", err)
+	}
 	engines, projects := databases.Inventory()
-	agent := &Agent{Database: databases, databaseSlot: make(chan struct{}, 1), databaseEngines: engines, databaseProjects: projects, Managed: manager,
+	agent := &Agent{Database: databases, databaseSlot: make(chan struct{}, 1), databaseEngines: engines, databaseProjects: projects, Kubernetes: kube, kubernetesSlot: make(chan struct{}, 1), Managed: manager,
 		Cfg: cfg, Engine: eng,
 		S3Pool: s3pool.New(cfg),
 		Col:    &capacity.Collector{StateDir: config.StateDir(), HostReserve: uint64(cfg.HostReserveMB) << 20},
@@ -110,6 +118,12 @@ func (a *Agent) capacity() scheduler.Capacity {
 		managedCPU += databaseCPU
 		managedDisk += databaseDisk
 	}
+	if a.Kubernetes != nil {
+		kRAM, kCPU, kDisk := a.Kubernetes.Reserved()
+		managedRAM += kRAM
+		managedCPU += kCPU
+		managedDisk += kDisk
+	}
 	ram += managedRAM
 	cpu += managedCPU
 	disk += managedDisk
@@ -134,6 +148,13 @@ func (a *Agent) capacity() scheduler.Capacity {
 	cp.DatabaseProjects = append([]string{}, a.databaseProjects...)
 	a.mu.Unlock()
 	cp.DatabasePublicHost = os.Getenv("CLOFIX_DATABASE_PUBLIC_HOST")
+	if a.Kubernetes != nil {
+		ready, versions, nodes, host := a.Kubernetes.Inventory()
+		cp.KubernetesReady = ready
+		cp.KubernetesVersions = versions
+		cp.KubernetesNodes = nodes
+		cp.KubernetesPublicHost = host
+	}
 	cp.SwapCommitted = swap
 	if pool := a.S3Pool.Capacity(); pool.S3Node {
 		cp.S3Node, cp.S3DiskTotal, cp.S3DiskFree = pool.S3Node, pool.S3DiskTotal, pool.S3DiskFree
@@ -172,7 +193,13 @@ func (a *Agent) beat(ctx context.Context) error {
 	res := a.results
 	a.results = nil
 	a.mu.Unlock()
-	body, _ := json.Marshal(proto.Heartbeat{DatabaseResults: a.Database.Results(), DatabaseStatuses: statuses, ManagedApps: a.Managed.Statuses(), ExecutionProgress: progress, Version: Version, Capacity: a.capacity(), Instances: a.Engine.Statuses(), Volumes: a.Engine.VolumeStatuses(), Backups: a.Engine.BackupStatuses(), LogTails: a.collectLogTails(), Results: res})
+	kubeResults := []k8s.Result{}
+	kubeStatuses := []k8s.Status{}
+	if a.Kubernetes != nil {
+		kubeResults = a.Kubernetes.Results()
+		kubeStatuses = a.Kubernetes.Statuses()
+	}
+	body, _ := json.Marshal(proto.Heartbeat{DatabaseResults: a.Database.Results(), DatabaseStatuses: statuses, KubernetesResults: kubeResults, KubernetesStatuses: kubeStatuses, ManagedApps: a.Managed.Statuses(), ExecutionProgress: progress, Version: Version, Capacity: a.capacity(), Instances: a.Engine.Statuses(), Volumes: a.Engine.VolumeStatuses(), Backups: a.Engine.BackupStatuses(), LogTails: a.collectLogTails(), Results: res})
 	resp, err := a.hc.Post(a.Cfg.ControllerURL+"/v1/heartbeat", "application/json", bytes.NewReader(body))
 	if err != nil {
 		a.requeue(res)
@@ -204,9 +231,16 @@ func (a *Agent) beat(ctx context.Context) error {
 		}
 	}
 	a.Database.Acknowledge(hr.DatabaseAcknowledged)
+	if a.Kubernetes != nil {
+		a.Kubernetes.Acknowledge(hr.KubernetesAcknowledged)
+	}
 	for _, op := range hr.Operations {
 		if op.Action == "database-job" || op.Action == "cancel-database" {
 			a.runDatabaseOperation(ctx, op)
+			continue
+		}
+		if op.Action == proto.ActionKubernetesJob {
+			a.runKubernetesOperation(ctx, op)
 			continue
 		}
 		if op.Action == "cancel-execution" {

@@ -106,13 +106,26 @@ func (d *serverlessStore) save() error {
 }
 func applicationOwner(r *http.Request) string {
 	p := principalFrom(r)
+	if p.AccountID != "" {
+		return p.AccountID
+	}
 	if p.Root {
 		return "root"
 	}
 	return p.UserID
 }
 func canAccessApplication(r *http.Request, owner string) bool {
-	return principalFrom(r).Root || owner == applicationOwner(r)
+	p := principalFrom(r)
+	if p.Kind == "admin" {
+		return true
+	}
+	if owner == "" {
+		return false
+	}
+	if owner == p.AccountID || owner == p.UserID || owner == applicationOwner(r) {
+		return true
+	}
+	return p.Visible[owner]
 }
 func (s *Server) applicationRoutes(mux *http.ServeMux) {
 	s.applicationExtraRoutes(mux)

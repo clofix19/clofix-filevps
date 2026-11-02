@@ -88,7 +88,7 @@ func TestFunctionHTTPInvocationAndPage(t *testing.T) {
 	t.Setenv("CLOFIX_DATA_DIR", t.TempDir())
 	s, m := newSrv(t)
 	s.UIDir = "../../web/admin-ui"
-	page := do(s.AdminHandler(), "GET", "/applications", "", "")
+	page := do(s.AdminHandler(), "GET", "/applications", "", tok)
 	if page.Code != 200 || !strings.Contains(page.Body.String(), "Jobs &amp; Functions") {
 		t.Fatalf("page: %d %s", page.Code, page.Body.String())
 	}

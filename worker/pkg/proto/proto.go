@@ -3,6 +3,7 @@ package proto
 
 import (
 	db "github.com/clofix/filevps/worker/pkg/database"
+	k8s "github.com/clofix/filevps/worker/pkg/kubernetes"
 	"time"
 
 	"github.com/clofix/filevps/worker/pkg/scheduler"
@@ -32,6 +33,7 @@ const (
 	ActionCreateBackup           = "create-backup"
 	ActionDeleteBackup           = "delete-backup"
 	ActionSetPassword            = "set-password"
+	ActionKubernetesJob          = "kubernetes-job"
 )
 
 const DefaultSwapMB int64 = 512
@@ -185,29 +187,30 @@ type FirewallSpec struct {
 }
 
 type Operation struct {
-	DatabaseJobID string             `json:"database_job_id,omitempty"`
-	Managed       *ManagedSpec       `json:"managed,omitempty"`
-	Execution     *Execution         `json:"execution,omitempty"`
-	ID            string             `json:"id"`
-	Action        string             `json:"action"`
-	InstanceID    string             `json:"instance_id"`
-	Spec          *InstanceSpec      `json:"spec,omitempty"` // create or update operation
-	S3Mount       *S3Mount           `json:"s3_mount,omitempty"`
-	UnmountS3     bool               `json:"unmount_s3,omitempty"`
-	VolumeID      string             `json:"volume_id,omitempty"`
-	VolumeName    string             `json:"volume_name,omitempty"`
-	VolumeLimitMB int64              `json:"volume_limit_mb,omitempty"`
-	VolumeFile    *VolumeFileRequest `json:"volume_file,omitempty"`
-	ServiceName   string             `json:"service_name,omitempty"`
-	ServiceAction string             `json:"service_action,omitempty"`
-	ServiceID     string             `json:"service_id,omitempty"`
-	BackupID      string             `json:"backup_id,omitempty"`
-	WorkerID      string             `json:"worker_id,omitempty"`
-	WAFCategory   string             `json:"waf_category,omitempty"`
-	WAFEnabled    bool               `json:"waf_enabled,omitempty"`
-	RootPassword  string             `json:"root_password,omitempty"`
-	Firewall      *FirewallSpec      `json:"firewall,omitempty"`
-	EFS           *EFSShare          `json:"efs,omitempty"`
+	DatabaseJobID   string             `json:"database_job_id,omitempty"`
+	KubernetesJobID string             `json:"kubernetes_job_id,omitempty"`
+	Managed         *ManagedSpec       `json:"managed,omitempty"`
+	Execution       *Execution         `json:"execution,omitempty"`
+	ID              string             `json:"id"`
+	Action          string             `json:"action"`
+	InstanceID      string             `json:"instance_id"`
+	Spec            *InstanceSpec      `json:"spec,omitempty"` // create or update operation
+	S3Mount         *S3Mount           `json:"s3_mount,omitempty"`
+	UnmountS3       bool               `json:"unmount_s3,omitempty"`
+	VolumeID        string             `json:"volume_id,omitempty"`
+	VolumeName      string             `json:"volume_name,omitempty"`
+	VolumeLimitMB   int64              `json:"volume_limit_mb,omitempty"`
+	VolumeFile      *VolumeFileRequest `json:"volume_file,omitempty"`
+	ServiceName     string             `json:"service_name,omitempty"`
+	ServiceAction   string             `json:"service_action,omitempty"`
+	ServiceID       string             `json:"service_id,omitempty"`
+	BackupID        string             `json:"backup_id,omitempty"`
+	WorkerID        string             `json:"worker_id,omitempty"`
+	WAFCategory     string             `json:"waf_category,omitempty"`
+	WAFEnabled      bool               `json:"waf_enabled,omitempty"`
+	RootPassword    string             `json:"root_password,omitempty"`
+	Firewall        *FirewallSpec      `json:"firewall,omitempty"`
+	EFS             *EFSShare          `json:"efs,omitempty"`
 }
 
 type OpResult struct {
@@ -258,17 +261,19 @@ type StorageVolumeMetric struct {
 }
 
 type Heartbeat struct {
-	DatabaseResults   []db.Result          `json:"database_results,omitempty"`
-	DatabaseStatuses  []db.Status          `json:"database_statuses,omitempty"`
-	ManagedApps       []ManagedStatus      `json:"managed_apps,omitempty"`
-	ExecutionProgress []ExecutionProgress  `json:"execution_progress,omitempty"`
-	Version           string               `json:"version"`
-	Capacity          scheduler.Capacity   `json:"capacity"`
-	Instances         []InstanceStatus     `json:"instances"`
-	Volumes           []WorkerVolumeStatus `json:"volumes,omitempty"`
-	Backups           []BackupInfo         `json:"backups,omitempty"`
-	LogTails          []LogTail            `json:"log_tails,omitempty"`
-	Results           []OpResult           `json:"results"`
+	DatabaseResults    []db.Result          `json:"database_results,omitempty"`
+	DatabaseStatuses   []db.Status          `json:"database_statuses,omitempty"`
+	KubernetesResults  []k8s.Result         `json:"kubernetes_results,omitempty"`
+	KubernetesStatuses []k8s.Status         `json:"kubernetes_statuses,omitempty"`
+	ManagedApps        []ManagedStatus      `json:"managed_apps,omitempty"`
+	ExecutionProgress  []ExecutionProgress  `json:"execution_progress,omitempty"`
+	Version            string               `json:"version"`
+	Capacity           scheduler.Capacity   `json:"capacity"`
+	Instances          []InstanceStatus     `json:"instances"`
+	Volumes            []WorkerVolumeStatus `json:"volumes,omitempty"`
+	Backups            []BackupInfo         `json:"backups,omitempty"`
+	LogTails           []LogTail            `json:"log_tails,omitempty"`
+	Results            []OpResult           `json:"results"`
 }
 
 type LogSourceSpec struct {
@@ -307,13 +312,14 @@ type WorkerVolumeStatus struct {
 }
 
 type HeartbeatResponse struct {
-	DatabaseAcknowledged []string        `json:"database_acknowledged,omitempty"`
-	Operations           []Operation     `json:"operations"`
-	S3MasterAddress      string          `json:"s3_master_address,omitempty"`
-	DNSHosts             []DNSHost       `json:"dns_hosts,omitempty"`
-	LogSources           []LogSourceSpec `json:"log_sources,omitempty"`
-	Firewalls            []FirewallSpec  `json:"firewalls,omitempty"`
-	EFSShares            []EFSShare      `json:"efs_shares,omitempty"`
+	DatabaseAcknowledged   []string        `json:"database_acknowledged,omitempty"`
+	KubernetesAcknowledged []string        `json:"kubernetes_acknowledged,omitempty"`
+	Operations             []Operation     `json:"operations"`
+	S3MasterAddress        string          `json:"s3_master_address,omitempty"`
+	DNSHosts               []DNSHost       `json:"dns_hosts,omitempty"`
+	LogSources             []LogSourceSpec `json:"log_sources,omitempty"`
+	Firewalls              []FirewallSpec  `json:"firewalls,omitempty"`
+	EFSShares              []EFSShare      `json:"efs_shares,omitempty"`
 }
 
 type DNSHost struct {

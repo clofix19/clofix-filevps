@@ -24,6 +24,8 @@ type MemoryStore struct {
 	workers     map[string]Worker
 	instances   map[string]Instance
 	volumes     map[string]Volume
+	accounts    map[string]Account
+	sessions    map[string]Session
 	iamUsers    map[string]IAMUser
 	iamGroups   map[string]IAMGroup
 	iamPolicies map[string]IAMPolicy
@@ -33,7 +35,7 @@ type MemoryStore struct {
 }
 
 func NewMemory() *MemoryStore {
-	return &MemoryStore{tokens: map[string]*tokenRec{}, workers: map[string]Worker{}, instances: map[string]Instance{}, volumes: map[string]Volume{}, iamUsers: map[string]IAMUser{}, iamGroups: map[string]IAMGroup{}, iamPolicies: map[string]IAMPolicy{}, iamKeys: map[string]IAMAccessKey{}, ops: map[string][]proto.Operation{}}
+	return &MemoryStore{tokens: map[string]*tokenRec{}, workers: map[string]Worker{}, instances: map[string]Instance{}, volumes: map[string]Volume{}, accounts: map[string]Account{}, sessions: map[string]Session{}, iamUsers: map[string]IAMUser{}, iamGroups: map[string]IAMGroup{}, iamPolicies: map[string]IAMPolicy{}, iamKeys: map[string]IAMAccessKey{}, ops: map[string][]proto.Operation{}}
 }
 
 func copyIAMUser(v IAMUser) IAMUser {
@@ -65,6 +67,17 @@ func (m *MemoryStore) GetIAMUser(id string) (IAMUser, error) {
 	}
 	return copyIAMUser(v), nil
 }
+func (m *MemoryStore) GetIAMUserByEmail(email string) (IAMUser, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	email = strings.ToLower(strings.TrimSpace(email))
+	for _, v := range m.iamUsers {
+		if v.Email != "" && strings.EqualFold(v.Email, email) {
+			return copyIAMUser(v), nil
+		}
+	}
+	return IAMUser{}, ErrNotFound
+}
 func (m *MemoryStore) SaveIAMUser(v IAMUser) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -72,8 +85,69 @@ func (m *MemoryStore) SaveIAMUser(v IAMUser) error {
 		if id != v.ID && strings.EqualFold(old.Username, v.Username) {
 			return ErrConflict
 		}
+		if id != v.ID && v.Email != "" && old.Email != "" && strings.EqualFold(old.Email, v.Email) {
+			return ErrConflict
+		}
 	}
 	m.iamUsers[v.ID] = copyIAMUser(v)
+	return nil
+}
+func (m *MemoryStore) ListAccounts() ([]Account, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]Account, 0, len(m.accounts))
+	for _, v := range m.accounts {
+		out = append(out, v)
+	}
+	return out, nil
+}
+func (m *MemoryStore) GetAccount(id string) (Account, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.accounts[id]
+	if !ok {
+		return v, ErrNotFound
+	}
+	return v, nil
+}
+func (m *MemoryStore) SaveAccount(v Account) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.accounts[v.ID] = v
+	return nil
+}
+func (m *MemoryStore) DeleteAccount(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.accounts[id]; !ok {
+		return ErrNotFound
+	}
+	delete(m.accounts, id)
+	return nil
+}
+func (m *MemoryStore) SaveSession(v Session) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessions[v.ID] = v
+	return nil
+}
+func (m *MemoryStore) GetSessionByHash(hash string) (Session, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, v := range m.sessions {
+		if v.TokenHash == hash {
+			if time.Now().After(v.Expires) {
+				return Session{}, ErrNotFound
+			}
+			return v, nil
+		}
+	}
+	return Session{}, ErrNotFound
+}
+func (m *MemoryStore) DeleteSession(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.sessions, id)
 	return nil
 }
 func (m *MemoryStore) DeleteIAMUser(id string) error {

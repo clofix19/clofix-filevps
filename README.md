@@ -11,9 +11,9 @@ The stack is three parts:
 ## Run locally (Docker)
 
 ```sh
-cp .env.example .env            # set DB_PASSWORD and ADMIN_TOKEN
+cp .env.example .env            # set DB_PASSWORD, CLOFIX_ADMIN_EMAIL, CLOFIX_ADMIN_PASSWORD
 docker compose up --build
-open http://localhost:8080      # paste ADMIN_TOKEN
+open http://localhost:8080/login
 ```
 
 Local Compose publishes admin UI/API on `8080`, worker mTLS on `8443`, and a loopback NLB test port on `127.0.0.1:18080`. UI files are volume-mounted (`./admin/web:/app/web:ro`); HTML/JS/CSS changes do not require an image rebuild. Go API changes do.
@@ -22,18 +22,18 @@ The Compose worker bundles an Ubuntu 24.04 userspace for new VPSs, so the defaul
 
 ## Admin UI
 
-Open `http://localhost:8080` and save the Compose `ADMIN_TOKEN`. The sidebar is the live product map:
+Open `http://localhost:8080/login` with the bootstrap admin email and password from `.env`. Public **Register** creates a root client account. The search catalog is the live product map:
 
 | Section | Pages |
 |---|---|
 | Overview | Dashboard — VPS/worker counts, guest and host CPU/RAM/disk/swap, VPS and worker network IN/OUT/bandwidth charts |
-| Compute | FileVPS, Library (Quick Apps + VPS software), Jobs & Functions |
+| Compute | FileVPS, Library (Quick Apps + VPS software), Jobs & Functions, CKS (dedicated workers; FileVPS kubelet unavailable) |
 | Storage | Volumes, Object Storage, Backups, Databases |
 | Networking | Load Balancers, DNS Service, Health Checks |
-| Security | Security (Protection Mode, WAF, ports), IAM |
+| Security | Security (Protection Mode, WAF, ports), Users (Admin/Partner), IAM |
 | Platform | Workers, Billing & Payments, Settings (General, Pricing & Plans, NLB pool, notifications, License) |
 
-IAM scopes match those resources (`instances`, `databases`, `load-balancers`, `dns`, `pricing`, `billing`, and the rest). The Compose token is the root Full Administrator.
+IAM scopes match those resources (`instances`, `databases`, `kubernetes`, `load-balancers`, `dns`, `pricing`, `billing`, and the rest). Admin is the CloFix owner; partners manage their clients; root and IAM users stay inside one client account.
 
 ## FileVPS
 
@@ -77,9 +77,9 @@ On **Records**, select FileVPS, load balancer, database, app or worker, set a ho
 
 ## Pricing and billing
 
-**Settings → Pricing & Plans** is the catalog: plans, resource unit rates, discounts, gateway fields, currency/tax and notification flags. A price edit requires `effective_from`. Active subscriptions keep their snapshotted rates; later catalog edits do not rewrite them.
+**Settings → Pricing & Plans** is the catalog: plans, resource unit rates, discounts, gateway fields, currency/tax and notification flags. Resource Pricing has Standard and Low cost monthly/hourly rates and a default metering tier. A price edit requires `effective_from`. Active subscriptions keep their snapshotted rates; later catalog edits do not rewrite them.
 
-**Billing & Payments** is a separate menu and IAM resource: invoices, wallets, manual payments, subscriptions, refunds, credits and revenue totals. **Download PDF** on an invoice writes a CloFix-branded invoice (logo, bill-to, description, line items, tax, total). Draft invoices stay marked DRAFT. Card charges are not processed; gateway secrets are stored and never returned by the API.
+**Billing & Payments** is a separate menu and IAM resource: invoices, wallets, manual payments, subscriptions, refunds, credits and revenue totals. **Live resources** scans VPS, databases, load balancers, applications, volumes, backups, S3 and EFS and shows name, ID, worker and the current USD/BDT estimate. A stopped VPS or database is billed for storage only. **Due bill** meters hourly Standard or Low cost usage every minute. A 5 or 10 minute run is billed for those minutes, and deleting the resource or port still adds the usage to Due bill until it is invoiced. Each invoice lists the billed resource with USD and BDT amounts using a bookkeeping FX rate from Settings → Currency. **Download PDF** writes a CloFix-branded invoice (logo, bill-to, service period, resource line items, tax, USD/BDT total). The Monthly analysis view has spend-by-month and spend-by-resource bar charts. Draft invoices stay marked DRAFT. Card charges are not processed; gateway secrets are stored and never returned by the API.
 
 ## Company-side license service
 
@@ -106,5 +106,6 @@ No enrollment secret lives in Compose files. The local worker hostname is `clofi
 
 - [admin/README.md](admin/README.md) — IAM, backups, VPS login helper
 - [worker/README.md](worker/README.md) — worker package and fx engine
+- [docs/cks.md](docs/cks.md) — CloFix Kubernetes Service (node pools, Helm, HA, backups; FileVPS kubelet unavailable)
 - [docs/library-java-services.md](docs/library-java-services.md) — WildFly/Tomcat library services
 - [clofix-bench-audit/README.md](clofix-bench-audit/README.md) — bench/audit scripts

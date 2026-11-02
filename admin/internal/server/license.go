@@ -36,6 +36,9 @@ type licensePlan struct {
 	MaxAccessKeys           *int `json:"max_access_keys,omitempty"`
 	MaxDNSZones             *int `json:"max_dns_zones,omitempty"`
 	MaxDNSRecords           *int `json:"max_dns_records,omitempty"`
+	MaxKubernetesClusters   *int `json:"max_kubernetes_clusters,omitempty"`
+	MaxKubernetesNodes      *int `json:"max_kubernetes_nodes,omitempty"`
+	MaxKubernetesNodePools  *int `json:"max_kubernetes_node_pools,omitempty"`
 
 	ID             string `json:"id"`
 	Name           string `json:"name"`

@@ -26,6 +26,7 @@ import (
 	"unicode/utf8"
 
 	databaseState "github.com/clofix/filevps/admin/internal/database"
+	kubernetesState "github.com/clofix/filevps/admin/internal/kubernetes"
 	"github.com/clofix/filevps/admin/internal/objectstore"
 	"github.com/clofix/filevps/admin/internal/pki"
 	"github.com/clofix/filevps/admin/internal/store"
@@ -52,6 +53,8 @@ type Server struct {
 	databaseError     error
 	databaseDownloads map[string]databaseDownloadGrant
 	databaseTransfers map[string]bool
+	kubernetes        *kubernetesState.State
+	kubernetesError   error
 	billing           *billingStore
 	dns               *dnsStore
 	vpcs              *vpcStore
@@ -84,6 +87,7 @@ func New(s store.Store, ca *pki.CA, adminToken, uiDir string) *Server {
 	}
 	server := &Server{license: loadControllerLicense(dataDir), monitoring: loadMonitoring(dataDir), balancers: loadBalancers(dataDir), applications: loadServerless(dataDir), billing: loadBilling(dataDir), dns: loadDNS(dataDir), vpcs: loadVPCs(dataDir), sshKeys: loadSSHKeys(dataDir), logs: loadLogs(dataDir), firewall: loadFirewall(dataDir), efs: loadEFS(dataDir), Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), S3MasterAddress: os.Getenv("CLOFIX_S3_MASTER_ADDRESS"), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}, backups: map[string]proto.BackupInfo{}}
 	server.initDatabases(dataDir)
+	server.initKubernetes(dataDir)
 	return server
 }
 
@@ -118,6 +122,7 @@ func (s *Server) AdminHandler() http.Handler {
 	s.applicationRoutes(mux)
 	s.managedRoutes(mux)
 	s.databaseRoutes(mux)
+	s.kubernetesRoutes(mux)
 	s.billingRoutes(mux)
 	s.dnsRoutes(mux)
 	s.vpcRoutes(mux)
@@ -127,6 +132,12 @@ func (s *Server) AdminHandler() http.Handler {
 		w.Header().Set("Content-Type", "application/x-pem-file")
 		w.Write(s.CA.CertPEM)
 	})
+	mux.HandleFunc("POST /api/auth/register", s.registerAuth)
+	mux.HandleFunc("POST /api/auth/login", s.loginAuth)
+	mux.HandleFunc("POST /api/auth/logout", s.auth(s.logoutAuth))
+	mux.HandleFunc("GET /api/auth/me", s.auth(s.meAuth))
+	mux.HandleFunc("GET /api/accounts", s.auth(s.listAccounts))
+	mux.HandleFunc("POST /api/accounts", s.auth(s.createAccountUser))
 	mux.HandleFunc("POST /api/enrollment-tokens", s.auth(s.createToken))
 	mux.HandleFunc("GET /api/iam/me", s.auth(s.iamMe))
 	mux.HandleFunc("GET /api/iam/users", s.auth(s.listIAMUsers))
@@ -292,8 +303,22 @@ func (s *Server) uiHandler() http.Handler {
 			http.Redirect(w, r, "/instances?create=1", http.StatusSeeOther)
 			return
 		}
+		if cleanURL == "/login" || cleanURL == "/register" {
+			if _, ok := s.authenticate(r); ok {
+				http.Redirect(w, r, "/", http.StatusSeeOther)
+				return
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-store")
+			http.ServeFile(w, r, filepath.Join(s.UIDir, "pages", strings.TrimPrefix(cleanURL, "/")+".html"))
+			return
+		}
 		page, title, instanceID, isPage := uiPage(cleanURL)
 		if isPage {
+			if _, ok := s.authenticate(r); !ok {
+				http.Redirect(w, r, "/login", http.StatusSeeOther)
+				return
+			}
 			t, err := template.ParseFiles(filepath.Join(s.UIDir, "layout.html"), filepath.Join(s.UIDir, "pages", page+".html"))
 			if err != nil {
 				http.Error(w, "UI page could not be loaded", http.StatusInternalServerError)
@@ -327,6 +352,8 @@ func uiPage(route string) (page, title, instanceID string, ok bool) {
 		return "health-checks", "Health Checks", "", true
 	case "/databases":
 		return "databases", "Managed Databases", "", true
+	case "/kubernetes", "/cks":
+		return "kubernetes", "CKS", "", true
 	case "/workers":
 		return "workers", "Workers", "", true
 	case "/load-balancers":
@@ -353,6 +380,8 @@ func uiPage(route string) (page, title, instanceID string, ok bool) {
 		return "vpc", "VPC", "", true
 	case "/iam":
 		return "iam", "Identity and Access Management", "", true
+	case "/users":
+		return "users", "Users", "", true
 	case "/logs":
 		return "logs", "Log Service", "", true
 	case "/firewall":
@@ -363,6 +392,9 @@ func uiPage(route string) (page, title, instanceID string, ok bool) {
 	parts := strings.Split(strings.TrimPrefix(route, "/"), "/")
 	if len(parts) == 2 && parts[0] == "load-balancers" && regexp.MustCompile(`^lb-[0-9a-f]{32}$`).MatchString(parts[1]) {
 		return "load-balancers", "Load Balancer Details", parts[1], true
+	}
+	if len(parts) == 2 && (parts[0] == "kubernetes" || parts[0] == "cks") && regexp.MustCompile(`^cks-[0-9a-f]{32}$`).MatchString(parts[1]) {
+		return "kubernetes", "CKS Cluster", parts[1], true
 	}
 	if len(parts) == 2 && parts[0] == "instances" && apiInstanceID.MatchString(parts[1]) {
 		return "details", "VPS Details", parts[1], true
@@ -551,25 +583,44 @@ func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 			fail(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
-		resource := permissionResource(r.URL.Path)
+		path := r.URL.Path
+		if path == "/api/auth/me" || path == "/api/iam/me" || path == "/api/auth/logout" {
+			r = r.WithContext(context.WithValue(r.Context(), iamPrincipalContextKey{}, p))
+			h(w, r)
+			return
+		}
+		resource := permissionResource(path)
 		action := "manage"
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			action = "read"
+		}
+		if platformAdminResource(resource) && p.Kind != "admin" {
+			fail(w, http.StatusForbidden, "this area is limited to CloFix administrators")
+			return
+		}
+		if strings.HasPrefix(path, "/api/load-balancers/settings") && p.Kind != "admin" {
+			fail(w, http.StatusForbidden, "NLB pool settings are limited to CloFix administrators")
+			return
 		}
 		required := resource + ":" + action
 		if p.Role == "Read Only" && action == "manage" {
 			fail(w, http.StatusForbidden, "Read Only role cannot change resources")
 			return
 		}
-		if resource == "iam" && action == "manage" && p.Role != "Full Administrator" && !p.Root {
-			fail(w, http.StatusForbidden, "IAM administration requires the Full Administrator role")
-			return
+		if resource == "iam" && action == "manage" {
+			if p.Kind == "partner" || (p.Kind != "admin" && p.Kind != "root" && p.Role != "Full Administrator" && !p.Root) {
+				fail(w, http.StatusForbidden, "IAM administration requires the Full Administrator role")
+				return
+			}
 		}
 		if !hasIAMPermission(p, required) {
 			fail(w, http.StatusForbidden, "permission denied: "+required)
 			return
 		}
 		r = r.WithContext(context.WithValue(r.Context(), iamPrincipalContextKey{}, p))
+		if !s.enforceTenant(w, r, p) {
+			return
+		}
 		s.licenseMutation(w, r, h)
 	}
 }
@@ -627,6 +678,8 @@ func (s *Server) listInstances(w http.ResponseWriter, r *http.Request) {
 	if is == nil {
 		is = []store.Instance{}
 	}
+	p := principalFrom(r)
+	is = filterInstances(is, s.visibleAccountIDSet(p), p.Kind == "admin")
 	type instanceView struct {
 		store.Instance
 		Metrics         proto.InstanceMetrics `json:"metrics"`
@@ -651,6 +704,8 @@ func (s *Server) listVolumes(w http.ResponseWriter, r *http.Request) {
 	if volumes == nil {
 		volumes = []store.Volume{}
 	}
+	p := principalFrom(r)
+	volumes = filterVolumes(volumes, s.visibleAccountIDSet(p), p.Kind == "admin")
 	writeJSON(w, http.StatusOK, volumes)
 }
 
@@ -678,7 +733,7 @@ func (s *Server) createVolume(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusConflict, "select an active worker")
 		return
 	}
-	v := store.Volume{ID: "vol-" + randHex(8), Name: in.Name, WorkerID: in.WorkerID, State: "CREATING", LimitMB: in.LimitMB, Created: time.Now()}
+	v := store.Volume{ID: "vol-" + randHex(8), AccountID: s.stampAccount(principalFrom(r)), Name: in.Name, WorkerID: in.WorkerID, State: "CREATING", LimitMB: in.LimitMB, Created: time.Now()}
 	if err := s.Store.SaveVolume(v); err != nil {
 		fail(w, http.StatusInternalServerError, "could not save volume")
 		return
@@ -2293,7 +2348,7 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusServiceUnavailable, "SSH port range is full (100 VPS limit in this development setup)")
 		return
 	}
-	inst := store.Instance{ID: "vps-" + randHex(6), WorkerID: dec.WorkerID, State: proto.StateProvisioning, PlacementMethod: method, Spec: sp, Created: time.Now()}
+	inst := store.Instance{ID: "vps-" + randHex(6), AccountID: s.stampAccount(principalFrom(r)), WorkerID: dec.WorkerID, State: proto.StateProvisioning, PlacementMethod: method, Spec: sp, Created: time.Now()}
 	s.Store.SaveInstance(inst)
 	// reserve capacity until the worker's next heartbeat reports real numbers
 	if wk, err := s.Store.GetWorker(dec.WorkerID); err == nil {
@@ -2439,6 +2494,7 @@ func (s *Server) WorkerHandler() http.Handler {
 	mux.HandleFunc("POST /v1/enroll", s.enroll)
 	mux.HandleFunc("POST /v1/heartbeat", s.heartbeat)
 	s.databaseWorkerRoutes(mux)
+	s.kubernetesWorkerRoutes(mux)
 	return mux
 }
 
@@ -2766,5 +2822,7 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 	ops, _ := s.Store.TakeOps(id)
 	databaseOps, acknowledged := s.databaseHeartbeat(id, hb.DatabaseResults, hb.DatabaseStatuses)
 	ops = append(ops, databaseOps...)
-	writeJSON(w, 200, proto.HeartbeatResponse{Operations: ops, DatabaseAcknowledged: acknowledged, S3MasterAddress: s.S3MasterAddress, DNSHosts: s.dnsHostEntries(), LogSources: s.logSourcesForWorker(id), Firewalls: s.firewallsForWorker(id), EFSShares: s.efsSharesForWorker(id)})
+	kubernetesOps, kubernetesAck := s.kubernetesHeartbeat(id, hb.KubernetesResults, hb.KubernetesStatuses)
+	ops = append(ops, kubernetesOps...)
+	writeJSON(w, 200, proto.HeartbeatResponse{Operations: ops, DatabaseAcknowledged: acknowledged, KubernetesAcknowledged: kubernetesAck, S3MasterAddress: s.S3MasterAddress, DNSHosts: s.dnsHostEntries(), LogSources: s.logSourcesForWorker(id), Firewalls: s.firewallsForWorker(id), EFSShares: s.efsSharesForWorker(id)})
 }

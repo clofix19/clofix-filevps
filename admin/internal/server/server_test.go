@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,18 +15,31 @@ import (
 	"github.com/clofix/filevps/worker/pkg/scheduler"
 )
 
-const tok = "test-admin-token-123456"
+const tok = "CFXTESTADMINKEY01.test-admin-token-123456"
 
 func newSrv(t *testing.T) (*Server, *store.MemoryStore) {
 	if os.Getenv("CLOFIX_DATA_DIR") == "" {
 		t.Setenv("CLOFIX_DATA_DIR", t.TempDir())
 	}
+	t.Setenv("CLOFIX_ADMIN_EMAIL", "admin@clofix.test")
+	t.Setenv("CLOFIX_ADMIN_PASSWORD", "test-admin-password-123")
 	ca, err := pki.LoadOrCreate(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := store.NewMemory()
-	s := New(m, ca, tok, "")
+	s := New(m, ca, "", "")
+	if err = s.EnsureBootstrapAdmin(); err != nil {
+		t.Fatal(err)
+	}
+	admin, err := m.GetIAMUserByEmail("admin@clofix.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	accessID, secret, _ := strings.Cut(tok, ".")
+	if err = m.SaveIAMAccessKey(store.IAMAccessKey{AccessKeyID: accessID, UserID: admin.ID, SecretHash: hashToken(secret), Active: true, Created: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
 	setTestLicense(s)
 	return s, m
 }

@@ -76,13 +76,19 @@ func quotaLimit(p licensePlan, resource string) int64 {
 		optional = p.MaxDNSZones
 	case "dns-records":
 		optional = p.MaxDNSRecords
+	case "kubernetes-clusters":
+		optional = p.MaxKubernetesClusters
+	case "kubernetes-nodes":
+		optional = p.MaxKubernetesNodes
+	case "kubernetes-node-pools":
+		optional = p.MaxKubernetesNodePools
 	default:
 		return 0
 	}
 	if optional == nil {
-		// DNS shipped after existing plans. Unspecified DNS stays unlimited so
-		// current controllers keep zone/record operations until CloFix sets a limit.
-		if resource == "dns-zones" || resource == "dns-records" {
+		// DNS and CKS shipped after existing plans. Unspecified values stay
+		// unlimited so current controllers keep operating until CloFix sets a limit.
+		if resource == "dns-zones" || resource == "dns-records" || resource == "kubernetes-clusters" || resource == "kubernetes-nodes" || resource == "kubernetes-node-pools" {
 			return -1
 		}
 		return 0
@@ -129,7 +135,7 @@ func (s *Server) quotaUsed(resource string) (int64, error) {
 	case "backups":
 		s.usageMu.RLock()
 		defer s.usageMu.RUnlock()
-		return int64(len(s.backups)) + s.databaseQuotaUsed("backups"), nil
+		return int64(len(s.backups)) + s.databaseQuotaUsed("backups") + s.kubernetesBackupCount(), nil
 	case "s3-connections":
 		items, e := s.S3.ListConnections()
 		return int64(len(items)), e
@@ -167,8 +173,74 @@ func (s *Server) quotaUsed(resource string) (int64, error) {
 		s.dns.Lock()
 		defer s.dns.Unlock()
 		return int64(len(s.dns.Records)), nil
+	case "kubernetes-clusters", "kubernetes-nodes", "kubernetes-node-pools":
+		return s.kubernetesQuotaUsed(resource), nil
 	}
 	return 0, fmt.Errorf("unknown quota resource")
+}
+
+func (s *Server) kubernetesQuotaUsed(resource string) int64 {
+	if s.kubernetes == nil {
+		return 0
+	}
+	s.kubernetes.Lock()
+	defer s.kubernetes.Unlock()
+	clusters, nodes, pools := int64(0), int64(0), int64(0)
+	for _, cluster := range s.kubernetes.Clusters {
+		if cluster.State == "DELETED" {
+			continue
+		}
+		clusters++
+		pools += int64(len(cluster.Pools()))
+		nodes += int64(cluster.LiveNodes())
+	}
+	switch resource {
+	case "kubernetes-clusters":
+		return clusters
+	case "kubernetes-nodes":
+		return nodes
+	case "kubernetes-node-pools":
+		return pools
+	}
+	return 0
+}
+
+func (s *Server) kubernetesBackupCount() int64 {
+	if s.kubernetes == nil {
+		return 0
+	}
+	s.kubernetes.Lock()
+	defer s.kubernetes.Unlock()
+	n := int64(0)
+	for _, cluster := range s.kubernetes.Clusters {
+		if cluster.State == "DELETED" {
+			continue
+		}
+		for _, backup := range cluster.Backups {
+			if backup.State != "FAILED" {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+func (s *Server) kubernetesBackupBytes() int64 {
+	if s.kubernetes == nil {
+		return 0
+	}
+	s.kubernetes.Lock()
+	defer s.kubernetes.Unlock()
+	var used int64
+	for _, cluster := range s.kubernetes.Clusters {
+		if cluster.State == "DELETED" {
+			continue
+		}
+		for _, backup := range cluster.Backups {
+			used += backup.SizeBytes
+		}
+	}
+	return used
 }
 func (s *Server) checkQuota(resource string, delta int64) error {
 	p, e := s.licensedPlan()
@@ -222,6 +294,7 @@ func (s *Server) storageUsed() (int64, error) {
 		}
 		used += reserved
 	}
+	used += s.kubernetesBackupBytes()
 	return used, nil
 }
 func (s *Server) checkStorage(delta int64, unbounded bool) error {
@@ -271,6 +344,8 @@ func quotaCreation(r *http.Request) string {
 		return "s3-connections"
 	case "/api/dns/records":
 		return "dns-records"
+	case "/api/v1/kubernetes/clusters":
+		return "kubernetes-clusters"
 	case "/api/iam/users":
 		return "iam-users"
 	case "/api/iam/groups":
@@ -316,6 +391,8 @@ func quotaOperation(r *http.Request) string {
 		return "iam-groups"
 	case strings.HasPrefix(p, "/api/iam/policies/"):
 		return "iam-policies"
+	case strings.HasPrefix(p, "/api/v1/kubernetes/"):
+		return "kubernetes-clusters"
 	}
 	return ""
 }
@@ -371,7 +448,7 @@ func (s *Server) licenseUsage(w http.ResponseWriter, r *http.Request) {
 	defer s.quotaMu.Unlock()
 	p, e := s.licensedPlan()
 	out := map[string]quotaEntry{}
-	resources := []string{"database-projects", "databases", "database-users", "database-schedules", "instances", "workers", "load-balancers", "dns-zones", "dns-records", "health-checks", "backups", "volumes", "s3-connections", "applications", "managed-apps", "notification-channels", "iam-users", "iam-groups", "iam-policies", "access-keys"}
+	resources := []string{"database-projects", "databases", "database-users", "database-schedules", "instances", "workers", "load-balancers", "dns-zones", "dns-records", "health-checks", "backups", "volumes", "s3-connections", "applications", "managed-apps", "notification-channels", "iam-users", "iam-groups", "iam-policies", "access-keys", "kubernetes-clusters", "kubernetes-nodes", "kubernetes-node-pools"}
 	for _, resource := range resources {
 		used, err := s.quotaUsed(resource)
 		if err != nil {

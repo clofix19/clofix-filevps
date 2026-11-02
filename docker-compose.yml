@@ -37,7 +37,8 @@ services:
       context: .
       dockerfile: admin/Dockerfile
     environment:
-      CLOFIX_ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in .env (min 16 chars)}
+      CLOFIX_ADMIN_EMAIL: ${CLOFIX_ADMIN_EMAIL:?set CLOFIX_ADMIN_EMAIL in .env}
+      CLOFIX_ADMIN_PASSWORD: ${CLOFIX_ADMIN_PASSWORD:?set CLOFIX_ADMIN_PASSWORD in .env (min 12 chars)}
       CLOFIX_DB_URL: postgres://clofix:${DB_PASSWORD}@db:5432/clofix?sslmode=disable
       CLOFIX_DATA_DIR: /data
       CLOFIX_LICENSE_SERVER_URL: ${CLOFIX_LICENSE_SERVER_URL:-}

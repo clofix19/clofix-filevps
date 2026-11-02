@@ -46,8 +46,12 @@
       </div>
       <div class="panel settings-section" id="settings-resource-pricing" data-settings-panel aria-labelledby="settings-heading-resource-pricing" hidden>
         <h2 id="settings-heading-resource-pricing" tabindex="-1">Resource Pricing</h2>
-        <p>Unit prices for add-on resources. Zero and disabled means the unit is not sold yet. These values do not change active subscriptions.</p>
-        <form id="pricing-resource-form"><div class="table-wrap"><table id="pricing-resource-table"></table></div><button class="primary" id="pricing-resource-save" type="submit">Save resource prices</button></form>
+        <p>Standard and Low cost unit prices for CPU, RAM, disk, backup, volume, EFS, S3, load balancers and applications. Hourly rates update Due bill every minute. A 5 or 10 minute run is billed for those minutes even if the resource or port is deleted. Zero and disabled means the unit is not billed yet. Stopped VPS and databases use the disk/volume rate only. These values do not change active subscriptions.</p>
+        <form id="pricing-resource-form">
+          <div class="form-field" style="max-width:280px"><label for="pricing-resource-tier">Default metering tier</label><select id="pricing-resource-tier"><option value="standard">Standard</option><option value="lowcost">Low cost</option></select></div>
+          <div class="table-wrap"><table id="pricing-resource-table"></table></div>
+          <button class="primary" id="pricing-resource-save" type="submit">Save resource prices</button>
+        </form>
         <p class="message" id="pricing-resource-message" role="status" aria-live="polite"></p>
       </div>
       <div class="panel settings-section" id="settings-discounts" data-settings-panel aria-labelledby="settings-heading-discounts" hidden>
@@ -92,6 +96,7 @@
             <div class="form-field"><label for="pricing-currency-code">Default currency</label><input id="pricing-currency-code" maxlength="3" value="USD" required></div>
             <div class="form-field"><label for="pricing-currency-tax-name">Tax name</label><input id="pricing-currency-tax-name" maxlength="40" placeholder="VAT"></div>
             <div class="form-field"><label for="pricing-currency-tax">Tax percent</label><input id="pricing-currency-tax" type="number" min="0" max="100" step="0.01" value="0"></div>
+            <div class="form-field"><label for="pricing-currency-bdt">BDT per 1 USD</label><input id="pricing-currency-bdt" type="number" min="0" max="10000" step="0.01" value="122"><small class="muted">Bookkeeping FX for invoice USD/BDT columns. New invoices snapshot this rate.</small></div>
           </div>
           <button class="primary" id="pricing-currency-save" type="submit">Save currency settings</button>
         </form>

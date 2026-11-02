@@ -22,9 +22,8 @@ func env(k, d string) string {
 }
 
 func main() {
-	adminTok := os.Getenv("CLOFIX_ADMIN_TOKEN")
-	if len(adminTok) < 16 {
-		log.Fatal("CLOFIX_ADMIN_TOKEN must be set (min 16 chars)")
+	if os.Getenv("CLOFIX_ADMIN_EMAIL") == "" || os.Getenv("CLOFIX_ADMIN_PASSWORD") == "" {
+		log.Fatal("CLOFIX_ADMIN_EMAIL and CLOFIX_ADMIN_PASSWORD must be set (password min 12 chars)")
 	}
 	dataDir := env("CLOFIX_DATA_DIR", "/var/lib/clofix-controller")
 	ca, err := pki.LoadOrCreate(dataDir + "/pki")
@@ -44,9 +43,13 @@ func main() {
 	pool.AddCert(ca.Cert)
 
 	st := newStore()
-	srv := server.New(st, ca, adminTok, env("CLOFIX_UI_DIR", "web/admin-ui"))
+	srv := server.New(st, ca, "", env("CLOFIX_UI_DIR", "web/admin-ui"))
+	if err := srv.EnsureBootstrapAdmin(); err != nil {
+		log.Fatal(err)
+	}
 	go srv.RunApplicationScheduler(context.Background())
 	go srv.RunLoadBalancerScheduler(context.Background())
+	go srv.RunBillingMeter(context.Background())
 	go srv.RunHealthScheduler(context.Background())
 	go srv.RunLicenseScheduler(context.Background())
 	go srv.RunDatabaseScheduler(context.Background())

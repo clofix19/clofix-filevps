@@ -11,11 +11,20 @@ import (
 
 func (s *Server) listBackups(w http.ResponseWriter, r *http.Request) {
 	s.usageMu.RLock()
-	items := make([]proto.BackupInfo, 0, len(s.backups))
+	copied := make([]proto.BackupInfo, 0, len(s.backups))
 	for _, b := range s.backups {
-		items = append(items, b)
+		copied = append(copied, b)
 	}
 	s.usageMu.RUnlock()
+	p := principalFrom(r)
+	items := make([]proto.BackupInfo, 0, len(copied))
+	for _, b := range copied {
+		inst, err := s.Store.GetInstance(b.InstanceID)
+		if err != nil || (p.Kind != "admin" && !s.canAccessAccount(p, inst.AccountID)) {
+			continue
+		}
+		items = append(items, b)
+	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Created.After(items[j].Created) })
 	writeJSON(w, http.StatusOK, items)
 }

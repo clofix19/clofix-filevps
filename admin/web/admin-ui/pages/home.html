@@ -8,8 +8,23 @@
       <a class="primary" href="/instances?create=1">＋ Create FileVPS</a>
     </div>
   </div>
-  <div class="home-loading" id="home-loading" role="status" aria-live="polite">Loading VPS and worker overview…</div>
-  <div class="home-empty" id="home-empty" hidden><strong>No infrastructure yet</strong><p>Enroll a worker, then create your first FileVPS.</p><a class="primary" href="/workers">Enroll worker</a></div>
+  <div class="home-loading" id="home-loading" role="status" aria-live="polite">Loading console overview…</div>
+  <div class="home-empty" id="home-empty" hidden><strong>No infrastructure yet</strong><p>Create a FileVPS to get started. Workers are enrolled by CloFix administrators.</p><a class="primary" href="/instances">Open FileVPS</a></div>
+  <div class="cards" data-home-admin>
+    <div class="stat"><div class="stat-label">Platform</div><div class="stat-value">Admin</div><div class="stat-note">Accounts, workers, pricing, and billing</div></div>
+    <div class="stat"><div class="stat-label">Users</div><div class="stat-value"><a href="/users">Manage</a></div><div class="stat-note">Create partners and client roots</div></div>
+    <div class="stat"><div class="stat-label">Workers</div><div class="stat-value"><a href="/workers">Fleet</a></div><div class="stat-note">Enrollment tokens and host capacity</div></div>
+  </div>
+  <div class="cards" data-home-partner>
+    <div class="stat"><div class="stat-label">Partner</div><div class="stat-value">Clients</div><div class="stat-note">Only the accounts you manage</div></div>
+    <div class="stat"><div class="stat-label">Directory</div><div class="stat-value"><a href="/users">Users</a></div><div class="stat-note">Create root clients</div></div>
+    <div class="stat"><div class="stat-label">Billing</div><div class="stat-value"><a href="/billing">Invoices</a></div><div class="stat-note">Invoice due bills for your clients</div></div>
+  </div>
+  <div class="cards" data-home-client>
+    <div class="stat"><div class="stat-label">Account</div><div class="stat-value">FileVPS</div><div class="stat-note">VPS, storage, networking, and IAM for this account</div></div>
+    <div class="stat"><div class="stat-label">Due bill</div><div class="stat-value"><a href="/billing">Billing</a></div><div class="stat-note">Hourly usage for this account</div></div>
+    <div class="stat"><div class="stat-label">IAM</div><div class="stat-value"><a href="/iam">Users</a></div><div class="stat-note">Create sub-users for this account</div></div>
+  </div>
 
   <div class="home-widgets">
     <div class="home-col">

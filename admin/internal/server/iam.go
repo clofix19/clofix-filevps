@@ -19,9 +19,14 @@ import (
 type iamPrincipal struct {
 	UserID      string
 	Name        string
+	Email       string
 	Role        string
+	Kind        string
+	AccountID   string
+	ParentID    string
 	Root        bool
 	Permissions []string
+	Visible     map[string]bool
 }
 type iamPrincipalContextKey struct{}
 
@@ -34,6 +39,7 @@ var iamIDPattern = regexp.MustCompile(`^(usr|grp|pol)-[0-9a-f]{16}$`)
 var iamUsernamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]{2,64}$`)
 var iamPermissionSet = map[string]bool{
 	"databases:read": true, "databases:manage": true,
+	"kubernetes:read": true, "kubernetes:manage": true,
 	"license:read": true, "license:manage": true,
 	"health-checks:read": true, "health-checks:manage": true,
 	"load-balancers:read": true, "load-balancers:manage": true,
@@ -44,6 +50,7 @@ var iamPermissionSet = map[string]bool{
 	"volumes:read": true, "volumes:manage": true, "storage:read": true, "storage:manage": true,
 	"security:read": true, "security:manage": true, "services:read": true, "services:manage": true,
 	"iam:read": true, "iam:manage": true,
+	"accounts:read": true, "accounts:manage": true,
 	"pricing:read": true, "pricing:manage": true,
 	"billing:read": true, "billing:manage": true,
 	"dns:read": true, "dns:manage": true,
@@ -61,10 +68,10 @@ func iamPermissionCatalog() []string {
 }
 
 func (s *Server) authenticate(r *http.Request) (iamPrincipal, bool) {
-	credential := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if s.AdminToken != "" && subtle.ConstantTimeCompare([]byte(credential), []byte(s.AdminToken)) == 1 {
-		return iamPrincipal{Name: "root", Role: "Root user", Root: true, Permissions: []string{"*"}}, true
+	if p, ok := s.sessionPrincipal(r); ok {
+		return p, true
 	}
+	credential := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	accessID, secret, ok := strings.Cut(credential, ".")
 	if !ok || !strings.HasPrefix(accessID, "CFX") || secret == "" {
 		return iamPrincipal{}, false
@@ -77,36 +84,13 @@ func (s *Server) authenticate(r *http.Request) (iamPrincipal, bool) {
 	if err != nil || user.Status != "active" {
 		return iamPrincipal{}, false
 	}
-	p := iamPrincipal{UserID: user.ID, Name: user.Username, Role: user.Role}
-	switch user.Role {
-	case "Full Administrator":
-		p.Permissions = append(p.Permissions, "*")
-	case "Read Only":
-		p.Permissions = append(p.Permissions, "read:*")
-	}
-	for _, id := range user.PolicyIDs {
-		policy, e := s.Store.GetIAMPolicy(id)
-		if e == nil {
-			p.Permissions = append(p.Permissions, policy.Permissions...)
-		}
-	}
-	for _, groupID := range user.GroupIDs {
-		group, e := s.Store.GetIAMGroup(groupID)
-		if e != nil {
-			continue
-		}
-		for _, policyID := range group.PolicyIDs {
-			policy, e := s.Store.GetIAMPolicy(policyID)
-			if e == nil {
-				p.Permissions = append(p.Permissions, policy.Permissions...)
-			}
-		}
-	}
-	return p, true
+	return s.principalFromUser(user), true
 }
 
 func permissionResource(path string) string {
 	switch {
+	case strings.HasPrefix(path, "/api/v1/kubernetes"), strings.HasPrefix(path, "/api/kubernetes"):
+		return "kubernetes"
 	case strings.HasPrefix(path, "/api/databases"):
 		return "databases"
 	case strings.HasPrefix(path, "/api/license"):
@@ -133,7 +117,10 @@ func permissionResource(path string) string {
 		return "dns"
 	case strings.HasPrefix(path, "/api/vpcs"):
 		return "vpc"
-	case strings.HasPrefix(path, "/api/iam"):
+	case strings.HasPrefix(path, "/api/iam"), strings.HasPrefix(path, "/api/auth/me"), strings.HasPrefix(path, "/api/accounts"):
+		if strings.HasPrefix(path, "/api/accounts") {
+			return "accounts"
+		}
 		return "iam"
 	case path == "/api/ca.pem":
 		return "platform"
@@ -198,8 +185,7 @@ func isIAMConflict(err error) bool {
 }
 
 func (s *Server) iamMe(w http.ResponseWriter, r *http.Request) {
-	p := principalFrom(r)
-	writeJSON(w, http.StatusOK, map[string]any{"username": p.Name, "role": p.Role, "root": p.Root, "permissions": p.Permissions})
+	s.meAuth(w, r)
 }
 func (s *Server) listIAMUsers(w http.ResponseWriter, r *http.Request) {
 	v, e := s.Store.ListIAMUsers()
@@ -210,7 +196,20 @@ func (s *Server) listIAMUsers(w http.ResponseWriter, r *http.Request) {
 	if v == nil {
 		v = []store.IAMUser{}
 	}
-	writeJSON(w, 200, v)
+	p := principalFrom(r)
+	out := make([]store.IAMUser, 0, len(v))
+	for _, user := range v {
+		if p.Kind != "admin" && !s.canAccessAccount(p, user.AccountID) {
+			continue
+		}
+		if p.Kind == "root" || p.Kind == "iam" {
+			if user.Kind != "iam" && user.ID != p.UserID {
+				continue
+			}
+		}
+		out = append(out, user)
+	}
+	writeJSON(w, 200, out)
 }
 func (s *Server) listIAMGroups(w http.ResponseWriter, r *http.Request) {
 	groups, e := s.Store.ListIAMGroups()
@@ -228,7 +227,11 @@ func (s *Server) listIAMGroups(w http.ResponseWriter, r *http.Request) {
 		UserIDs []string `json:"user_ids"`
 	}
 	out := make([]groupView, 0, len(groups))
+	p := principalFrom(r)
 	for _, g := range groups {
+		if p.Kind != "admin" && !s.canAccessAccount(p, g.AccountID) {
+			continue
+		}
 		view := groupView{IAMGroup: g, UserIDs: []string{}}
 		for _, u := range users {
 			for _, id := range u.GroupIDs {
@@ -249,6 +252,16 @@ func (s *Server) listIAMPolicies(w http.ResponseWriter, r *http.Request) {
 	}
 	if v == nil {
 		v = []store.IAMPolicy{}
+	}
+	p := principalFrom(r)
+	if p.Kind != "admin" {
+		filtered := make([]store.IAMPolicy, 0, len(v))
+		for _, policy := range v {
+			if s.canAccessAccount(p, policy.AccountID) {
+				filtered = append(filtered, policy)
+			}
+		}
+		v = filtered
 	}
 	builtIn := []map[string]any{
 		{"name": "CloFixFullAdministrator", "permissions": []string{"*"}},
@@ -274,8 +287,15 @@ func validateIAMIDs(ids []string, kind string, exists func(string) bool) bool {
 	return true
 }
 func (s *Server) saveIAMUser(w http.ResponseWriter, r *http.Request) {
+	actor := principalFrom(r)
+	if actor.Kind == "partner" {
+		fail(w, 403, "partners create client accounts from Users, not IAM users")
+		return
+	}
 	var in struct {
 		Username  string   `json:"username"`
+		Email     string   `json:"email"`
+		Password  string   `json:"password"`
 		Role      string   `json:"role"`
 		Status    string   `json:"status"`
 		GroupIDs  []string `json:"group_ids"`
@@ -285,6 +305,7 @@ func (s *Server) saveIAMUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.Username = strings.TrimSpace(in.Username)
+	in.Email = strings.ToLower(strings.TrimSpace(in.Email))
 	if !iamUsernamePattern.MatchString(in.Username) {
 		fail(w, 400, "username must be 2–64 letters, numbers, dots, dashes, or underscores")
 		return
@@ -303,11 +324,17 @@ func (s *Server) saveIAMUser(w http.ResponseWriter, r *http.Request) {
 	if in.PolicyIDs == nil {
 		in.PolicyIDs = []string{}
 	}
-	if !validateIAMIDs(in.GroupIDs, "grp", func(id string) bool { _, e := s.Store.GetIAMGroup(id); return e == nil }) {
+	if !validateIAMIDs(in.GroupIDs, "grp", func(id string) bool {
+		g, e := s.Store.GetIAMGroup(id)
+		return e == nil && s.canAccessAccount(actor, g.AccountID)
+	}) {
 		fail(w, 400, "one or more groups are invalid")
 		return
 	}
-	if !validateIAMIDs(in.PolicyIDs, "pol", func(id string) bool { _, e := s.Store.GetIAMPolicy(id); return e == nil }) {
+	if !validateIAMIDs(in.PolicyIDs, "pol", func(id string) bool {
+		policy, e := s.Store.GetIAMPolicy(id)
+		return e == nil && s.canAccessAccount(actor, policy.AccountID)
+	}) {
 		fail(w, 400, "one or more policies are invalid")
 		return
 	}
@@ -315,7 +342,11 @@ func (s *Server) saveIAMUser(w http.ResponseWriter, r *http.Request) {
 	var user store.IAMUser
 	var err error
 	if id == "" {
-		user = store.IAMUser{ID: "usr-" + randHex(8), Created: time.Now()}
+		if !validAuthEmail(in.Email) || !validAuthPassword(in.Password) {
+			fail(w, 400, "email and a 12+ character password are required")
+			return
+		}
+		user = store.IAMUser{ID: "usr-" + randHex(8), AccountID: s.stampAccount(actor), Kind: "iam", Created: time.Now()}
 	} else {
 		if !iamIDPattern.MatchString(id) || !strings.HasPrefix(id, "usr-") {
 			fail(w, 400, "invalid IAM user id")
@@ -323,6 +354,10 @@ func (s *Server) saveIAMUser(w http.ResponseWriter, r *http.Request) {
 		}
 		user, err = s.Store.GetIAMUser(id)
 		if err != nil {
+			fail(w, 404, "IAM user not found")
+			return
+		}
+		if !s.canAccessAccount(actor, user.AccountID) || (actor.Kind != "admin" && user.Kind != "iam") {
 			fail(w, 404, "IAM user not found")
 			return
 		}
@@ -338,7 +373,36 @@ func (s *Server) saveIAMUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if in.Email != "" {
+		if !validAuthEmail(in.Email) {
+			fail(w, 400, "a valid email is required")
+			return
+		}
+		if existing, e := s.Store.GetIAMUserByEmail(in.Email); e == nil && existing.ID != user.ID {
+			fail(w, 409, "an account with this email already exists")
+			return
+		}
+		user.Email = in.Email
+	}
+	if in.Password != "" {
+		if !validAuthPassword(in.Password) {
+			fail(w, 400, "password must be at least 12 characters")
+			return
+		}
+		hash, hashErr := hashPassword(in.Password)
+		if hashErr != nil {
+			fail(w, 500, "could not store password")
+			return
+		}
+		user.PasswordHash = hash
+	}
 	user.Username, user.Role, user.Status, user.GroupIDs, user.PolicyIDs = in.Username, in.Role, in.Status, in.GroupIDs, in.PolicyIDs
+	if user.Kind == "" {
+		user.Kind = "iam"
+	}
+	if user.AccountID == "" {
+		user.AccountID = s.stampAccount(actor)
+	}
 	if err = s.Store.SaveIAMUser(user); err != nil {
 		if isIAMConflict(err) {
 			fail(w, 409, "username already exists")
@@ -356,8 +420,14 @@ func (s *Server) deleteIAMUser(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid IAM user id")
 		return
 	}
-	if principalFrom(r).UserID == id {
+	actor := principalFrom(r)
+	if actor.UserID == id {
 		fail(w, 409, "you cannot delete the IAM user currently in use")
+		return
+	}
+	user, err := s.Store.GetIAMUser(id)
+	if err != nil || !s.canAccessAccount(actor, user.AccountID) || (actor.Kind != "admin" && user.Kind != "iam") {
+		fail(w, 404, "IAM user not found")
 		return
 	}
 	if e := s.Store.DeleteIAMUser(id); e != nil {
@@ -384,12 +454,15 @@ func (s *Server) saveIAMGroup(w http.ResponseWriter, r *http.Request) {
 	if in.PolicyIDs == nil {
 		in.PolicyIDs = []string{}
 	}
-	if !validateIAMIDs(in.PolicyIDs, "pol", func(id string) bool { _, e := s.Store.GetIAMPolicy(id); return e == nil }) {
+	if !validateIAMIDs(in.PolicyIDs, "pol", func(id string) bool {
+		policy, e := s.Store.GetIAMPolicy(id)
+		return e == nil && s.canAccessAccount(principalFrom(r), policy.AccountID)
+	}) {
 		fail(w, 400, "one or more policies are invalid")
 		return
 	}
 	id := r.PathValue("id")
-	g := store.IAMGroup{ID: "grp-" + randHex(8), Created: time.Now()}
+	g := store.IAMGroup{ID: "grp-" + randHex(8), AccountID: s.stampAccount(principalFrom(r)), Created: time.Now()}
 	if id != "" {
 		if !iamIDPattern.MatchString(id) || !strings.HasPrefix(id, "grp-") {
 			fail(w, 400, "invalid group id")
@@ -397,6 +470,10 @@ func (s *Server) saveIAMGroup(w http.ResponseWriter, r *http.Request) {
 		}
 		old, e := s.Store.GetIAMGroup(id)
 		if e != nil {
+			fail(w, 404, "group not found")
+			return
+		}
+		if !s.canAccessAccount(principalFrom(r), old.AccountID) {
 			fail(w, 404, "group not found")
 			return
 		}
@@ -429,6 +506,11 @@ func (s *Server) deleteIAMGroup(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !iamIDPattern.MatchString(id) || !strings.HasPrefix(id, "grp-") {
 		fail(w, 400, "invalid group id")
+		return
+	}
+	group, groupErr := s.Store.GetIAMGroup(id)
+	if groupErr != nil || !s.canAccessAccount(principalFrom(r), group.AccountID) {
+		fail(w, 404, "group not found")
 		return
 	}
 	users, e := s.Store.ListIAMUsers()
@@ -477,7 +559,7 @@ func (s *Server) saveIAMPolicy(w http.ResponseWriter, r *http.Request) {
 		seen[v] = true
 	}
 	id := r.PathValue("id")
-	p := store.IAMPolicy{ID: "pol-" + randHex(8), Created: time.Now()}
+	p := store.IAMPolicy{ID: "pol-" + randHex(8), AccountID: s.stampAccount(principalFrom(r)), Created: time.Now()}
 	if id != "" {
 		if !iamIDPattern.MatchString(id) || !strings.HasPrefix(id, "pol-") {
 			fail(w, 400, "invalid policy id")
@@ -485,6 +567,10 @@ func (s *Server) saveIAMPolicy(w http.ResponseWriter, r *http.Request) {
 		}
 		old, e := s.Store.GetIAMPolicy(id)
 		if e != nil {
+			fail(w, 404, "policy not found")
+			return
+		}
+		if !s.canAccessAccount(principalFrom(r), old.AccountID) {
 			fail(w, 404, "policy not found")
 			return
 		}
@@ -528,6 +614,11 @@ func (s *Server) deleteIAMPolicy(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid policy id")
 		return
 	}
+	policy, policyErr := s.Store.GetIAMPolicy(id)
+	if policyErr != nil || !s.canAccessAccount(principalFrom(r), policy.AccountID) {
+		fail(w, 404, "policy not found")
+		return
+	}
 	users, e := s.Store.ListIAMUsers()
 	if e != nil {
 		fail(w, 500, "could not list IAM users")
@@ -560,9 +651,19 @@ func (s *Server) deleteIAMPolicy(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
 
+func (s *Server) visibleIAMUser(p iamPrincipal, user store.IAMUser) bool {
+	if !s.canAccessAccount(p, user.AccountID) {
+		return false
+	}
+	if p.Kind == "root" || p.Kind == "iam" {
+		return user.Kind == "iam" || user.ID == p.UserID
+	}
+	return true
+}
 func (s *Server) listIAMUserKeys(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, e := s.Store.GetIAMUser(id); e != nil {
+	user, e := s.Store.GetIAMUser(id)
+	if e != nil || !s.visibleIAMUser(principalFrom(r), user) {
 		fail(w, 404, "IAM user not found")
 		return
 	}
@@ -579,7 +680,7 @@ func (s *Server) listIAMUserKeys(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createIAMUserKey(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	user, e := s.Store.GetIAMUser(id)
-	if e != nil {
+	if e != nil || !s.visibleIAMUser(principalFrom(r), user) {
 		fail(w, 404, "IAM user not found")
 		return
 	}
@@ -624,6 +725,11 @@ func (s *Server) createIAMUserKey(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) revokeIAMUserKey(w http.ResponseWriter, r *http.Request) {
 	id, keyID := r.PathValue("id"), r.PathValue("key")
+	user, userErr := s.Store.GetIAMUser(id)
+	if userErr != nil || !s.visibleIAMUser(principalFrom(r), user) {
+		fail(w, 404, "access key not found")
+		return
+	}
 	key, e := s.Store.GetIAMAccessKey(keyID)
 	if e != nil || key.UserID != id {
 		fail(w, 404, "access key not found")

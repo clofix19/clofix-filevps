@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/clofix/filevps/worker/pkg/proto"
@@ -30,11 +31,24 @@ func (p *Postgres) EnsureSchema() error {
 	}
 	for _, ddl := range []string{
 		`CREATE TABLE IF NOT EXISTS cf_managed_database_state(singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK(singleton), state JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+		`CREATE TABLE IF NOT EXISTS cf_kubernetes_state(singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK(singleton), state JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
 		`CREATE TABLE IF NOT EXISTS cf_iam_users (id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, role TEXT NOT NULL, status TEXT NOT NULL, group_ids JSONB NOT NULL DEFAULT '[]', policy_ids JSONB NOT NULL DEFAULT '[]', created TIMESTAMPTZ NOT NULL DEFAULT now())`,
 		`CREATE TABLE IF NOT EXISTS cf_iam_groups (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT NOT NULL DEFAULT '', policy_ids JSONB NOT NULL DEFAULT '[]', created TIMESTAMPTZ NOT NULL DEFAULT now())`,
 		`CREATE TABLE IF NOT EXISTS cf_iam_policies (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT NOT NULL DEFAULT '', permissions JSONB NOT NULL DEFAULT '[]', created TIMESTAMPTZ NOT NULL DEFAULT now())`,
 		`CREATE TABLE IF NOT EXISTS cf_iam_access_keys (access_key_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES cf_iam_users(id) ON DELETE CASCADE, secret_hash TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT true, created TIMESTAMPTZ NOT NULL DEFAULT now())`,
 		`CREATE INDEX IF NOT EXISTS cf_iam_keys_user ON cf_iam_access_keys(user_id, created)`,
+		`CREATE TABLE IF NOT EXISTS cf_accounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, parent_id TEXT, created TIMESTAMPTZ NOT NULL DEFAULT now())`,
+		`ALTER TABLE cf_iam_users ADD COLUMN IF NOT EXISTS email TEXT`,
+		`ALTER TABLE cf_iam_users ADD COLUMN IF NOT EXISTS password_hash TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE cf_iam_users ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'iam'`,
+		`ALTER TABLE cf_iam_users ADD COLUMN IF NOT EXISTS account_id TEXT`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS cf_iam_users_email ON cf_iam_users (lower(email)) WHERE email IS NOT NULL AND email <> ''`,
+		`ALTER TABLE cf_iam_groups ADD COLUMN IF NOT EXISTS account_id TEXT`,
+		`ALTER TABLE cf_iam_policies ADD COLUMN IF NOT EXISTS account_id TEXT`,
+		`CREATE TABLE IF NOT EXISTS cf_sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES cf_iam_users(id) ON DELETE CASCADE, token_hash TEXT NOT NULL UNIQUE, expires TIMESTAMPTZ NOT NULL)`,
+		`CREATE INDEX IF NOT EXISTS cf_sessions_user ON cf_sessions(user_id, expires)`,
+		`ALTER TABLE cf_instances ADD COLUMN IF NOT EXISTS account_id TEXT`,
+		`ALTER TABLE cf_volumes ADD COLUMN IF NOT EXISTS account_id TEXT`,
 	} {
 		if _, err := p.db.Exec(ddl); err != nil {
 			return err
@@ -123,25 +137,25 @@ func (p *Postgres) SetWorkerStatus(id, status string) error {
 
 func (p *Postgres) SaveInstance(i Instance) error {
 	spec, _ := json.Marshal(i.Spec)
-	_, err := p.db.Exec(`INSERT INTO cf_instances(id,worker_id,state,error,placement_method,spec,created) VALUES($1,$2,$3,$4,$5,$6,$7)
-		ON CONFLICT (id) DO UPDATE SET worker_id=$2,state=$3,error=$4,placement_method=$5,spec=$6`,
-		i.ID, i.WorkerID, i.State, i.Error, i.PlacementMethod, spec, i.Created)
+	_, err := p.db.Exec(`INSERT INTO cf_instances(id,worker_id,state,error,placement_method,spec,created,account_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+		ON CONFLICT (id) DO UPDATE SET worker_id=$2,state=$3,error=$4,placement_method=$5,spec=$6,account_id=$8`,
+		i.ID, i.WorkerID, i.State, i.Error, i.PlacementMethod, spec, i.Created, nullString(i.AccountID))
 	return err
 }
 
 func scanInstance(s scanner) (Instance, error) {
 	var i Instance
 	var spec []byte
-	var e sql.NullString
-	if err := s.Scan(&i.ID, &i.WorkerID, &i.State, &e, &i.PlacementMethod, &spec, &i.Created); err != nil {
+	var e, account sql.NullString
+	if err := s.Scan(&i.ID, &i.WorkerID, &i.State, &e, &i.PlacementMethod, &spec, &i.Created, &account); err != nil {
 		return i, err
 	}
-	i.Error = e.String
+	i.Error, i.AccountID = e.String, account.String
 	json.Unmarshal(spec, &i.Spec)
 	return i, nil
 }
 
-const instCols = `id,worker_id,state,error,placement_method,spec,created`
+const instCols = `id,worker_id,state,error,placement_method,spec,created,account_id`
 
 func (p *Postgres) GetInstance(id string) (Instance, error) {
 	i, err := scanInstance(p.db.QueryRow(`SELECT `+instCols+` FROM cf_instances WHERE id=$1`, id))
@@ -174,8 +188,8 @@ func (p *Postgres) DeleteInstance(id string) error {
 }
 
 func (p *Postgres) SaveVolume(v Volume) error {
-	_, err := p.db.Exec(`INSERT INTO cf_volumes(id,name,worker_id,state,instance_id,guest_path,usage_bytes,limit_mb,error,created) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-		ON CONFLICT(id) DO UPDATE SET name=$2,worker_id=$3,state=$4,instance_id=$5,guest_path=$6,usage_bytes=$7,limit_mb=$8,error=$9`, v.ID, v.Name, v.WorkerID, v.State, nullString(v.InstanceID), nullString(v.GuestPath), v.UsageBytes, v.LimitMB, nullString(v.Error), v.Created)
+	_, err := p.db.Exec(`INSERT INTO cf_volumes(id,name,worker_id,state,instance_id,guest_path,usage_bytes,limit_mb,error,created,account_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+		ON CONFLICT(id) DO UPDATE SET name=$2,worker_id=$3,state=$4,instance_id=$5,guest_path=$6,usage_bytes=$7,limit_mb=$8,error=$9,account_id=$11`, v.ID, v.Name, v.WorkerID, v.State, nullString(v.InstanceID), nullString(v.GuestPath), v.UsageBytes, v.LimitMB, nullString(v.Error), v.Created, nullString(v.AccountID))
 	return err
 }
 
@@ -187,15 +201,15 @@ func nullString(s string) any {
 }
 func scanVolume(s scanner) (Volume, error) {
 	var v Volume
-	var inst, path, errText sql.NullString
-	if err := s.Scan(&v.ID, &v.Name, &v.WorkerID, &v.State, &inst, &path, &v.UsageBytes, &v.LimitMB, &errText, &v.Created); err != nil {
+	var inst, path, errText, account sql.NullString
+	if err := s.Scan(&v.ID, &v.Name, &v.WorkerID, &v.State, &inst, &path, &v.UsageBytes, &v.LimitMB, &errText, &v.Created, &account); err != nil {
 		return v, err
 	}
-	v.InstanceID, v.GuestPath, v.Error = inst.String, path.String, errText.String
+	v.InstanceID, v.GuestPath, v.Error, v.AccountID = inst.String, path.String, errText.String, account.String
 	return v, nil
 }
 
-const volumeCols = `id,name,worker_id,state,instance_id,guest_path,usage_bytes,limit_mb,error,created`
+const volumeCols = `id,name,worker_id,state,instance_id,guest_path,usage_bytes,limit_mb,error,created,account_id`
 
 func (p *Postgres) GetVolume(id string) (Volume, error) {
 	v, err := scanVolume(p.db.QueryRow(`SELECT `+volumeCols+` FROM cf_volumes WHERE id=$1`, id))
@@ -260,15 +274,17 @@ func (p *Postgres) Audit(actor, action, target, result string) error {
 func scanIAMUser(s scanner) (IAMUser, error) {
 	var u IAMUser
 	var groups, policies []byte
-	err := s.Scan(&u.ID, &u.Username, &u.Role, &u.Status, &groups, &policies, &u.Created)
+	var email, account sql.NullString
+	err := s.Scan(&u.ID, &u.Username, &u.Role, &u.Status, &groups, &policies, &u.Created, &email, &u.PasswordHash, &u.Kind, &account)
 	if err == nil {
 		_ = json.Unmarshal(groups, &u.GroupIDs)
 		_ = json.Unmarshal(policies, &u.PolicyIDs)
+		u.Email, u.AccountID = email.String, account.String
 	}
 	return u, err
 }
 
-const iamUserCols = `id,username,role,status,group_ids,policy_ids,created`
+const iamUserCols = `id,username,role,status,group_ids,policy_ids,created,email,password_hash,kind,account_id`
 
 func (p *Postgres) ListIAMUsers() ([]IAMUser, error) {
 	rows, err := p.db.Query(`SELECT ` + iamUserCols + ` FROM cf_iam_users ORDER BY username`)
@@ -293,10 +309,17 @@ func (p *Postgres) GetIAMUser(id string) (IAMUser, error) {
 	}
 	return v, err
 }
+func (p *Postgres) GetIAMUserByEmail(email string) (IAMUser, error) {
+	v, err := scanIAMUser(p.db.QueryRow(`SELECT `+iamUserCols+` FROM cf_iam_users WHERE lower(email)=lower($1)`, strings.TrimSpace(email)))
+	if errors.Is(err, sql.ErrNoRows) {
+		return v, ErrNotFound
+	}
+	return v, err
+}
 func (p *Postgres) SaveIAMUser(v IAMUser) error {
 	g, _ := json.Marshal(v.GroupIDs)
 	ps, _ := json.Marshal(v.PolicyIDs)
-	_, err := p.db.Exec(`INSERT INTO cf_iam_users(id,username,role,status,group_ids,policy_ids,created) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO UPDATE SET username=$2,role=$3,status=$4,group_ids=$5,policy_ids=$6`, v.ID, v.Username, v.Role, v.Status, g, ps, v.Created)
+	_, err := p.db.Exec(`INSERT INTO cf_iam_users(id,username,role,status,group_ids,policy_ids,created,email,password_hash,kind,account_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT(id) DO UPDATE SET username=$2,role=$3,status=$4,group_ids=$5,policy_ids=$6,email=$8,password_hash=$9,kind=$10,account_id=$11`, v.ID, v.Username, v.Role, v.Status, g, ps, v.Created, nullString(v.Email), v.PasswordHash, v.Kind, nullString(v.AccountID))
 	return err
 }
 func (p *Postgres) DeleteIAMUser(id string) error {
@@ -314,14 +337,16 @@ func (p *Postgres) DeleteIAMUser(id string) error {
 func scanIAMGroup(s scanner) (IAMGroup, error) {
 	var g IAMGroup
 	var policies []byte
-	err := s.Scan(&g.ID, &g.Name, &g.Description, &policies, &g.Created)
+	var account sql.NullString
+	err := s.Scan(&g.ID, &g.Name, &g.Description, &policies, &g.Created, &account)
 	if err == nil {
 		_ = json.Unmarshal(policies, &g.PolicyIDs)
+		g.AccountID = account.String
 	}
 	return g, err
 }
 
-const iamGroupCols = `id,name,description,policy_ids,created`
+const iamGroupCols = `id,name,description,policy_ids,created,account_id`
 
 func (p *Postgres) ListIAMGroups() ([]IAMGroup, error) {
 	rows, err := p.db.Query(`SELECT ` + iamGroupCols + ` FROM cf_iam_groups ORDER BY name`)
@@ -348,7 +373,7 @@ func (p *Postgres) GetIAMGroup(id string) (IAMGroup, error) {
 }
 func (p *Postgres) SaveIAMGroup(v IAMGroup) error {
 	ps, _ := json.Marshal(v.PolicyIDs)
-	_, err := p.db.Exec(`INSERT INTO cf_iam_groups(id,name,description,policy_ids,created) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET name=$2,description=$3,policy_ids=$4`, v.ID, v.Name, v.Description, ps, v.Created)
+	_, err := p.db.Exec(`INSERT INTO cf_iam_groups(id,name,description,policy_ids,created,account_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET name=$2,description=$3,policy_ids=$4,account_id=$6`, v.ID, v.Name, v.Description, ps, v.Created, nullString(v.AccountID))
 	return err
 }
 func (p *Postgres) DeleteIAMGroup(id string) error {
@@ -366,14 +391,16 @@ func (p *Postgres) DeleteIAMGroup(id string) error {
 func scanIAMPolicy(s scanner) (IAMPolicy, error) {
 	var v IAMPolicy
 	var permissions []byte
-	err := s.Scan(&v.ID, &v.Name, &v.Description, &permissions, &v.Created)
+	var account sql.NullString
+	err := s.Scan(&v.ID, &v.Name, &v.Description, &permissions, &v.Created, &account)
 	if err == nil {
 		_ = json.Unmarshal(permissions, &v.Permissions)
+		v.AccountID = account.String
 	}
 	return v, err
 }
 
-const iamPolicyCols = `id,name,description,permissions,created`
+const iamPolicyCols = `id,name,description,permissions,created,account_id`
 
 func (p *Postgres) ListIAMPolicies() ([]IAMPolicy, error) {
 	rows, err := p.db.Query(`SELECT ` + iamPolicyCols + ` FROM cf_iam_policies ORDER BY name`)
@@ -400,7 +427,7 @@ func (p *Postgres) GetIAMPolicy(id string) (IAMPolicy, error) {
 }
 func (p *Postgres) SaveIAMPolicy(v IAMPolicy) error {
 	ps, _ := json.Marshal(v.Permissions)
-	_, err := p.db.Exec(`INSERT INTO cf_iam_policies(id,name,description,permissions,created) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET name=$2,description=$3,permissions=$4`, v.ID, v.Name, v.Description, ps, v.Created)
+	_, err := p.db.Exec(`INSERT INTO cf_iam_policies(id,name,description,permissions,created,account_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET name=$2,description=$3,permissions=$4,account_id=$6`, v.ID, v.Name, v.Description, ps, v.Created, nullString(v.AccountID))
 	return err
 }
 func (p *Postgres) DeleteIAMPolicy(id string) error {
@@ -460,6 +487,66 @@ func (p *Postgres) DeleteIAMAccessKey(id string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (p *Postgres) ListAccounts() ([]Account, error) {
+	rows, err := p.db.Query(`SELECT id,name,kind,parent_id,created FROM cf_accounts ORDER BY created`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Account{}
+	for rows.Next() {
+		var v Account
+		var parent sql.NullString
+		if e := rows.Scan(&v.ID, &v.Name, &v.Kind, &parent, &v.Created); e != nil {
+			return nil, e
+		}
+		v.ParentID = parent.String
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+func (p *Postgres) GetAccount(id string) (Account, error) {
+	var v Account
+	var parent sql.NullString
+	err := p.db.QueryRow(`SELECT id,name,kind,parent_id,created FROM cf_accounts WHERE id=$1`, id).Scan(&v.ID, &v.Name, &v.Kind, &parent, &v.Created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return v, ErrNotFound
+	}
+	v.ParentID = parent.String
+	return v, err
+}
+func (p *Postgres) SaveAccount(v Account) error {
+	_, err := p.db.Exec(`INSERT INTO cf_accounts(id,name,kind,parent_id,created) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET name=$2,kind=$3,parent_id=$4`, v.ID, v.Name, v.Kind, nullString(v.ParentID), v.Created)
+	return err
+}
+func (p *Postgres) DeleteAccount(id string) error {
+	res, err := p.db.Exec(`DELETE FROM cf_accounts WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+func (p *Postgres) SaveSession(v Session) error {
+	_, err := p.db.Exec(`INSERT INTO cf_sessions(id,user_id,token_hash,expires) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET token_hash=$3,expires=$4`, v.ID, v.UserID, v.TokenHash, v.Expires)
+	return err
+}
+func (p *Postgres) GetSessionByHash(hash string) (Session, error) {
+	var v Session
+	err := p.db.QueryRow(`SELECT id,user_id,token_hash,expires FROM cf_sessions WHERE token_hash=$1 AND expires>$2`, hash, time.Now()).Scan(&v.ID, &v.UserID, &v.TokenHash, &v.Expires)
+	if errors.Is(err, sql.ErrNoRows) {
+		return v, ErrNotFound
+	}
+	return v, err
+}
+func (p *Postgres) DeleteSession(id string) error {
+	_, err := p.db.Exec(`DELETE FROM cf_sessions WHERE id=$1`, id)
+	return err
 }
 
 var _ = scheduler.Capacity{}

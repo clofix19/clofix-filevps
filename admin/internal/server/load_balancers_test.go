@@ -320,7 +320,7 @@ func TestLoadBalancerUI(t *testing.T) {
 	t.Setenv("CLOFIX_DATA_DIR", t.TempDir())
 	s, _ := newSrv(t)
 	s.UIDir = "../../web/admin-ui"
-	w := do(s.AdminHandler(), "GET", "/load-balancers", "", "")
+	w := do(s.AdminHandler(), "GET", "/load-balancers", "", tok)
 	body := w.Body.String()
 	if w.Code != 200 || !strings.Contains(body, `id="lb-form"`) || !strings.Contains(body, "/assets/load-balancers.js") || !strings.Contains(body, `id="lb-target-rps"`) || !strings.Contains(body, `value="2"`) {
 		t.Fatalf("UI failed: %d %s", w.Code, body)
@@ -376,7 +376,7 @@ func TestLoadBalancerURLAndDetailPage(t *testing.T) {
 	}
 	var b loadBalancer
 	json.Unmarshal(w.Body.Bytes(), &b)
-	detail := do(h, "GET", "/load-balancers/"+b.ID, "", "")
+	detail := do(h, "GET", "/load-balancers/"+b.ID, "", tok)
 	page := detail.Body.String()
 	if detail.Code != 200 || !strings.Contains(page, `id="lb-detail"`) || !strings.Contains(page, `id="lb-efs"`) || !strings.Contains(page, `id="lb-efs-path"`) || !strings.Contains(page, `data-chart-range="1h"`) || !strings.Contains(page, `data-chart-range="7d"`) || !strings.Contains(page, `data-chart-range="30d"`) || !strings.Contains(page, `data-chart-range="custom"`) || !strings.Contains(page, `id="chart-lb-replicas"`) || !strings.Contains(page, `id="lb-stat-replicas"`) {
 		t.Fatal("detail page unavailable", detail.Code)
@@ -513,7 +513,9 @@ func TestLoadBalancerEFSIDAutoAttachesMembers(t *testing.T) {
 	if created.Code != 201 {
 		t.Fatal(created.Body.String())
 	}
-	var share struct{ ID string `json:"id"` }
+	var share struct {
+		ID string `json:"id"`
+	}
 	if err := json.Unmarshal(created.Body.Bytes(), &share); err != nil || share.ID == "" {
 		t.Fatal(created.Body.String())
 	}

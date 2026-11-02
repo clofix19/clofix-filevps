@@ -20,12 +20,13 @@ func TestIAMPermissionCatalogCoversResources(t *testing.T) {
 		"/api/volumes/v-1/file": "volumes", "/api/volumes/v-1/archive": "volumes", "/api/volumes/v-1/move": "volumes",
 		"/api/storage/connections/c-1/objects": "storage", "/api/storage/connections/c-1/archive": "storage", "/api/efs": "storage", "/api/efs/efs-1/attach": "storage",
 		"/api/instances/vps-1/waf/logs": "security", "/api/instances/vps-1/install-service": "services",
-		"/api/iam/policies": "iam", "/api/ca.pem": "platform",
+		"/api/iam/policies": "iam", "/api/accounts": "accounts", "/api/ca.pem": "platform",
 		"/api/pricing/plans": "pricing", "/api/billing/invoices": "billing", "/api/billing/invoices/inv-1/pdf": "billing",
 		"/api/dns": "dns", "/api/dns/records": "dns", "/api/dns/records/dns-1": "dns",
 		"/api/vpcs": "vpc", "/api/vpcs/vpc-default": "vpc",
 		"/api/logs": "logs", "/api/logs/sources": "logs", "/api/logs/vps-1/tail": "logs",
 		"/api/firewall": "security", "/api/firewall/workers/w-1": "security",
+		"/api/v1/kubernetes": "kubernetes", "/api/v1/kubernetes/clusters/cks-1": "kubernetes",
 	}
 	for path, want := range routes {
 		if got := permissionResource(path); got != want {

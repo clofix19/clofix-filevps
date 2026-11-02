@@ -26,6 +26,7 @@ import (
 
 // The balancer owns only instances it creates. Configuration and membership survive restarts.
 type loadBalancer struct {
+	AccountID     string             `json:"account_id,omitempty"`
 	Domains       []string           `json:"domains"`
 	Mode          string             `json:"mode"`
 	PublicIP      string             `json:"public_ip"`
@@ -190,7 +191,10 @@ func (d *loadBalancerStore) save() error {
 	if e := os.MkdirAll(filepath.Dir(d.file), 0700); e != nil {
 		return e
 	}
-	type liveSnap struct{ in, hits int; lat float64 }
+	type liveSnap struct {
+		in, hits int
+		lat      float64
+	}
 	live := map[string]liveSnap{}
 	for id, b := range d.Items {
 		live[id] = liveSnap{b.InFlight, b.Hits1m, b.AvgLatencyMS}
@@ -229,8 +233,12 @@ func (s *Server) listLoadBalancers(w http.ResponseWriter, r *http.Request) {
 	d := s.balancers
 	d.Lock()
 	defer d.Unlock()
+	p := principalFrom(r)
 	out := []*loadBalancer{}
 	for _, b := range d.Items {
+		if p.Kind != "admin" && !s.canAccessAccount(p, b.AccountID) {
+			continue
+		}
 		b.refreshLive()
 		out = append(out, b)
 	}
@@ -418,6 +426,10 @@ func (s *Server) saveLoadBalancer(w http.ResponseWriter, r *http.Request) {
 		b.ScaleReason = old.ScaleReason
 	} else {
 		b.ID = "lb-" + randHex(16)
+		b.AccountID = s.stampAccount(principalFrom(r))
+	}
+	if old != nil {
+		b.AccountID = old.AccountID
 	}
 	if old != nil && (old.Mode != b.Mode || old.BackendPort != b.BackendPort) {
 		b.Healthy = map[string]string{}

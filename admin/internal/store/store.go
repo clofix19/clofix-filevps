@@ -37,6 +37,7 @@ type Worker struct {
 
 type Instance struct {
 	ID              string             `json:"id"`
+	AccountID       string             `json:"account_id,omitempty"`
 	WorkerID        string             `json:"worker_id"`
 	State           string             `json:"state"`
 	Error           string             `json:"error,omitempty"`
@@ -47,6 +48,7 @@ type Instance struct {
 
 type Volume struct {
 	ID         string    `json:"id"`
+	AccountID  string    `json:"account_id,omitempty"`
 	Name       string    `json:"name"`
 	WorkerID   string    `json:"worker_id"`
 	State      string    `json:"state"` // CREATING|READY|ATTACHING|ATTACHED|DETACHING|DELETING|FAILED
@@ -58,18 +60,38 @@ type Volume struct {
 	Created    time.Time `json:"created"`
 }
 
-type IAMUser struct {
+type Account struct {
+	ID       string    `json:"id"`
+	Name     string    `json:"name"`
+	Kind     string    `json:"kind"` // platform|partner|client
+	ParentID string    `json:"parent_id,omitempty"`
+	Created  time.Time `json:"created"`
+}
+
+type Session struct {
 	ID        string    `json:"id"`
-	Username  string    `json:"username"`
-	Role      string    `json:"role"`   // IAM User|Read Only|Full Administrator
-	Status    string    `json:"status"` // active|inactive
-	GroupIDs  []string  `json:"group_ids"`
-	PolicyIDs []string  `json:"policy_ids"`
-	Created   time.Time `json:"created"`
+	UserID    string    `json:"user_id"`
+	TokenHash string    `json:"-"`
+	Expires   time.Time `json:"expires"`
+}
+
+type IAMUser struct {
+	ID           string    `json:"id"`
+	AccountID    string    `json:"account_id,omitempty"`
+	Kind         string    `json:"kind,omitempty"` // admin|partner|root|iam
+	Email        string    `json:"email,omitempty"`
+	Username     string    `json:"username"`
+	PasswordHash string    `json:"-"`
+	Role         string    `json:"role"`   // IAM User|Read Only|Full Administrator
+	Status       string    `json:"status"` // active|inactive
+	GroupIDs     []string  `json:"group_ids"`
+	PolicyIDs    []string  `json:"policy_ids"`
+	Created      time.Time `json:"created"`
 }
 
 type IAMGroup struct {
 	ID          string    `json:"id"`
+	AccountID   string    `json:"account_id,omitempty"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
 	PolicyIDs   []string  `json:"policy_ids"`
@@ -78,6 +100,7 @@ type IAMGroup struct {
 
 type IAMPolicy struct {
 	ID          string    `json:"id"`
+	AccountID   string    `json:"account_id,omitempty"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
 	Permissions []string  `json:"permissions"`
@@ -111,10 +134,18 @@ type Store interface {
 	ListVolumes() ([]Volume, error)
 	DeleteVolume(id string) error
 
+	ListAccounts() ([]Account, error)
+	GetAccount(id string) (Account, error)
+	SaveAccount(account Account) error
+	DeleteAccount(id string) error
 	ListIAMUsers() ([]IAMUser, error)
 	GetIAMUser(id string) (IAMUser, error)
+	GetIAMUserByEmail(email string) (IAMUser, error)
 	SaveIAMUser(user IAMUser) error
 	DeleteIAMUser(id string) error
+	SaveSession(session Session) error
+	GetSessionByHash(hash string) (Session, error)
+	DeleteSession(id string) error
 	ListIAMGroups() ([]IAMGroup, error)
 	GetIAMGroup(id string) (IAMGroup, error)
 	SaveIAMGroup(group IAMGroup) error
