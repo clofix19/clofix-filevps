@@ -151,6 +151,7 @@ func (a *Agent) capacity() scheduler.Capacity {
 	if a.Kubernetes != nil {
 		ready, versions, nodes, host := a.Kubernetes.Inventory()
 		cp.KubernetesReady = ready
+		cp.KubernetesFake = a.Kubernetes.Fake
 		cp.KubernetesVersions = versions
 		cp.KubernetesNodes = nodes
 		cp.KubernetesPublicHost = host

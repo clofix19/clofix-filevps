@@ -1,7 +1,7 @@
 /* Per-table column preferences, search, and top actions. */
 (() => {
   const defaults = {
-    instances:['Select','VPS','State','Worker','CPU','RAM','IN','OUT','Bandwidth','Disk','IP address','Created'],
+    instances:['Select','Name','Kind','State','Worker','CPU','RAM','IN','OUT','Bandwidth','Disk','IP address','Created'],
     'home-vps-table':['Select','VPS','State','RAM','CPU'],
     'home-worker-table':['Worker','Status','Free RAM','CPU'],
     workers:['Select','Worker','Host','Status','CPU','RAM','Disk','Host swap free / total','ZRAM','GPU inventory','Memory pressure','Last heartbeat'],
@@ -16,7 +16,7 @@
   };
   const actionName = label => /^actions?$/i.test((label || '').trim());
   document.querySelectorAll('.table-wrap table[id]').forEach(table => {
-    const key = 'cf_table_columns_v2:' + table.id;
+    const key = 'cf_table_columns_v3:' + table.id;
     let saved = null, signature = '', controls, enhancing = false, selectedKeys = new Set(), timer = 0;
     try { const value = JSON.parse(localStorage.getItem(key)); if (Array.isArray(value)) saved = value; } catch (_) {}
     const wrap = table.closest('.table-wrap');

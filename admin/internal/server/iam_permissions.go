@@ -13,7 +13,7 @@ func iamPermissionDetails() map[string]iamPermissionDetail {
 	}
 	resources := map[string][2]string{
 		"databases":      {"Managed databases", "Owned MySQL, PostgreSQL, MongoDB and Redis projects, users, schema, backups, downloads, restores, jobs and schedules. Manage includes provisioning and destructive actions."},
-		"kubernetes":     {"CKS", "Owned CloFix Kubernetes Service clusters, node pools, Helm, storage, ingress, RBAC, autoscaling, etcd backups, upgrades and kubeconfig. Manage covers create, scale, delete, protection and workload changes. FileVPS guests cannot run kubelet."},
+		"kubernetes":     {"CKS", "Owned CloFix Kubernetes Service clusters, node pools, namespaces, pods, deployments, services, secrets, config maps, PVCs, Helm, CloFix LB/volume/EFS/S3/VPS attachments, ingress, RBAC, autoscaling, etcd backups, upgrades and kubeconfig. Manage covers create, scale, delete, protection and workload changes. FileVPS guests cannot run kubelet."},
 		"license":        {"License", "View controller license status and plan entitlements. Manage configures the license server/key and validates the current license."},
 		"health-checks":  {"Health Checks & alerts", "Monitor HTTP/TCP endpoints and worker/LB availability. Manage configures notification webhooks, sends test messages and edits monitors."},
 		"load-balancers": {"Load Balancers", "HTTP routing, TCP NLB listeners, allocated IP pools, health checks and owned VPS autoscaling. Manage includes IP pool changes and provisioning and deleting backend VPS instances."},
@@ -30,7 +30,7 @@ func iamPermissionDetails() map[string]iamPermissionDetail {
 		"accounts":       {"Accounts", "Partner and client account records. Manage creates partner or root-client logins. Public registration always creates a root client."},
 		"pricing":        {"Pricing & Plans", "Product catalog prices, resource unit rates, discounts, payment-gateway configuration, currency/tax and billing-notification flags. Manage creates and edits catalog prices. Changing a catalog price does not rewrite active subscription amounts."},
 		"billing":        {"Billing & Payments", "Customer invoices, wallets, recorded payments, subscriptions, refunds, credits and revenue totals. Manage records bookkeeping entries. Card charges are not processed until a gateway processor is connected."},
-		"dns":            {"DNS Service", "Controller DNS zone and records auto-created from VPS, load balancer, database, managed app and worker inventory. Manage edits the zone and manual records. The controller does not listen on port 53 or publish public DNS."},
+		"dns":            {"DNS Service", "Controller DNS zone and records auto-created from VPS, load balancer, CKS, database, managed app and worker inventory. Manage edits the zone and manual records. The controller does not listen on port 53 or publish public DNS."},
 		"vpc":            {"VPC", "Private IP blocks on the FileVPS bridge 10.231.0.0/16. The default block cannot be deleted. Manage creates, edits and deletes extra subnets. VPS, databases and managed apps use the default VPC unless another block is selected."},
 		"logs":           {"Log Service", "Central live tails for VPS, load balancer, database, Library and worker logs. Manage adds custom paths, downloads tails and configures keyword/level alerts that notify Settings channels."},
 		"platform":       {"Platform", "Controller-level API scope and fallback for platform endpoints. Does not grant access to other resource scopes."},

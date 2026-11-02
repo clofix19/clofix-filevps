@@ -49,5 +49,5 @@
  $('application-files-download').onclick=async()=>{if(!output)return;try{const response=await apiRaw('GET',`/api/application-runs/${output.id}/output`);download(await response.blob(),output.id+'-output.zip');}catch(e){$('application-log-status').textContent=e.message;}};
  $('application-webhook-enable').onclick=async()=>{if(!webhookApp)return;try{const value=await api('POST',`/api/applications/${webhookApp.id}/webhook`,{});$('application-webhook-details').textContent=`${location.origin}${value.path}\n\n${value.header}: ${value.secret}`;$('application-webhook-message').textContent='Copy this secret now. It will not be shown again.';}catch(e){$('application-webhook-message').textContent=e.message;}};
  $('application-webhook-disable').onclick=async()=>{if(!webhookApp)return;try{await api('DELETE',`/api/applications/${webhookApp.id}/webhook`);$('application-webhook-details').textContent='Webhook disabled.';$('application-webhook-message').textContent='';}catch(e){$('application-webhook-message').textContent=e.message;}};
- $('save').addEventListener('click',refreshApps);setInterval(refreshApps,3000);refreshApps();
+ $('save')?.addEventListener('click',refreshApps);setInterval(refreshApps,3000);refreshApps();
 })();

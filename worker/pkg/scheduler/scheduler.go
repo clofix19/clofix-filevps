@@ -15,6 +15,7 @@ type Capacity struct {
 	DatabaseProjects     []string          `json:"database_projects,omitempty"`
 	DatabasePublicHost   string            `json:"database_public_host,omitempty"`
 	KubernetesReady      bool              `json:"kubernetes_ready,omitempty"`
+	KubernetesFake       bool              `json:"kubernetes_fake,omitempty"`
 	KubernetesVersions   []string          `json:"kubernetes_versions,omitempty"`
 	KubernetesNodes      []string          `json:"kubernetes_nodes,omitempty"`
 	KubernetesPublicHost string            `json:"kubernetes_public_host,omitempty"`
