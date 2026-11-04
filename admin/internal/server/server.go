@@ -63,6 +63,8 @@ type Server struct {
 	firewall          *firewallStore
 	efs               *efsStore
 	securityCenter    *securityCenterStore
+	docker            *dockerStore
+	waf               *wafStore
 
 	placeMu         sync.Mutex
 	failMu          sync.Mutex
@@ -92,9 +94,10 @@ func New(s store.Store, ca *pki.CA, adminToken, uiDir string) *Server {
 	if dataDir == "" {
 		dataDir = "/var/lib/clofix-controller"
 	}
-	server := &Server{license: loadControllerLicense(dataDir), monitoring: loadMonitoring(dataDir), balancers: loadBalancers(dataDir), applications: loadServerless(dataDir), billing: loadBilling(dataDir), dns: loadDNS(dataDir), vpcs: loadVPCs(dataDir), sshKeys: loadSSHKeys(dataDir), logs: loadLogs(dataDir), firewall: loadFirewall(dataDir), efs: loadEFS(dataDir), securityCenter: loadSecurityCenter(dataDir), Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), S3MasterAddress: os.Getenv("CLOFIX_S3_MASTER_ADDRESS"), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}, backups: map[string]proto.BackupInfo{}, certificates: loadCertificates(dataDir), platform: loadPlatform(dataDir), images: loadImageCatalog(dataDir), s3Pool: loadS3PoolSettings(dataDir)}
+	server := &Server{license: loadControllerLicense(dataDir), monitoring: loadMonitoring(dataDir), balancers: loadBalancers(dataDir), applications: loadServerless(dataDir), billing: loadBilling(dataDir), dns: loadDNS(dataDir), vpcs: loadVPCs(dataDir), sshKeys: loadSSHKeys(dataDir), logs: loadLogs(dataDir), firewall: loadFirewall(dataDir), efs: loadEFS(dataDir), securityCenter: loadSecurityCenter(dataDir), waf: loadWAF(dataDir), Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), S3MasterAddress: os.Getenv("CLOFIX_S3_MASTER_ADDRESS"), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}, backups: map[string]proto.BackupInfo{}, certificates: loadCertificates(dataDir), platform: loadPlatform(dataDir), images: loadImageCatalog(dataDir), s3Pool: loadS3PoolSettings(dataDir)}
 	server.initDatabases(dataDir)
 	server.initKubernetes(dataDir)
+	server.initDocker(dataDir)
 	return server
 }
 
@@ -128,12 +131,14 @@ func (s *Server) AdminHandler() http.Handler {
 	s.monitoringRoutes(mux)
 	s.logRoutes(mux)
 	s.firewallRoutes(mux)
+	s.wafRoutes(mux)
 	s.securityRoutes(mux)
 	s.efsRoutes(mux)
 	s.loadBalancerRoutes(mux)
 	s.applicationRoutes(mux)
 	s.managedRoutes(mux)
 	s.databaseRoutes(mux)
+	s.dockerRoutes(mux)
 	s.kubernetesRoutes(mux)
 	s.billingRoutes(mux)
 	s.dnsRoutes(mux)
@@ -490,6 +495,8 @@ func uiPage(route string) (page, title, instanceID string, ok bool) {
 		return "load-balancers", "Load Balancers", "", true
 	case "/applications":
 		return "applications", "Applications", "", true
+	case "/docker":
+		return "docker", "Docker", "", true
 	case "/services":
 		return "services", "CloFix Library", "", true
 	case "/security":
@@ -518,6 +525,8 @@ func uiPage(route string) (page, title, instanceID string, ok bool) {
 		return "logs", "Log Service", "", true
 	case "/firewall":
 		return "firewall", "Firewall", "", true
+	case "/waf":
+		return "waf", "WAF", "", true
 	case "/efs":
 		return "efs", "EFS", "", true
 	}
@@ -530,6 +539,9 @@ func uiPage(route string) (page, title, instanceID string, ok bool) {
 	}
 	if len(parts) == 2 && parts[0] == "instances" && apiInstanceID.MatchString(parts[1]) {
 		return "details", "VPS Details", parts[1], true
+	}
+	if len(parts) == 3 && parts[0] == "waf" && parts[1] == "bindings" && regexp.MustCompile(`^waf-[0-9a-f]{32}$`).MatchString(parts[2]) {
+		return "waf-binding", "WAF Binding", parts[2], true
 	}
 	return "", "", "", false
 }
@@ -2771,6 +2783,7 @@ func (s *Server) WorkerHandler() http.Handler {
 	mux.HandleFunc("POST /v1/heartbeat", s.heartbeat)
 	s.databaseWorkerRoutes(mux)
 	s.kubernetesWorkerRoutes(mux)
+	s.dockerWorkerRoutes(mux)
 	return mux
 }
 
@@ -3105,7 +3118,9 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 	ops, _ := s.Store.TakeOps(id)
 	databaseOps, acknowledged := s.databaseHeartbeat(id, hb.DatabaseResults, hb.DatabaseStatuses)
 	ops = append(ops, databaseOps...)
-	kubernetesOps, kubernetesAck := s.kubernetesHeartbeat(id, hb.KubernetesResults, hb.KubernetesStatuses)
+	kubernetesOps, kubeAck := s.kubernetesHeartbeat(id, hb.KubernetesResults, hb.KubernetesStatuses)
 	ops = append(ops, kubernetesOps...)
-	writeJSON(w, 200, proto.HeartbeatResponse{Operations: ops, DatabaseAcknowledged: acknowledged, KubernetesAcknowledged: kubernetesAck, S3MasterAddress: s.S3MasterAddress, DNSHosts: s.dnsHostEntries(), LogSources: s.logSourcesForWorker(id), Firewalls: s.firewallsForWorker(id), EFSShares: s.efsSharesForWorker(id)})
+	dockerOps, dockerAck := s.dockerHeartbeat(id, hb.DockerResults, hb.DockerStatus)
+	ops = append(ops, dockerOps...)
+	writeJSON(w, 200, proto.HeartbeatResponse{Operations: ops, DatabaseAcknowledged: acknowledged, KubernetesAcknowledged: kubeAck, DockerAcknowledged: dockerAck, S3MasterAddress: s.S3MasterAddress, DNSHosts: s.dnsHostEntries(), LogSources: s.logSourcesForWorker(id), Firewalls: s.firewallsForWorker(id), EFSShares: s.efsSharesForWorker(id)})
 }

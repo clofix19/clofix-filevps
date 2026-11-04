@@ -9,7 +9,7 @@
       <a href="#detail-access" data-settings-link aria-controls="detail-access"><strong>Access</strong><span>SSH login and root password</span></a>
       <a href="#detail-services" data-settings-link aria-controls="detail-services"><strong>Services</strong><span>Installed application processes</span></a>
       <a href="#detail-backups" data-settings-link aria-controls="detail-backups"><strong>Backups</strong><span>Snapshots of this VPS</span></a>
-      <a href="#detail-security" data-settings-link aria-controls="detail-security"><strong>Security</strong><span>Protection, SSH and WAF</span></a>
+      <a href="#detail-security" data-settings-link aria-controls="detail-security"><strong>Security</strong><span>Protection and SSH</span></a>
       <a href="#detail-ports" data-settings-link aria-controls="detail-ports"><strong>Networking</strong><span>Port maps and security group</span></a>
     </nav>
     <div class="settings-content">
@@ -62,26 +62,8 @@
           <div class="security-modes-grid" id="security-modes-grid"></div>
           <p class="message" id="security-modes-message" role="status" aria-live="polite"></p>
         </div>
-        <div class="waf-subpanel">
-          <div class="section-head"><div><p class="eyebrow">CloFix Security · HTTP firewall</p><h2><img class="security-mark" src="/clofix-mark.svg" alt=""> OWASP CRS rule controls</h2><p>Web Block: toggle CRS groups for languages (PHP, Node.js, Java, shell/python/go via RCE, JavaScript, ASP.NET), scanners/tools, SQLi, XSS, and more. Custom HTML for 403 responses is below.</p></div><span class="badge" id="waf-status">Not installed</span></div>
-          <p class="muted">Install or remove the OWASP CRS WAF here. Protection Mode must be disabled while installing, uninstalling, changing rules, or saving error pages. Changes validate Nginx and reload it. Rules inspect HTTP/HTTPS only. CRS has no separate Python/Go rule packs — keep OS/command injection and shell language rules enabled for those.</p>
-          <div class="inline-fields"><button class="primary" type="button" id="waf-install">Install OWASP CRS WAF</button><button class="danger" type="button" id="waf-uninstall" hidden>Uninstall OWASP CRS WAF</button><button class="secondary" type="button" id="waf-error-log">View WAF error log</button><span class="message" id="waf-message"></span></div>
-          <div class="waf-section-head"><h3>Rule groups</h3><p id="waf-rule-summary" class="muted">Enable or disable CRS categories.</p></div>
-          <div class="waf-controls" id="waf-controls"></div>
-          <div class="waf-error-pages" id="waf-error-pages">
-            <div class="waf-section-head"><div><h3>Custom error pages</h3><p class="muted">When ModSecurity or Nginx returns these statuses, visitors see your HTML instead of the default page. Start with 403 for WAF blocks.</p></div></div>
-            <div class="waf-status-tabs" id="waf-error-status-tabs" role="tablist" aria-label="Error page status"></div>
-            <label class="form-field form-span waf-error-editor"><span>HTML for <code id="waf-error-status-label">403</code></span>
-              <textarea id="waf-error-html" rows="12" spellcheck="false" placeholder="<!DOCTYPE html>…"></textarea>
-              <small class="waf-error-note">Max 64 KB. Leave blank and save to restore the CloFix default for this status. Preview opens in a new tab.</small>
-            </label>
-            <div class="inline-fields">
-              <button class="primary" type="button" id="waf-error-save">Save error page</button>
-              <button class="secondary" type="button" id="waf-error-preview">Preview</button>
-              <button class="secondary" type="button" id="waf-error-default">Use default</button>
-              <span class="message" id="waf-error-message" role="status" aria-live="polite"></span>
-            </div>
-          </div>
+        <div class="security-setting">
+          <div class="section-head"><div><h3>OWASP CRS WAF</h3><p>Shared worker engine — activate this VPS from the WAF page (bindings), not per-instance install.</p></div><a class="secondary" id="detail-open-waf" href="/waf#waf-bindings">Open WAF</a></div>
         </div>
       </div>
       <div class="panel settings-section" id="detail-ports" data-settings-panel aria-labelledby="detail-heading-ports" hidden>

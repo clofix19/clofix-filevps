@@ -41,7 +41,7 @@
           <form id="dns-record-form">
             <input id="dns-record-id" type="hidden">
             <div class="form-grid">
-              <div class="form-field"><label for="dns-record-resource">Target</label><select id="dns-record-resource"><option value="manual">Manual address</option><option value="vps">FileVPS</option><option value="lb">Load balancer</option><option value="cks">CKS cluster</option><option value="db">Database</option><option value="app">Managed app</option><option value="worker">Worker</option></select></div>
+              <div class="form-field"><label for="dns-record-resource">Target</label><select id="dns-record-resource"><option value="manual">Manual address</option><option value="vps">FileVPS</option><option value="lb">Load balancer</option><option value="cks">CKS cluster</option><option value="db">Database</option><option value="app">Managed app</option><option value="docker">Docker app</option><option value="worker">Worker</option></select></div>
               <div class="form-field"><label for="dns-record-target">Service</label><select id="dns-record-target"></select></div>
               <div class="form-field"><label for="dns-record-name">Name</label><input id="dns-record-name" maxlength="253" required placeholder="www or host.clofix.internal"></div>
               <div class="form-field"><label id="dns-record-port-label" for="dns-record-port">Port</label><select id="dns-record-port-map" hidden></select><input id="dns-record-port" type="number" min="0" max="65535" value="0" placeholder="22, 80, 3306"></div>
@@ -66,7 +66,7 @@
         <div class="form-block">
           <form id="dns-cert-form">
             <div class="form-grid">
-              <div class="form-field"><label for="dns-cert-target">Target</label><select id="dns-cert-target"><option value="alb">ALB · HTTP/HTTPS</option><option value="managed-app">Managed app</option></select></div>
+              <div class="form-field"><label for="dns-cert-target">Target</label><select id="dns-cert-target"><option value="alb">ALB · HTTP/HTTPS</option><option value="managed-app">Managed app</option><option value="docker">Docker app</option></select></div>
               <div class="form-field"><label for="dns-cert-resource">Resource</label><select id="dns-cert-resource" required></select></div>
               <div class="form-field form-span"><label for="dns-cert-domain">Domain</label><input id="dns-cert-domain" list="dns-cert-domain-list" required maxlength="253" placeholder="app.example.com" autocomplete="off"><datalist id="dns-cert-domain-list"></datalist><small class="muted">Pick an existing hostname or type a new one to attach.</small></div>
             </div>

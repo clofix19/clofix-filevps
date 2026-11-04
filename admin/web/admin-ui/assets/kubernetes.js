@@ -244,16 +244,19 @@
   fillWorkers();
  }
  async function refresh(){
-  if(busy)return;busy=true;
-  try{
-   state=await api('GET','/api/v1/kubernetes');
-   if((!selected||!cluster())&&state.clusters?.length)selected=state.clusters[0].id;
-   if(selected){try{catalog=await api('GET',`/api/v1/kubernetes/clusters/${selected}/catalog`);}catch(e){catalog={load_balancers:[],volumes:[],efs:[],s3:[],vps:[]};}}
-   const gate=get('cks-gate-note');
-   if(gate&&state.production_gate?.reason)gate.textContent=state.production_gate.reason;
-   render();
-  }catch(error){message(error.message);}
-  finally{busy=false;}
+  const run=async()=>{
+   if(busy)return;busy=true;
+   try{
+    state=await api('GET','/api/v1/kubernetes');
+    if((!selected||!cluster())&&state.clusters?.length)selected=state.clusters[0].id;
+    if(selected){try{catalog=await api('GET',`/api/v1/kubernetes/clusters/${selected}/catalog`);}catch(e){catalog={load_balancers:[],volumes:[],efs:[],s3:[],vps:[]};}}
+    const gate=get('cks-gate-note');
+    if(gate&&state.production_gate?.reason)gate.textContent=state.production_gate.reason;
+    render();
+   }catch(error){message(error.message);}
+   finally{busy=false;}
+  };
+  return typeof preservePageScroll==='function'?preservePageScroll(run):run();
  }
  try{
  get('cks-create').onclick=()=>{fillWorkers();get('cks-create-dialog').showModal();};

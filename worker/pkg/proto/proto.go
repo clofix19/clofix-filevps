@@ -2,9 +2,11 @@
 package proto
 
 import (
+	"encoding/json"
+	"time"
+
 	db "github.com/clofix/filevps/worker/pkg/database"
 	k8s "github.com/clofix/filevps/worker/pkg/kubernetes"
-	"time"
 
 	"github.com/clofix/filevps/worker/pkg/scheduler"
 )
@@ -199,6 +201,7 @@ type FirewallSpec struct {
 type Operation struct {
 	DatabaseJobID   string             `json:"database_job_id,omitempty"`
 	KubernetesJobID string             `json:"kubernetes_job_id,omitempty"`
+	DockerJobID     string             `json:"docker_job_id,omitempty"`
 	Managed         *ManagedSpec       `json:"managed,omitempty"`
 	Execution       *Execution         `json:"execution,omitempty"`
 	ID              string             `json:"id"`
@@ -277,6 +280,8 @@ type Heartbeat struct {
 	DatabaseStatuses   []db.Status          `json:"database_statuses,omitempty"`
 	KubernetesResults  []k8s.Result         `json:"kubernetes_results,omitempty"`
 	KubernetesStatuses []k8s.Status         `json:"kubernetes_statuses,omitempty"`
+	DockerResults      json.RawMessage      `json:"docker_results,omitempty"`
+	DockerStatus       json.RawMessage      `json:"docker_status,omitempty"`
 	ManagedApps        []ManagedStatus      `json:"managed_apps,omitempty"`
 	ExecutionProgress  []ExecutionProgress  `json:"execution_progress,omitempty"`
 	Version            string               `json:"version"`
@@ -326,6 +331,7 @@ type WorkerVolumeStatus struct {
 type HeartbeatResponse struct {
 	DatabaseAcknowledged   []string        `json:"database_acknowledged,omitempty"`
 	KubernetesAcknowledged []string        `json:"kubernetes_acknowledged,omitempty"`
+	DockerAcknowledged     []string        `json:"docker_acknowledged,omitempty"`
 	Operations             []Operation     `json:"operations"`
 	S3MasterAddress        string          `json:"s3_master_address,omitempty"`
 	DNSHosts               []DNSHost       `json:"dns_hosts,omitempty"`

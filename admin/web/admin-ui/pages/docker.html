@@ -1,0 +1,144 @@
+{{define "content"}}
+<section class="page active database-page" id="page-docker">
+  <div class="section-head"><div><p class="eyebrow">Compute</p><h2>Docker</h2><p>Deploy and manage containers on worker-host Docker Engine. FileVPS and Library Quick Apps stay separate. Tenants never receive docker.sock.</p></div>
+    <div class="row-actions"><button class="secondary" id="docker-refresh" type="button">Refresh</button><button class="primary" id="docker-deploy" type="button">＋ Deploy</button></div>
+  </div>
+  <article class="panel database-activity-card" aria-labelledby="docker-activity-title"><div class="database-activity-icon" aria-hidden="true">↻</div><div><span class="eyebrow" id="docker-activity-title">Live activity</span><p class="message" id="docker-message" role="status" aria-live="polite">No Docker activity yet.</p></div></article>
+  <div class="settings-layout">
+    <nav class="settings-nav" aria-label="Docker sections">
+      <a href="#docker-overview" data-settings-link aria-controls="docker-overview" aria-current="location"><span class="settings-nav-icon" aria-hidden="true">◎</span><span class="settings-nav-text"><strong>Overview</strong><span>Status &amp; capacity</span></span></a>
+      <a href="#docker-containers" data-settings-link aria-controls="docker-containers"><span class="settings-nav-icon" aria-hidden="true">⬡</span><span class="settings-nav-text"><strong>Containers</strong><span>Lifecycle</span></span></a>
+      <a href="#docker-apps" data-settings-link aria-controls="docker-apps"><span class="settings-nav-icon" aria-hidden="true">▦</span><span class="settings-nav-text"><strong>Applications</strong><span>Deployments</span></span></a>
+      <a href="#docker-quick" data-settings-link aria-controls="docker-quick"><span class="settings-nav-icon" aria-hidden="true">◇</span><span class="settings-nav-text"><strong>Quick Apps</strong><span>Templates</span></span></a>
+      <a href="#docker-compose" data-settings-link aria-controls="docker-compose"><span class="settings-nav-icon" aria-hidden="true">☰</span><span class="settings-nav-text"><strong>Compose</strong><span>Multi-service</span></span></a>
+      <a href="#docker-images" data-settings-link aria-controls="docker-images"><span class="settings-nav-icon" aria-hidden="true">▤</span><span class="settings-nav-text"><strong>Images &amp; Registry</strong><span>Pull &amp; credentials</span></span></a>
+      <a href="#docker-networks" data-settings-link aria-controls="docker-networks"><span class="settings-nav-icon" aria-hidden="true">⇄</span><span class="settings-nav-text"><strong>Networks</strong><span>Bridge &amp; internal</span></span></a>
+      <a href="#docker-volumes" data-settings-link aria-controls="docker-volumes"><span class="settings-nav-icon" aria-hidden="true">◫</span><span class="settings-nav-text"><strong>Volumes</strong><span>Persistent data</span></span></a>
+      <a href="#docker-deployments" data-settings-link aria-controls="docker-deployments"><span class="settings-nav-icon" aria-hidden="true">▶</span><span class="settings-nav-text"><strong>Deployments</strong><span>Job history</span></span></a>
+      <a href="#docker-monitoring" data-settings-link aria-controls="docker-monitoring"><span class="settings-nav-icon" aria-hidden="true">⌖</span><span class="settings-nav-text"><strong>Monitoring</strong><span>Metrics</span></span></a>
+      <a href="#docker-backups" data-settings-link aria-controls="docker-backups"><span class="settings-nav-icon" aria-hidden="true">↻</span><span class="settings-nav-text"><strong>Backup &amp; Restore</strong><span>Volume archives</span></span></a>
+      <a href="#docker-security" data-settings-link aria-controls="docker-security"><span class="settings-nav-icon" aria-hidden="true">◈</span><span class="settings-nav-text"><strong>Security</strong><span>Policies &amp; scans</span></span></a>
+      <a href="#docker-engine" data-settings-link aria-controls="docker-engine"><span class="settings-nav-icon" aria-hidden="true">⚙</span><span class="settings-nav-text"><strong>Settings</strong><span>Engine &amp; workers</span></span></a>
+    </nav>
+    <div class="settings-content">
+      <div class="settings-section" id="docker-overview" data-settings-panel aria-labelledby="docker-heading-overview">
+        <h2 id="docker-heading-overview" class="visually-hidden" tabindex="-1">Overview</h2>
+        <div class="stats-grid database-stats" id="docker-stats">
+          <article class="stat-card"><span>Ready workers</span><strong id="docker-stat-workers">—</strong><small id="docker-stat-workers-note">Host Docker Engine</small></article>
+          <article class="stat-card"><span>Containers</span><strong id="docker-stat-containers">—</strong><small id="docker-stat-containers-note">Tenant scoped</small></article>
+          <article class="stat-card"><span>Applications</span><strong id="docker-stat-apps">—</strong><small id="docker-stat-apps-note">Image / Compose / Git / Quick Apps</small></article>
+          <article class="stat-card"><span>Failed</span><strong id="docker-stat-failed">—</strong><small id="docker-stat-failed-note">Needs attention</small></article>
+        </div>
+        <div class="chart-toolbar"><div class="chart-ranges" role="group" aria-label="Chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="6h" aria-pressed="false">6h</button><button type="button" data-chart-range="1d" aria-pressed="false">1d</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button><button type="button" data-chart-range="custom" aria-pressed="false">Custom</button></div><div class="chart-custom" hidden><label>From <input type="datetime-local" data-chart-from></label><label>To <input type="datetime-local" data-chart-to></label><button type="button" class="small-btn" data-chart-custom-apply>Apply</button></div></div>
+        <div class="chart-grid">
+          <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Docker CPU</div><div class="chart-subtitle">Container usage vs allocated cores · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-docker-cpu-current">—</div></div></div><svg id="chart-docker-cpu" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Docker CPU usage and allocated capacity chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>Used vCPU</span><span><i class="legend-dot blue"></i>Allocated vCPU</span></div></article>
+          <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Docker memory</div><div class="chart-subtitle">Container RAM against cgroup limits · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-docker-memory-current">—</div></div></div><svg id="chart-docker-memory" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Docker memory usage chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>Used RAM</span><span><i class="legend-dot blue"></i>Allocated RAM</span></div></article>
+          <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Engine disk</div><div class="chart-subtitle">Docker root filesystem used vs total · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-docker-disk-current">—</div></div></div><svg id="chart-docker-disk" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Docker engine disk usage chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>Used disk</span><span><i class="legend-dot blue"></i>Total disk</span></div></article>
+          <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Containers</div><div class="chart-subtitle">Running vs total managed containers · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-docker-containers-current">—</div></div></div><svg id="chart-docker-containers" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Docker container count chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>Running</span><span><i class="legend-dot blue"></i>Total</span></div></article>
+          <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Container network</div><div class="chart-subtitle">Aggregate IN and OUT rates · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-docker-net-current">—</div></div></div><svg id="chart-docker-net" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Docker network IN and OUT chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>IN</span><span><i class="legend-dot amber"></i>OUT</span></div></article>
+          <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Container bandwidth</div><div class="chart-subtitle">Combined IN + OUT · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-docker-bw-current">—</div></div></div><svg id="chart-docker-bw" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Docker bandwidth chart"></svg><div class="chart-legend"><span><i class="legend-dot blue"></i>Bandwidth</span></div></article>
+        </div>
+        <div class="panel"><div class="section-head"><div><h3>How Docker fits CloFix</h3><p class="muted">Controller APIs schedule jobs → worker agent talks to <strong>host dockerd</strong> → containers get cgroup limits, no privileged mode, no host network, no docker.sock mounts.</p></div></div>
+          <div class="table-wrap"><table id="docker-workers-table" data-inline-actions></table></div>
+        </div>
+      </div>
+      <div class="panel settings-section" id="docker-containers" data-settings-panel aria-labelledby="docker-heading-containers" hidden>
+        <div class="section-head"><div><h3 id="docker-heading-containers" tabindex="-1">Containers</h3><p class="muted">Lifecycle controls for image-backed containers.</p></div><button class="secondary" id="docker-container-new" type="button">New container</button></div>
+        <div class="table-wrap"><table id="docker-containers-table" data-inline-actions></table></div>
+      </div>
+      <div class="panel settings-section" id="docker-apps" data-settings-panel aria-labelledby="docker-heading-apps" hidden>
+        <div class="section-head"><div><h3 id="docker-heading-apps" tabindex="-1">Applications</h3><p class="muted">Image, Compose, Git and Quick App deployments.</p></div></div>
+        <div class="table-wrap"><table id="docker-apps-table" data-inline-actions></table></div>
+      </div>
+      <div class="panel settings-section" id="docker-quick" data-settings-panel aria-labelledby="docker-heading-quick" hidden>
+        <div class="section-head"><div><h3 id="docker-heading-quick" tabindex="-1">Quick Apps</h3><p class="muted">Predefined images with editable limits. Separate from Library native Quick Apps.</p></div></div>
+        <div class="table-wrap"><table id="docker-templates-table" data-inline-actions></table></div>
+      </div>
+      <div class="panel settings-section" id="docker-compose" data-settings-panel aria-labelledby="docker-heading-compose" hidden>
+        <div class="section-head"><div><h3 id="docker-heading-compose" tabindex="-1">Compose projects</h3><p class="muted">Multi-service stacks on host Docker Compose.</p></div><button class="secondary" id="docker-compose-new" type="button">Deploy Compose</button></div>
+        <div class="table-wrap"><table id="docker-compose-table" data-inline-actions></table></div>
+      </div>
+      <div class="panel settings-section" id="docker-images" data-settings-panel aria-labelledby="docker-heading-images" hidden>
+        <div class="section-head"><div><h3 id="docker-heading-images" tabindex="-1">Images</h3><p class="muted">Worker-reported inventory and registry credentials.</p></div><div class="inline-fields"><button class="secondary" id="docker-image-pull" type="button">Pull image</button><button class="secondary" id="docker-image-prune" type="button">Prune unused</button><button class="secondary" id="docker-registry-add" type="button">Add registry</button></div></div>
+        <div class="table-wrap"><table id="docker-images-table" data-inline-actions></table></div>
+        <h4>Registries</h4>
+        <div class="table-wrap"><table id="docker-registries-table" data-inline-actions></table></div>
+      </div>
+      <div class="panel settings-section" id="docker-networks" data-settings-panel aria-labelledby="docker-heading-networks" hidden>
+        <div class="section-head"><div><h3 id="docker-heading-networks" tabindex="-1">Networks</h3><p class="muted">Bridge and internal networks for containers.</p></div><button class="secondary" id="docker-network-new" type="button">Create network</button></div>
+        <div class="table-wrap"><table id="docker-networks-table" data-inline-actions></table></div>
+      </div>
+      <div class="panel settings-section" id="docker-volumes" data-settings-panel aria-labelledby="docker-heading-volumes" hidden>
+        <div class="section-head"><div><h3 id="docker-heading-volumes" tabindex="-1">Volumes</h3><p class="muted">Persistent data with optional delete protection.</p></div><button class="secondary" id="docker-volume-new" type="button">Create volume</button></div>
+        <div class="table-wrap"><table id="docker-volumes-table" data-inline-actions></table></div>
+      </div>
+      <div class="panel settings-section" id="docker-deployments" data-settings-panel aria-labelledby="docker-heading-jobs" hidden>
+        <div class="section-head"><div><h3 id="docker-heading-jobs" tabindex="-1">Deployment jobs</h3><p class="muted">Queued and completed Docker operations.</p></div></div>
+        <div class="table-wrap"><table id="docker-jobs-table" data-inline-actions></table></div>
+      </div>
+      <div class="panel settings-section" id="docker-monitoring" data-settings-panel aria-labelledby="docker-heading-monitoring" hidden>
+        <div class="section-head"><div><h3 id="docker-heading-monitoring" tabindex="-1">Monitoring</h3><p class="muted">Worker and container metrics snapshot.</p></div></div>
+        <pre class="log-view" id="docker-metrics-view">Loading…</pre>
+      </div>
+      <div class="panel settings-section" id="docker-backups" data-settings-panel aria-labelledby="docker-heading-backups" hidden>
+        <div class="section-head"><div><h3 id="docker-heading-backups" tabindex="-1">Backup &amp; Restore</h3><p class="muted">Create volume archives, restore data, redeploy apps that use the volume, or delete backups.</p></div></div>
+        <div class="inline-fields" style="margin-bottom:1rem;gap:.75rem;flex-wrap:wrap;align-items:end">
+          <div class="form-field" style="min-width:14rem;margin:0">
+            <label for="docker-backup-volume">Volume</label>
+            <select id="docker-backup-volume"><option value="">Select volume…</option></select>
+          </div>
+          <button type="button" id="docker-backup-create">Create backup</button>
+          <button type="button" class="secondary" id="docker-backup-refresh">Refresh</button>
+        </div>
+        <p class="muted" id="docker-backup-hint" style="margin-top:0">Each row: <strong>Restore</strong> (write archive into the volume), <strong>Redeploy</strong> (restore then recreate apps that mount it), <strong>Delete</strong> (remove archive + record). Separate from FileVPS backups.</p>
+        <div class="table-wrap"><table id="docker-backups-table" data-inline-actions></table></div>
+      </div>
+      <div class="panel settings-section" id="docker-security" data-settings-panel aria-labelledby="docker-heading-security" hidden>
+        <div class="section-head"><div><h3 id="docker-heading-security" tabindex="-1">Docker Security</h3><p class="muted">Hardening defaults and image scans. OWASP CRS WAF is managed on the shared <a href="/waf">WAF</a> page (engine + bindings).</p></div><a class="secondary" href="/waf#waf-bindings">Open WAF</a></div>
+        <h4>Hardening defaults</h4>
+        <pre class="log-view" id="docker-security-view">Loading…</pre>
+        <h4>Image scan</h4>
+        <div class="inline-fields"><input id="docker-scan-image" placeholder="image:tag"><button class="secondary" id="docker-scan-run" type="button">Scan image</button></div>
+      </div>
+      <div class="panel settings-section" id="docker-engine" data-settings-panel aria-labelledby="docker-heading-engine" hidden>
+        <div class="section-head"><div><h3 id="docker-heading-engine" tabindex="-1">Engine settings</h3><p class="muted">Install/start/stop/upgrade require platform admin. Uses host Docker (<code>CLOFIX_DOCKER_PRODUCT_HOST</code>), not the database DinD socket.</p></div></div>
+        <div class="table-wrap"><table id="docker-engine-table" data-inline-actions></table></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<dialog class="terminal-dialog form-dialog" id="docker-deploy-dialog">
+  <form id="docker-deploy-form">
+    <div class="section-head"><h2 id="docker-deploy-title">Deploy application</h2><button class="secondary" type="button" data-docker-close>Close</button></div>
+    <input type="hidden" id="docker-edit-id" value="">
+    <input type="hidden" id="docker-edit-kind" value="">
+    <div class="form-grid">
+      <div class="form-field"><label for="docker-app-name">Name</label><input id="docker-app-name" required maxlength="80"></div>
+      <div class="form-field"><label for="docker-app-method">Method</label><select id="docker-app-method"><option value="image">Docker image</option><option value="compose">Compose YAML</option><option value="git">Git repository</option><option value="quickapp">Quick App template</option></select></div>
+      <div class="form-field" data-docker-method="image quickapp"><label for="docker-app-image">Image</label><input id="docker-app-image" placeholder="nginx"></div>
+      <div class="form-field" data-docker-method="image quickapp"><label for="docker-app-tag">Tag</label><input id="docker-app-tag" value="latest"></div>
+      <div class="form-field" data-docker-method="quickapp"><label for="docker-app-template">Template</label><select id="docker-app-template"></select></div>
+      <div class="form-field form-span" data-docker-method="compose"><label for="docker-app-compose">Compose YAML</label><textarea id="docker-app-compose" rows="10" placeholder="services:&#10;  web:&#10;    image: nginx:alpine"></textarea></div>
+      <div class="form-field form-span" data-docker-method="git"><label for="docker-app-git">Git URL</label><input id="docker-app-git" placeholder="https://github.com/org/repo.git"></div>
+      <div class="form-field" data-docker-method="git"><label for="docker-app-branch">Branch</label><input id="docker-app-branch" value="main"></div>
+      <div class="form-field" data-docker-method="git"><label for="docker-app-token">Deploy token</label><input id="docker-app-token" type="password" autocomplete="off"></div>
+      <div class="form-field"><label for="docker-app-worker">Worker</label><select id="docker-app-worker"><option value="">Automatic</option></select></div>
+      <div class="form-field"><label for="docker-app-ram">RAM (MiB)</label><input id="docker-app-ram" type="number" min="32" value="256"></div>
+      <div class="form-field"><label for="docker-app-cpu">CPU</label><input id="docker-app-cpu" type="number" min="0.1" step="0.1" value="0.5"></div>
+      <div class="form-field" data-docker-method="image quickapp"><label for="docker-app-port">Container port</label><input id="docker-app-port" type="number" min="1" max="65535" value="80"></div>
+      <div class="form-field" data-docker-method="image quickapp"><label for="docker-app-host-port">Host port (18000–21999)</label><input id="docker-app-host-port" type="number" min="18000" max="21999" placeholder="optional"></div>
+      <div class="form-field form-span"><label for="docker-app-domain">Domain (optional)</label><input id="docker-app-domain" placeholder="app.example.com"></div>
+      <div class="form-field form-span"><label for="docker-app-env">Environment JSON</label><textarea id="docker-app-env" rows="3" placeholder='{"KEY":"value"}'></textarea></div>
+    </div>
+    <p id="docker-deploy-error" class="error" role="alert"></p>
+    <button class="primary" type="submit" id="docker-deploy-submit">Deploy</button>
+  </form>
+</dialog>
+
+<dialog class="terminal-dialog form-dialog" id="docker-log-dialog" aria-labelledby="docker-log-title">
+  <div class="section-head"><div><p class="eyebrow">Container logs</p><h2 id="docker-log-title">Logs</h2></div><button type="button" class="secondary" id="docker-log-close">Close</button></div>
+  <p class="muted" id="docker-log-status">Waiting for worker…</p>
+  <pre class="log-view" id="docker-log-content">Loading…</pre>
+</dialog>
+{{end}}

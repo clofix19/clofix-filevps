@@ -25,7 +25,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY --from=build /out/clofix-worker /usr/local/bin/clofix-worker
 COPY --from=seaweed /usr/bin/weed /usr/local/bin/weed
 COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=dockercli /usr/local/bin/docker-compose /usr/local/bin/docker-compose
+COPY --from=dockercli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
 COPY --from=builtin-rootfs /tmp/rootfs.tar.gz /opt/clofix/builtin/ubuntu/24.04/rootfs.tar.gz
 COPY scripts/build-managed-templates.sh /usr/local/lib/clofix/build-managed-templates.sh
-RUN mkdir -p /usr/local/lib/clofix && chmod 0755 /usr/local/lib/clofix/build-managed-templates.sh
+RUN mkdir -p /usr/local/lib/clofix /usr/local/lib/docker/cli-plugins \
+ && ln -sf /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/lib/docker/cli-plugins/docker-compose \
+ && chmod 0755 /usr/local/lib/clofix/build-managed-templates.sh /usr/local/bin/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
 CMD ["clofix-worker", "run"]

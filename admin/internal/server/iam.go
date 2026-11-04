@@ -44,6 +44,7 @@ var iamPermissionSet = map[string]bool{
 	"health-checks:read": true, "health-checks:manage": true,
 	"load-balancers:read": true, "load-balancers:manage": true,
 	"managed-apps:read": true, "managed-apps:manage": true,
+	"docker:read": true, "docker:manage": true,
 	"*": true, "read:*": true, "backups:read": true, "backups:manage": true, "platform:read": true, "platform:manage": true,
 	"applications:read": true, "applications:manage": true,
 	"instances:read": true, "instances:manage": true, "workers:read": true, "workers:manage": true,
@@ -100,7 +101,7 @@ func permissionResource(path string) string {
 		return "license"
 	case strings.HasPrefix(path, "/api/logs"):
 		return "logs"
-	case strings.HasPrefix(path, "/api/firewall"), strings.HasPrefix(path, "/api/security"), path == "/api/audit":
+	case strings.HasPrefix(path, "/api/firewall"), strings.HasPrefix(path, "/api/security"), strings.HasPrefix(path, "/api/waf"), path == "/api/audit":
 		return "security"
 	case strings.HasPrefix(path, "/api/monitoring"):
 		return "health-checks"
@@ -108,6 +109,8 @@ func permissionResource(path string) string {
 		return "load-balancers"
 	case strings.HasPrefix(path, "/api/managed-apps"):
 		return "managed-apps"
+	case strings.HasPrefix(path, "/api/docker"):
+		return "docker"
 	case strings.HasPrefix(path, "/api/backups"), strings.HasPrefix(path, "/api/instances/") && strings.HasSuffix(path, "/backups"):
 		return "backups"
 	case strings.HasPrefix(path, "/api/applications"), strings.HasPrefix(path, "/api/application-runs"), strings.HasPrefix(path, "/api/functions"):
@@ -277,9 +280,10 @@ func iamBuiltInPolicies() []map[string]any {
 	return []map[string]any{
 		{"name": "CloFixFullAdministrator", "description": "All API resource scopes", "category": "Global", "permissions": []string{"*"}},
 		{"name": "CloFixReadOnly", "description": "View every resource without changes", "category": "Global", "permissions": []string{"read:*"}},
-		{"name": "CloFixComputeOperator", "description": "FileVPS, workers, Library apps, Jobs & Functions, CKS and VPS backups", "category": "Compute", "permissions": []string{
-			"instances:manage", "workers:manage", "managed-apps:manage", "applications:manage", "services:manage", "kubernetes:manage", "backups:manage",
+		{"name": "CloFixComputeOperator", "description": "FileVPS, workers, Library apps, Jobs & Functions, Docker, CKS and VPS backups", "category": "Compute", "permissions": []string{
+			"instances:manage", "workers:manage", "managed-apps:manage", "applications:manage", "docker:manage", "services:manage", "kubernetes:manage", "backups:manage",
 		}},
+		{"name": "CloFixDockerOperator", "description": "Docker Engine containers, images, Compose and deployments", "category": "Compute", "permissions": []string{"docker:manage"}},
 		{"name": "CloFixVPSOperator", "description": "Day-to-day FileVPS, services, security controls, volumes and backups", "category": "Compute", "permissions": []string{
 			"instances:manage", "services:manage", "security:manage", "volumes:manage", "backups:manage",
 		}},

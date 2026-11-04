@@ -542,6 +542,38 @@ func (s *Server) refreshDNS() error {
 				add("dns-auto-app-name-"+a.ID, dnsJoin(alias, "app", zone), "CNAME", host+".", "app", a.ID, "Managed application name", port)
 			}
 		}
+		if s.docker != nil {
+			s.docker.mu.Lock()
+			for _, app := range s.docker.Applications {
+				host := dnsJoin(dnsLabel(app.ID), "docker", zone)
+				port := 0
+				if len(app.Spec.Ports) > 0 {
+					port = app.Spec.Ports[0].HostPort
+					if port == 0 {
+						port = app.Spec.Ports[0].ContainerPort
+					}
+				}
+				wkHost := ""
+				for _, wk := range workers {
+					if wk.ID == app.WorkerID {
+						wkHost = wk.Hostname
+						break
+					}
+				}
+				if rec := dnsAddressRecord(wkHost); rec.Type != "" {
+					add("dns-auto-docker-"+app.ID, host, rec.Type, rec.Value, "docker", app.ID, "Docker application", port)
+				}
+				if alias := dnsLabel(app.Name); alias != "" && alias != dnsLabel(app.ID) {
+					add("dns-auto-docker-name-"+app.ID, dnsJoin(alias, "docker", zone), "CNAME", host+".", "docker", app.ID, "Docker application name", port)
+				}
+				if domain := strings.ToLower(strings.TrimSpace(app.Domain)); domain != "" && validDNSName(domain) {
+					if rec := dnsAddressRecord(wkHost); rec.Type != "" {
+						add("dns-auto-docker-domain-"+app.ID, domain, rec.Type, rec.Value, "docker", app.ID, "Docker application domain", port)
+					}
+				}
+			}
+			s.docker.mu.Unlock()
+		}
 	}
 	if d.Zone.AutoWorker {
 		for _, wk := range workers {
@@ -599,9 +631,9 @@ func newManualDNSRecord(name, typ, value string, port, ttl int, desc, resource, 
 		return dnsRecord{}, fmt.Errorf("description is too long")
 	}
 	switch resource {
-	case "manual", "vps", "lb", "cks", "db", "app", "worker":
+	case "manual", "vps", "lb", "cks", "db", "app", "docker", "worker":
 	default:
-		return dnsRecord{}, fmt.Errorf("select FileVPS, load balancer, CKS cluster, database, managed app, worker or manual")
+		return dnsRecord{}, fmt.Errorf("select FileVPS, load balancer, CKS cluster, database, managed app, Docker app, worker or manual")
 	}
 	if resource != "manual" && resourceID == "" {
 		return dnsRecord{}, fmt.Errorf("select a %s target", resource)
@@ -1165,6 +1197,25 @@ func (s *Server) dnsTargets() []dnsTarget {
 			out = append(out, dnsTarget{Resource: "app", ID: a.ID, Label: label, Name: name, Type: "CNAME", Value: name + ".", Port: port, Ports: dnsSinglePort(port, "Application")})
 		}
 		s.applications.Unlock()
+	}
+	if s.docker != nil {
+		s.docker.mu.Lock()
+		for _, a := range s.docker.Applications {
+			name := dnsJoin(dnsLabel(a.ID), "docker", zone.Domain)
+			label := a.Name
+			if label == "" {
+				label = a.ID
+			}
+			port := 0
+			if len(a.Spec.Ports) > 0 {
+				port = a.Spec.Ports[0].HostPort
+				if port == 0 {
+					port = a.Spec.Ports[0].ContainerPort
+				}
+			}
+			out = append(out, dnsTarget{Resource: "docker", ID: a.ID, Label: label + " · Docker", Name: name, Type: "CNAME", Value: name + ".", Port: port, Ports: dnsSinglePort(port, "Docker")})
+		}
+		s.docker.mu.Unlock()
 	}
 	workers, _ := s.Store.ListWorkers()
 	for _, wk := range workers {

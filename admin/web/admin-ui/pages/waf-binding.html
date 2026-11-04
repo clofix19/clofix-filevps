@@ -1,0 +1,83 @@
+{{define "content"}}
+<section class="page active" id="page-waf-binding">
+  <a class="detail-back" href="/waf#waf-bindings" data-cf-back>← Back to WAF</a>
+  <div class="section-head">
+    <div>
+      <p class="eyebrow">Security · WAF</p>
+      <h2 id="wafb-title">Binding</h2>
+      <p id="wafb-meta" class="muted"></p>
+    </div>
+    <span class="badge" id="wafb-state">—</span>
+  </div>
+  <p class="message" id="wafb-message" role="status" aria-live="polite"></p>
+  <div class="settings-layout">
+    <nav class="settings-nav" aria-label="Binding sections">
+      <a href="#wafb-overview" data-settings-link aria-controls="wafb-overview" aria-current="location"><strong>Overview</strong><span>Hits, blocks, actions</span></a>
+      <a href="#wafb-traffic" data-settings-link aria-controls="wafb-traffic"><strong>Traffic</strong><span>IPs, URIs, events</span></a>
+      <a href="#wafb-rules" data-settings-link aria-controls="wafb-rules"><strong>Rules</strong><span>CRS categories</span></a>
+      <a href="#wafb-errors" data-settings-link aria-controls="wafb-errors"><strong>Error pages</strong><span>Custom HTML</span></a>
+    </nav>
+    <div class="settings-content">
+      <div class="panel settings-section" id="wafb-overview" data-settings-panel aria-labelledby="wafb-heading-overview">
+        <div class="section-head">
+          <div><h2 id="wafb-heading-overview" tabindex="-1">Overview</h2><p id="wafb-stats-note" class="muted">ModSecurity audit from the edge proxy.</p></div>
+          <button class="secondary" type="button" id="wafb-stats-refresh">Refresh stats</button>
+        </div>
+        <div class="waf-stats-grid" id="wafb-stats-kpis" aria-live="polite"></div>
+        <div class="chart-grid waf-chart-grid">
+          <article class="panel chart-panel">
+            <div class="chart-head">
+              <div><div class="chart-title">Traffic</div><div class="chart-subtitle">Hits, blocks and attacks · sampled in this browser</div></div>
+              <div class="chart-tools"><div class="chart-current" id="chart-waf-traffic-current">—</div></div>
+            </div>
+            <svg id="chart-waf-traffic" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="WAF traffic over time"></svg>
+            <div class="chart-legend"><span><i class="legend-dot"></i>Hits</span><span><i class="legend-dot amber"></i>Blocks</span><span><i class="legend-dot blue"></i>Attacks</span></div>
+          </article>
+          <article class="panel chart-panel">
+            <div class="chart-head">
+              <div><div class="chart-title">Unique IPs</div><div class="chart-subtitle">Distinct client IPs in each sample</div></div>
+              <div class="chart-tools"><div class="chart-current" id="chart-waf-ips-current">—</div></div>
+            </div>
+            <svg id="chart-waf-ips" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="WAF unique IPs over time"></svg>
+            <div class="chart-legend"><span><i class="legend-dot blue"></i>Unique IPs</span></div>
+          </article>
+        </div>
+        <div class="inline-fields" style="margin-top:12px">
+          <button class="primary" type="button" id="wafb-activate">Activate</button>
+          <button class="danger" type="button" id="wafb-deactivate">Deactivate</button>
+          <button class="danger secondary" type="button" id="wafb-delete">Delete binding</button>
+        </div>
+      </div>
+      <div class="panel settings-section" id="wafb-traffic" data-settings-panel aria-labelledby="wafb-heading-traffic" hidden>
+        <h2 id="wafb-heading-traffic" tabindex="-1">Traffic &amp; attacks</h2>
+        <div class="waf-stats-panels">
+          <div><h4>Top IPs</h4><div class="table-wrap"><table id="wafb-stats-ips"></table></div></div>
+          <div><h4>Top URIs</h4><div class="table-wrap"><table id="wafb-stats-uris"></table></div></div>
+          <div><h4>Attack types</h4><div class="table-wrap"><table id="wafb-stats-attacks"></table></div></div>
+        </div>
+        <div class="waf-section-head"><h3>Recent events</h3></div>
+        <div class="table-wrap"><table id="wafb-stats-recent" data-inline-actions></table></div>
+      </div>
+      <div class="panel settings-section" id="wafb-rules" data-settings-panel aria-labelledby="wafb-heading-rules" hidden>
+        <div class="waf-section-head"><div><h2 id="wafb-heading-rules" tabindex="-1">Rule groups</h2><p id="wafb-rule-summary" class="muted">Toggle CRS categories for this binding.</p></div></div>
+        <div class="waf-controls" id="wafb-controls"></div>
+      </div>
+      <div class="panel settings-section" id="wafb-errors" data-settings-panel aria-labelledby="wafb-heading-errors" hidden>
+        <div class="waf-error-pages" style="border:0;padding:0;background:transparent">
+          <div class="waf-section-head"><div><h2 id="wafb-heading-errors" tabindex="-1">Custom error pages</h2><p class="muted">HTML for WAF / proxy status responses.</p></div></div>
+          <div class="waf-status-tabs" id="wafb-error-tabs" role="tablist" aria-label="Error page status"></div>
+          <label class="form-field form-span waf-error-editor"><span>HTML for <code id="wafb-error-label">403</code></span>
+            <textarea id="wafb-error-html" rows="12" spellcheck="false" placeholder="<!DOCTYPE html>…"></textarea>
+          </label>
+          <div class="inline-fields">
+            <button class="primary" type="button" id="wafb-error-save">Save error page</button>
+            <button class="secondary" type="button" id="wafb-error-preview">Preview</button>
+            <button class="secondary" type="button" id="wafb-error-default">Use default</button>
+            <span class="message" id="wafb-error-message" role="status"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{{end}}

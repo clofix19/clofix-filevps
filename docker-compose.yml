@@ -80,6 +80,10 @@ services:
     # Do not override DNS: custom 8.8.8.8/1.1.1.1 breaks Docker service discovery
     # (admin, s3pool, database-runtime) and stalls worker heartbeats / CKS readiness.
     # Template builds that need public GitHub DNS use scripts/build-managed-templates.sh on the host.
+    # Lab: admin publishes host :53 for clofix.internal, which can stall Docker Desktop's
+    # embedded DNS for the service name "admin". Pin admin via host-gateway (published :8443).
+    extra_hosts:
+      - "admin:host-gateway"
     environment:
       CLOFIX_CONFIG_DIR: /etc/clofix-filevps
       CLOFIX_STATE_DIR: /var/lib/clofix-filevps
@@ -91,12 +95,18 @@ services:
       CLOFIX_KUBERNETES_FAKE: ${CLOFIX_KUBERNETES_FAKE:-1} # DEV ONLY: lab CKS without host kubeadm; never set on production workers
       CLOFIX_KUBERNETES_PUBLIC_HOST: clofix-local-worker
       DOCKER_HOST: unix:///var/run/clofix-docker/docker.sock
+      # Docker product uses host dockerd (not DB DinD). Lab: Docker Desktop socket.
+      CLOFIX_DOCKER_PRODUCT_HOST: ${CLOFIX_DOCKER_PRODUCT_HOST:-unix:///var/run/docker.sock}
+      # VPS WAF edge proxy joins this container's network to reach FileVPS guests.
+      CLOFIX_WAF_NETWORK_CONTAINER: ${CLOFIX_WAF_NETWORK_CONTAINER:-clofix-filevps-worker-1}
     volumes:
       - workerstate:/var/lib/clofix-filevps
       - workerconfig:/etc/clofix-filevps
       - workerlogs:/var/log/clofix-filevps
       - database-runtime-socket:/var/run/clofix-docker
       - database-runtime-secrets:/dev/shm/clofix-database
+      # Docker Desktop on macOS uses ~/.docker/run/docker.sock; Linux hosts use /var/run/docker.sock
+      - ${CLOFIX_DOCKER_PRODUCT_SOCK:-${HOME}/.docker/run/docker.sock}:/var/run/docker.sock
     ports:
       # Local lab publishes a 100-slot subset of each cloud-scale range (proto still
       # allocates up to 5000). Publishing 30k ports hangs Docker Desktop on start.

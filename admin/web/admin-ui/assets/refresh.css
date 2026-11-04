@@ -504,17 +504,25 @@ button.topbar-fact:hover{border-color:color-mix(in srgb,var(--brand) 45%,var(--l
 .page > .section-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px 16px;
   margin: 0 0 10px;
 }
 .page > .section-head .eyebrow { display: none; }
-.page > .section-head > div {
+.page > .section-head > div:not(.row-actions) {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 4px 10px;
   min-width: 0;
   flex: 1 1 auto;
+}
+.page > .section-head > .row-actions,
+.page > .section-head > .primary,
+.page > .section-head > .secondary {
+  margin-left: auto;
+  flex: 0 0 auto;
+  justify-content: flex-end;
 }
 body:not([data-page="details"]):not([data-page="home"]) .page > .section-head h2 {
   position: absolute;
@@ -1243,3 +1251,19 @@ details.form-field[open] > summary::before{content:'▾ '}
   .table-search{font-size:16px}
   .form-dialog,.terminal-dialog{width:calc(100vw - 16px);border-radius:12px}
 }
+
+/* Docker: many sidebar sections — keep nav usable without blowing the layout */
+#page-docker > .section-head > .row-actions{
+  margin-left:auto;
+  flex:0 0 auto;
+  justify-content:flex-end;
+  white-space:nowrap;
+}
+#page-docker .settings-nav{
+  max-height:calc(100vh - var(--console-bar-h, 64px) - 32px);
+  overflow:auto;
+}
+#page-docker .settings-section > h2{margin:0 0 6px;font-size:17px;letter-spacing:-.2px}
+#page-docker .settings-section > .muted{margin:0 0 14px;max-width:720px;line-height:1.55}
+#page-docker .settings-section .log-view{margin:12px 0}
+#page-docker .settings-section .inline-fields{margin-top:12px}

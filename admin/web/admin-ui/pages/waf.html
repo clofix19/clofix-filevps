@@ -1,0 +1,48 @@
+{{define "content"}}
+<section class="page active" id="page-waf">
+  <div class="section-head"><div><p class="eyebrow">Security</p><h2>WAF</h2><p>OWASP CRS runs as a shared engine on each worker. Activate it only for the Docker apps or FileVPS instances you choose — no reinstall of the engine per target.</p></div><button class="primary" type="button" id="waf-binding-add">＋ New binding</button></div>
+  <p class="message" id="waf-page-message" role="status" aria-live="polite"></p>
+  <div class="settings-layout">
+    <nav class="settings-nav" aria-label="WAF sections">
+      <a href="#waf-engines" data-settings-link aria-controls="waf-engines" aria-current="location"><strong>Engines</strong><span>Worker readiness</span></a>
+      <a href="#waf-bindings" data-settings-link aria-controls="waf-bindings"><strong>Bindings</strong><span>Create · open · delete</span></a>
+    </nav>
+    <div class="settings-content">
+      <div class="panel settings-section" id="waf-engines" data-settings-panel aria-labelledby="waf-heading-engines">
+        <h2 id="waf-heading-engines" tabindex="-1">Worker WAF engines</h2>
+        <p class="muted">When a worker joins, CloFix pulls the OWASP CRS image and prepares the <code>clofix-waf</code> network. Failures show as error badges until the next retry.</p>
+        <div class="table-wrap"><table id="waf-engines-table" data-inline-actions></table></div>
+      </div>
+      <div class="panel settings-section" id="waf-bindings" data-settings-panel aria-labelledby="waf-heading-bindings" hidden>
+        <h2 id="waf-heading-bindings" tabindex="-1">Bindings</h2>
+        <p class="muted">Each binding attaches the ready engine as an edge gateway. Open a binding to see hits, blocks, attacks, and IPs. FileVPS uses the worker gateway in front of guest HTTP (no install inside the VPS).</p>
+        <div class="table-wrap"><table id="waf-bindings-table" data-inline-actions></table></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<dialog class="terminal-dialog form-dialog" id="waf-binding-dialog" aria-labelledby="waf-binding-title">
+  <form id="waf-binding-form">
+    <div class="section-head"><div><h2 id="waf-binding-title">New WAF binding</h2></div><button class="secondary" id="waf-binding-close" type="button">Close</button></div>
+    <input type="hidden" id="waf-binding-id" value="">
+    <div class="form-grid">
+      <div class="form-field"><label for="waf-binding-name">Name</label><input id="waf-binding-name" maxlength="80" placeholder="Optional label"></div>
+      <div class="form-field"><label for="waf-binding-kind">Target type</label>
+        <select id="waf-binding-kind">
+          <option value="vps">FileVPS</option>
+          <option value="docker_app">Docker application</option>
+          <option value="docker_container">Docker container</option>
+        </select>
+      </div>
+      <div class="form-field form-span"><label for="waf-binding-target">Target</label><select id="waf-binding-target" required></select></div>
+      <div class="form-field form-span"><label class="check-row" for="waf-binding-activate"><input id="waf-binding-activate" type="checkbox" checked> Activate immediately</label></div>
+    </div>
+    <p class="message" id="waf-binding-form-message" role="status" aria-live="polite"></p>
+    <div class="form-actions row-actions">
+      <button class="primary" id="waf-binding-save" type="submit">Create binding</button>
+      <button class="secondary" id="waf-binding-cancel" type="button">Cancel</button>
+    </div>
+  </form>
+</dialog>
+{{end}}

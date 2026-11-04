@@ -82,13 +82,19 @@ func quotaLimit(p licensePlan, resource string) int64 {
 		optional = p.MaxKubernetesNodes
 	case "kubernetes-node-pools":
 		optional = p.MaxKubernetesNodePools
+	case "docker-containers":
+		optional = p.MaxDockerContainers
+	case "docker-applications":
+		optional = p.MaxDockerApplications
+	case "docker-workers":
+		optional = p.MaxDockerWorkers
 	default:
 		return 0
 	}
 	if optional == nil {
-		// DNS and CKS shipped after existing plans. Unspecified values stay
+		// DNS, CKS and Docker shipped after existing plans. Unspecified values stay
 		// unlimited so current controllers keep operating until CloFix sets a limit.
-		if resource == "dns-zones" || resource == "dns-records" || resource == "kubernetes-clusters" || resource == "kubernetes-nodes" || resource == "kubernetes-node-pools" {
+		if resource == "dns-zones" || resource == "dns-records" || resource == "kubernetes-clusters" || resource == "kubernetes-nodes" || resource == "kubernetes-node-pools" || resource == "docker-containers" || resource == "docker-applications" || resource == "docker-workers" {
 			return -1
 		}
 		return 0
@@ -175,8 +181,33 @@ func (s *Server) quotaUsed(resource string) (int64, error) {
 		return int64(len(s.dns.Records)), nil
 	case "kubernetes-clusters", "kubernetes-nodes", "kubernetes-node-pools":
 		return s.kubernetesQuotaUsed(resource), nil
+	case "docker-containers", "docker-applications", "docker-workers":
+		return s.dockerQuotaUsed(resource), nil
 	}
 	return 0, fmt.Errorf("unknown quota resource")
+}
+
+func (s *Server) dockerQuotaUsed(resource string) int64 {
+	if s.docker == nil {
+		return 0
+	}
+	s.docker.mu.Lock()
+	defer s.docker.mu.Unlock()
+	switch resource {
+	case "docker-containers":
+		return int64(len(s.docker.Containers))
+	case "docker-applications":
+		return int64(len(s.docker.Applications))
+	case "docker-workers":
+		n := int64(0)
+		for _, st := range s.docker.WorkerStatus {
+			if st.Engine.Ready {
+				n++
+			}
+		}
+		return n
+	}
+	return 0
 }
 
 func (s *Server) kubernetesQuotaUsed(resource string) int64 {
@@ -336,6 +367,10 @@ func quotaCreation(r *http.Request) string {
 		return "applications"
 	case "/api/managed-apps":
 		return "managed-apps"
+	case "/api/docker/containers":
+		return "docker-containers"
+	case "/api/docker/applications", "/api/docker/compose/deploy":
+		return "docker-applications"
 	case "/api/monitoring/monitors":
 		return "health-checks"
 	case "/api/monitoring/channels":

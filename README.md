@@ -32,7 +32,7 @@ Open `http://localhost:8080/login` with the bootstrap admin email and password f
 | Compute | FileVPS, Library (Quick Apps + VPS software), Jobs & Functions, CKS (`/kubernetes` — dedicated workers; FileVPS kubelet unavailable) |
 | Storage | Volumes, EFS, Object Storage, Backups, Databases |
 | Networking | Load Balancers, VPC, DNS Service, Health Checks, Firewall |
-| Security | Security Center (score, modes, Protection/WAF), Users (partner / client / admin cards + create/edit/delete), IAM |
+| Security | **WAF** (`/waf` — shared OWASP CRS engine + bindings), Security Center (score, modes, Protection), Users (partner / client / admin cards + create/edit/delete), IAM |
 | Platform | Workers, Billing & Payments, Settings (General, Pricing & Plans, NLB pool, notifications, License) |
 
 IAM scopes match those resources (`instances`, `databases`, `kubernetes`, `load-balancers`, `dns`, `pricing`, `billing`, and the rest). Admin is the CloFix owner; partners manage their clients; root and IAM users stay inside one client account. **Users** (`/users`) shows partner / client / admin counts and a directory with Create, Edit, and Delete (guards block deleting your own session and unsafe last-admin cases).
@@ -43,7 +43,7 @@ New VPSs start automatically with Protection Mode enabled. The guest root filesy
 
 **Details → Security** also covers SSH Login Block, SSH Key-Only, Delete Protection, **Network Quarantine** (Protection + SSH block + delete lock + inbound restrict), and **Security Modes** (Standard, Hardened, Lockdown, Maintenance, Web Block). Modes apply those live controls together; Quarantine is a separate incident action, not a mode card. Fleet dry-run/apply lives on Security Center → Modes.
 
-**OWASP CRS WAF** (catalog `owasp-waf`) installs Nginx + ModSecurity on the guest. Toggle rule groups for protocol/scanners, SQLi/XSS/RCE/LFI, languages (PHP, Node.js, Java, shell/PowerShell, JavaScript, ASP.NET), and response leakage. Install/uninstall/rule changes need Protection Mode off. Custom HTML for WAF 403 responses is on the same panel. WAF covers HTTP/HTTPS through that Nginx only — not SSH or raw TCP forwards.
+**WAF** (`/waf`) is a shared **OWASP CRS** edge engine per worker (ModSecurity + CRS image / `clofix-waf` network). You do **not** reinstall the engine per target: create a **binding** for a FileVPS, Docker application, or Docker container, then activate it. Open a binding at `/waf/bindings/{id}` for KPI sparklines (hits / blocks / attacks / unique IPs), traffic tables (top IPs, URIs, attack types, recent events), CRS rule-group toggles, and custom HTML error pages (403/404/406/429/500). Stats are pulled from the edge ModSecurity audit (`waf-stats`); Refresh queues a sample without jumping the page scroll. FileVPS traffic is fronted by the worker gateway — the WAF is **not** installed inside the guest. Legacy Library catalog `owasp-waf` guest installs are obsolete for new bindings; uninstall them before attaching edge WAF. The edge inspects HTTP/HTTPS on the bound target only — not SSH or raw TCP forwards. See [book.md](book.md) §9.3.
 
 Paste an SSH public key in the create form; on macOS, create one with `ssh-keygen -t ed25519` and copy `cat ~/.ssh/id_ed25519.pub`. VPS Details shows CPU, RAM, swap, and guest network IN/OUT. The Workers page shows host CPU, RAM, disk, swap, ZRAM and network. New VPSs default to a 512 MB swap limit, adjustable during creation (0 disables it). Host-wide ZRAM is optional and configured with `zram_mb` in the worker config; local Docker Desktop may not expose ZRAM devices.
 
@@ -66,6 +66,12 @@ The pool uses replication placement `000` (one copy) to maximize capacity. If a 
 `/services` has Quick Apps (persistent sandboxes) and VPS software installs. Quick Apps include Adminer, Jenkins, and ZIP web deployments: static HTML, PHP, Node.js/Next.js and WordPress. A deploy can attach an existing managed database. Apps use CloFix namespaces and cgroup v2, not a customer VPS. The worker template builder downloads the official Jenkins LTS war and verifies its SHA-256 checksum. See [managed apps](docs/managed-apps.md).
 
 Jobs & Functions (`/applications`) run scheduled or invoked workloads on workers that advertise serverless runtimes. See [serverless](docs/serverless.md).
+
+## Docker Engine
+
+`/docker` manages containers on the **worker-host Docker Engine** (admin opt-in install/detect). Image, Compose, Git build/webhook/rollback and Docker Quick App templates are separate from Library native Quick Apps. Tenants never receive `docker.sock`; database DinD is unchanged. Host ports 18000–21999 with FileVPS conflict checks. IAM `docker:read`/`docker:manage`; optional license quotas `max_docker_*`.
+
+**Backup & Restore** (`/docker#docker-backups`) archives managed Docker volumes on the worker: create, restore into the same volume, restore+redeploy apps that mount it, or delete the archive. This is separate from FileVPS writable-layer backups on `/backups`. See [docker](docs/docker.md).
 
 ## Managed databases
 
@@ -114,7 +120,7 @@ No enrollment secret lives in Compose files. The local worker hostname is `clofi
 
 ## More documentation
 
-- [book.md](book.md) — client book (Security Modes, WAF, CKS, Users, storage, billing)
+- [book.md](book.md) — client book (edge WAF bindings, Security Modes, CKS, Users, storage, billing)
 - [admin/README.md](admin/README.md) — IAM, backups, VPS login helper
 - [worker/README.md](worker/README.md) — worker package and fx engine
 - [docs/cks.md](docs/cks.md) — CloFix Kubernetes Service (node pools, Helm, HA, backups; FileVPS kubelet unavailable)

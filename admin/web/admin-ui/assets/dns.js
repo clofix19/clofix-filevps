@@ -1,6 +1,6 @@
 (()=>{
  if(page!=='dns')return;
- let zone=null,editing=null,certTargets={alb:[],apps:[]},certs=null;
+ let zone=null,editing=null,certTargets={alb:[],apps:[],docker:[]},certs=null;
 
  function targets(){return zone&&zone.targets||[];}
  function selectedTarget(){
@@ -143,15 +143,16 @@
   a.href=url;a.download=(zone.zone?.domain||'clofix.internal')+'.zone';a.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
  }
- let certRaw={alb:[],apps:[]};
+ let certRaw={alb:[],apps:[],docker:[]};
  function fillCertResources(){
   const target=$('dns-cert-target')?.value||'alb',sel=$('dns-cert-resource');
   if(!sel)return;
   const keep=sel.value;
   sel.replaceChildren();
-  const items=target==='managed-app'?certTargets.apps:certTargets.alb;
+  const items=target==='docker'?certTargets.docker:target==='managed-app'?certTargets.apps:certTargets.alb;
   if(!items.length){
-   sel.add(new Option(target==='managed-app'?'No managed apps yet — deploy one first':'No ALB yet — create an HTTP load balancer',''));
+   const empty=target==='docker'?'No Docker apps yet — deploy one with a domain first':target==='managed-app'?'No managed apps yet — deploy one first':'No ALB yet — create an HTTP load balancer';
+   sel.add(new Option(empty,''));
    fillCertDomains();
    return;
   }
@@ -165,7 +166,7 @@
  function fillCertDomains(){
   const target=$('dns-cert-target')?.value||'alb',id=$('dns-cert-resource')?.value,dom=$('dns-cert-domain'),list=$('dns-cert-domain-list');
   if(!dom||!list)return;
-  const item=(target==='managed-app'?certTargets.apps:certTargets.alb).find(x=>x.id===id);
+  const item=(target==='docker'?certTargets.docker:target==='managed-app'?certTargets.apps:certTargets.alb).find(x=>x.id===id);
   const domains=item?.domains||[];
   list.replaceChildren();
   domains.forEach(d=>{const o=document.createElement('option');o.value=d;list.append(o);});
@@ -206,6 +207,12 @@
    await api('PUT','/api/load-balancers/'+resourceId,{...b,domains:[...(b.domains||[]),domain]});
    return;
   }
+  if(target==='docker'){
+   const a=(certRaw.docker||[]).find(x=>x.id===resourceId);
+   if(!a)throw new Error('Docker app not found.');
+   if((a.domain||'')===domain)return;
+   throw new Error('Set the domain on the Docker application before requesting a certificate.');
+  }
   const a=certRaw.apps.find(x=>x.id===resourceId);
   if(!a)throw new Error('Managed app not found.');
   if((a.domains||[]).includes(domain))return;
@@ -217,18 +224,23 @@
    api('GET','/api/load-balancers'),
    api('GET','/api/managed-apps'),
    api('GET','/api/certificates'),
+   api('GET','/api/docker/applications'),
   ]);
   const lbs=settled[0].status==='fulfilled'?(Array.isArray(settled[0].value)?settled[0].value:[]):[];
   const apps=settled[1].status==='fulfilled'?(Array.isArray(settled[1].value)?settled[1].value:[]):[];
+  const dockerApps=settled[3].status==='fulfilled'?(Array.isArray(settled[3].value)?settled[3].value:[]):[];
   if(settled[2].status!=='fulfilled')throw settled[2].reason||new Error('Could not load certificates');
   certRaw.alb=lbs.filter(b=>(b.mode||'http')!=='nlb'&&!b.deleting);
   certRaw.apps=apps;
+  certRaw.docker=dockerApps;
   certTargets.alb=certRaw.alb.map(b=>({id:b.id,name:b.name||b.id,domains:b.domains||[]}));
   certTargets.apps=certRaw.apps.map(a=>({id:a.id,name:a.name||a.id,domains:a.domains||[]}));
+  certTargets.docker=certRaw.docker.map(a=>({id:a.id,name:a.name||a.id,domains:a.domain?[a.domain]:[]}));
   certs=settled[2].value;fillCertResources();renderCertificates();
   const err=[];
   if(settled[0].status==='rejected')err.push('load balancers: '+settled[0].reason.message);
   if(settled[1].status==='rejected')err.push('managed apps: '+settled[1].reason.message);
+  if(settled[3].status==='rejected')err.push('docker apps: '+settled[3].reason.message);
   if(err.length&&$('dns-cert-message'))$('dns-cert-message').textContent='Partial load · '+err.join(' · ');
  }
  async function loadDNS(){

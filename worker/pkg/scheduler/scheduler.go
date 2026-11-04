@@ -21,6 +21,12 @@ type Capacity struct {
 	KubernetesPublicHost string            `json:"kubernetes_public_host,omitempty"`
 	ManagedPublicHost    string            `json:"managed_public_host,omitempty"`
 	ManagedTemplates     []string          `json:"managed_templates,omitempty"`
+	DockerReady          bool              `json:"docker_ready,omitempty"`
+	DockerVersion        string            `json:"docker_version,omitempty"`
+	DockerHost           string            `json:"docker_host,omitempty"`
+	WAFReady             bool              `json:"waf_ready,omitempty"`
+	WAFVersion           string            `json:"waf_version,omitempty"`
+	WAFError             string            `json:"waf_error,omitempty"`
 	ServerlessRuntimes   []string          `json:"serverless_runtimes,omitempty"`
 	Serverless           bool              `json:"serverless"`
 	GPUs                 []GPUDevice       `json:"gpus,omitempty"`

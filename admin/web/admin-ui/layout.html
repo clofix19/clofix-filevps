@@ -8,7 +8,7 @@
   <link rel="icon" type="image/svg+xml" href="/clofix-mark.svg">
   <script>(function(){try{var ok={dark:1,light:1,midnight:1,slate:1,contrast:1,warm:1};var saved=localStorage.getItem('cf_theme');document.documentElement.dataset.theme=ok[saved]?saved:(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark')}catch(e){document.documentElement.dataset.theme='dark'}})();</script>
   <link rel="stylesheet" href="/assets/app.css?v=20261104-mode-summaries">
-  <link rel="stylesheet" href="/assets/refresh.css?v=20261104-fw-layout">
+  <link rel="stylesheet" href="/assets/refresh.css?v=20261104-docker-actions-right">
 </head>
 <body data-page="{{.Page}}" data-instance-id="{{.InstanceID}}">
   <header class="console-bar" role="banner">
@@ -59,10 +59,10 @@
           <button type="button" class="detail-back topbar-back" id="topbar-back" data-cf-back="1" hidden>← Back</button>
           <nav class="cloud-crumb" aria-label="Breadcrumb">
             <a href="/">CloFix Cloud</a>
-            {{if or (eq .Page "instances") (eq .Page "details") (eq .Page "services") (eq .Page "applications") (eq .Page "kubernetes")}}<span aria-hidden="true">/</span><span>Compute</span>{{end}}
+            {{if or (eq .Page "instances") (eq .Page "details") (eq .Page "services") (eq .Page "applications") (eq .Page "docker") (eq .Page "kubernetes")}}<span aria-hidden="true">/</span><span>Compute</span>{{end}}
             {{if or (eq .Page "volumes") (eq .Page "storage") (eq .Page "backups") (eq .Page "databases") (eq .Page "efs")}}<span aria-hidden="true">/</span><span>Storage</span>{{end}}
             {{if or (eq .Page "load-balancers") (eq .Page "vpc") (eq .Page "dns") (eq .Page "health-checks") (eq .Page "firewall")}}<span aria-hidden="true">/</span><span>Networking</span>{{end}}
-            {{if or (eq .Page "security") (eq .Page "iam") (eq .Page "users")}}<span aria-hidden="true">/</span><span>Security</span>{{end}}
+            {{if or (eq .Page "security") (eq .Page "waf") (eq .Page "waf-binding") (eq .Page "iam") (eq .Page "users")}}<span aria-hidden="true">/</span><span>Security</span>{{end}}
             {{if eq .Page "profile"}}<span aria-hidden="true">/</span><span>Account</span>{{end}}
             {{if or (eq .Page "workers") (eq .Page "settings") (eq .Page "billing") (eq .Page "logs")}}<span aria-hidden="true">/</span><span>Platform</span>{{end}}
             {{if ne .Page "home"}}<span aria-hidden="true">/</span><span>{{.Title}}</span>{{end}}
@@ -109,14 +109,15 @@
   <dialog class="terminal-dialog" id="service-log-dialog"><div class="section-head"><div><p class="eyebrow">Live service log</p><h2 id="service-log-title">Service logs</h2></div><button type="button" class="secondary" id="service-log-close">Close</button></div><p class="muted">Log tail refreshed from the VPS worker heartbeat.</p><pre id="service-log-output" class="log-view"></pre></dialog>
   <dialog class="terminal-dialog" id="service-error-dialog"><div class="section-head"><div><p class="eyebrow">Application services</p><h2 id="service-error-title">Service error log</h2></div><button type="button" class="secondary" id="service-error-close">Close</button></div><p class="muted">Filtered <code>error.log</code> tail refreshed from the VPS worker heartbeat.</p><pre id="service-error-output" class="log-view"></pre></dialog>
   <dialog class="terminal-dialog" id="waf-log-dialog"><div class="section-head"><div><p class="eyebrow">CloFix Security · Nginx</p><h2>WAF error log</h2></div><button type="button" class="secondary" id="waf-log-close">Close</button></div><p class="muted">Recent Nginx error entries, including ModSecurity messages. Refreshed from the worker heartbeat.</p><pre id="waf-log-output" class="log-view"></pre></dialog>
-  <script src="/assets/app.js?v=20261104-mode-summaries" defer></script>
+  <script src="/assets/app.js?v=20261104-docker-waf" defer></script>
   <script src="/assets/qrcode-generator.min.js?v=1" defer></script>
   <script src="/assets/qr-mini.js?v=1" defer></script>
   <script src="/assets/profile.js?v=2" defer></script>
   <script src="/assets/users.js?v=20261104-users-edit" defer></script>
   <script src="/assets/managed-apps.js?v=12" defer></script>
   <script src="/assets/applications.js?v=4" defer></script>
-  <script src="/assets/databases.js?v=9" defer></script>
+  <script src="/assets/docker.js?v=13" defer></script>
+  <script src="/assets/databases.js?v=10" defer></script>
   <script src="/assets/kubernetes.js?v=20261104-cks-fix" defer></script>
   <script src="/assets/load-balancers.js?v=14" defer></script>
   <script src="/assets/nlb-settings.js?v=6" defer></script>
@@ -124,15 +125,16 @@
   <script src="/assets/logs.js?v=3" defer></script>
   <script src="/assets/license.js?v=11" defer></script>
   <script src="/assets/license-status.js?v=2" defer></script>
-  <script src="/assets/settings-nav.js?v=7" defer></script>
+  <script src="/assets/settings-nav.js?v=10" defer></script>
   <script src="/assets/billing.js?v=11" defer></script>
   <script src="/assets/dns.js?v=20261104-certs" defer></script>
   <script src="/assets/vpc.js?v=3" defer></script>
   <script src="/assets/firewall.js?v=20261104-fw-layout" defer></script>
+  <script src="/assets/waf.js?v=20261104-waf-noscroll" defer></script>
   <script src="/assets/security.js?v=20261104-web-block-langs" defer></script>
   <script src="/assets/efs.js?v=3" defer></script>
   <script src="/assets/columns.js?v=20261104-inline-actions" defer></script>
-  <script src="/assets/console-search.js?v=19" defer></script>
+  <script src="/assets/console-search.js?v=21" defer></script>
   <script src="/assets/home-console.js?v=1" defer></script>
   <script src="/assets/site-footer.js?v=1" defer></script>
 </body>

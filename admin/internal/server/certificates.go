@@ -112,8 +112,8 @@ func (s *Server) requestCertificate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target := strings.ToLower(strings.TrimSpace(in.Target))
-	if target != "alb" && target != "managed-app" {
-		fail(w, 400, "target must be alb or managed-app")
+	if target != "alb" && target != "managed-app" && target != "docker" {
+		fail(w, 400, "target must be alb, managed-app or docker")
 		return
 	}
 	if strings.TrimSpace(in.ResourceID) == "" {
@@ -157,6 +157,23 @@ func (s *Server) requestCertificate(w http.ResponseWriter, r *http.Request) {
 		}
 		if !found {
 			fail(w, 400, "attach the domain to the managed app before requesting a certificate")
+			return
+		}
+	}
+	if target == "docker" {
+		if s.docker == nil {
+			fail(w, 404, "docker application not found")
+			return
+		}
+		s.docker.mu.Lock()
+		app, ok := s.docker.Applications[in.ResourceID]
+		s.docker.mu.Unlock()
+		if !ok || !canAccessDocker(r, app.Owner) {
+			fail(w, 404, "docker application not found")
+			return
+		}
+		if strings.ToLower(strings.TrimSpace(app.Domain)) != domain {
+			fail(w, 400, "set the domain on the Docker application before requesting a certificate")
 			return
 		}
 	}

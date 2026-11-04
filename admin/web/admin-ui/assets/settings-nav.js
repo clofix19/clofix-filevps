@@ -33,7 +33,11 @@
   'cks-clusters':'◎','cks-workloads':'▦','cks-pools':'▣','cks-addons':'＋','cks-helm':'⬡',
   'cks-events':'⚑','cks-ops':'⚙','cks-integrate':'⇄',
   'library-software':'▦','library-apps':'◇',
-  'apps-list':'▦','apps-runs':'▶'
+  'apps-list':'▦','apps-runs':'▶',
+  'docker-overview':'◎','docker-containers':'⬡','docker-apps':'▦','docker-quick':'◇',
+  'docker-compose':'☰','docker-images':'▤','docker-networks':'⇄','docker-volumes':'◫',
+  'docker-deployments':'▶','docker-monitoring':'⌖','docker-backups':'↻','docker-security':'◈',
+  'docker-engine':'⚙'
  };
 
  function parseHash(){
@@ -79,21 +83,34 @@
  }
 
  function activate(focus=false){
+  const sx=window.scrollX,sy=window.scrollY;
   if(location.hash==='#settings-access')history.replaceState(null,'','#settings-license');
   const {panel:hashPanel,tab}=parseHash();
   const visible=panels.filter(panel=>!panel.classList.contains('role-nav-hidden'));
   const selected=visible.find(panel=>panel.id===hashPanel)||visible[0]||panels[0];
+  const selectedId=selected?.id||'';
+  // Strip ids while toggling hidden so the browser does not scroll-to-hash.
+  const stripped=[];
+  for(const panel of panels){
+   if(panel.id){stripped.push([panel,panel.id]);panel.removeAttribute('id');}
+  }
   for(const panel of panels)panel.hidden=panel!==selected;
   for(const link of links){
    const inNav=!!link.closest('.settings-nav');
    const target=(link.getAttribute('aria-controls')||'').split('/')[0];
-   if(inNav&&target===selected.id)link.setAttribute('aria-current','location');
+   if(inNav&&target===selectedId)link.setAttribute('aria-current','location');
    else link.removeAttribute('aria-current');
   }
   activateSectionTabs(selected,tab);
   if(focus)selected.querySelector('h2,h3')?.focus({preventScroll:true});
+  const restore=()=>window.scrollTo(sx,sy);
+  restore();
+  for(const [panel,id] of stripped)if(id&&!panel.id)panel.id=id;
+  restore();
+  requestAnimationFrame(()=>{restore();requestAnimationFrame(restore);});
+  setTimeout(restore,0);setTimeout(restore,40);setTimeout(restore,120);
   if(typeof window.enhanceStatWaves==='function')requestAnimationFrame(()=>window.enhanceStatWaves());
-}
+ }
 
  function goHash(hash,push){
   const next=hash.startsWith('#')?hash:'#'+hash;
@@ -104,17 +121,33 @@
   activate(false);
  }
 
- window.applySettingsNav=()=>activate();
+ function keepScroll(fn){
+  const x=window.scrollX,y=window.scrollY;
+  const restore=()=>{
+   window.scrollTo(x,y);
+   requestAnimationFrame(()=>{window.scrollTo(x,y);requestAnimationFrame(()=>window.scrollTo(x,y));});
+   setTimeout(()=>window.scrollTo(x,y),0);
+   setTimeout(()=>window.scrollTo(x,y),40);
+   setTimeout(()=>window.scrollTo(x,y),120);
+  };
+  try{
+   const result=fn();
+   if(result&&typeof result.then==='function')return result.finally(restore);
+   restore();
+   return result;
+  }catch(err){restore();throw err;}
+ }
+
+ window.applySettingsNav=()=>keepScroll(()=>activate());
  window.activateSectionTabs=activateSectionTabs;
+ window.preservePageScroll=keepScroll;
 
  ensureNavIcons();
 
  for(const link of links)link.addEventListener('click',event=>{
   if(event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
   event.preventDefault();
-  const x=window.scrollX,y=window.scrollY;
-  goHash(link.hash||('#'+(link.getAttribute('aria-controls')||'')),true);
-  window.scrollTo(x,y);
+  keepScroll(()=>goHash(link.hash||('#'+(link.getAttribute('aria-controls')||'')),true));
  });
 
  document.querySelectorAll('[data-section-tabs]').forEach(root=>{
@@ -122,16 +155,13 @@
    tab.addEventListener('click',()=>{
     const panel=root.closest('[data-settings-panel]');
     if(!panel){activateSectionTabs(root,tab.getAttribute('data-section-tab'));return;}
-    const x=window.scrollX,y=window.scrollY;
     const tabId=tab.getAttribute('data-section-tab')||'';
-    goHash('#'+panel.id+(tabId?'/'+tabId:''),true);
-    window.scrollTo(x,y);
+    keepScroll(()=>goHash('#'+panel.id+(tabId?'/'+tabId:''),true));
    });
   });
  });
 
- addEventListener('hashchange',()=>{const x=window.scrollX,y=window.scrollY;activate();window.scrollTo(x,y);});
- addEventListener('popstate',()=>{const x=window.scrollX,y=window.scrollY;activate();window.scrollTo(x,y);});
+ addEventListener('hashchange',()=>keepScroll(()=>activate()));
+ addEventListener('popstate',()=>keepScroll(()=>activate()));
  activate();
- requestAnimationFrame(()=>window.scrollTo(0,0));
 })();

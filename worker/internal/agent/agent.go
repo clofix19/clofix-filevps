@@ -10,10 +10,12 @@ import (
 	"errors"
 	"fmt"
 	database "github.com/clofix/filevps/worker/internal/database"
+	wdocker "github.com/clofix/filevps/worker/internal/docker"
 	"github.com/clofix/filevps/worker/internal/execution"
 	wk8s "github.com/clofix/filevps/worker/internal/kubernetes"
 	"github.com/clofix/filevps/worker/internal/managed"
 	db "github.com/clofix/filevps/worker/pkg/database"
+	dock "github.com/clofix/filevps/worker/pkg/docker"
 	k8s "github.com/clofix/filevps/worker/pkg/kubernetes"
 	"log"
 	"net/http"
@@ -38,6 +40,9 @@ type Agent struct {
 	databaseProjects []string
 	Kubernetes       *wk8s.Manager
 	kubernetesSlot   chan struct{}
+	Docker           *wdocker.Manager
+	dockerSlot       chan struct{}
+	dockerStatus     dock.Status
 	Managed          *managed.Manager
 	Cfg              config.Config
 	Engine           *lifecycle.Engine
@@ -82,7 +87,8 @@ func New(cfg config.Config, eng *lifecycle.Engine) (*Agent, error) {
 		return nil, fmt.Errorf("kubernetes: %w", err)
 	}
 	engines, projects := databases.Inventory()
-	agent := &Agent{Database: databases, databaseSlot: make(chan struct{}, 1), databaseEngines: engines, databaseProjects: projects, Kubernetes: kube, kubernetesSlot: make(chan struct{}, 1), Managed: manager,
+	dockerMgr := wdocker.New(config.StateDir())
+	agent := &Agent{Database: databases, databaseSlot: make(chan struct{}, 1), databaseEngines: engines, databaseProjects: projects, Kubernetes: kube, kubernetesSlot: make(chan struct{}, 1), Docker: dockerMgr, dockerSlot: make(chan struct{}, 1), Managed: manager,
 		Cfg: cfg, Engine: eng,
 		S3Pool: s3pool.New(cfg),
 		Col:    &capacity.Collector{StateDir: config.StateDir(), HostReserve: uint64(cfg.HostReserveMB) << 20, UserNS: cfg.UserNS},
@@ -156,6 +162,22 @@ func (a *Agent) capacity() scheduler.Capacity {
 		cp.KubernetesNodes = nodes
 		cp.KubernetesPublicHost = host
 	}
+	if a.Docker != nil {
+		a.mu.Lock()
+		st := a.dockerStatus
+		a.mu.Unlock()
+		cp.DockerReady = st.Engine.Ready
+		cp.DockerVersion = st.Engine.Version
+		cp.DockerHost = st.Engine.Host
+		if !cp.DockerReady {
+			// cheap probe if monitor has not filled yet
+			eng := a.Docker.EngineInfo(context.Background())
+			cp.DockerReady = eng.Ready
+			cp.DockerVersion = eng.Version
+			cp.DockerHost = eng.Host
+		}
+		cp.WAFReady, cp.WAFVersion, cp.WAFError = a.Docker.WAFEngineStatus()
+	}
 	cp.SwapCommitted = swap
 	if pool := a.S3Pool.Capacity(); pool.S3Node {
 		cp.S3Node, cp.S3DiskTotal, cp.S3DiskFree = pool.S3Node, pool.S3DiskTotal, pool.S3DiskFree
@@ -170,7 +192,11 @@ func (a *Agent) Run(ctx context.Context) {
 	if a.Managed != nil {
 		a.Managed.PrepareMissingInBackground(ctx)
 	}
+	if a.Docker != nil {
+		go a.Docker.PrepareWAFEngineLoop(ctx)
+	}
 	go a.databaseMonitor(ctx)
+	go a.dockerMonitor(ctx)
 	go a.executor(ctx)
 	t := time.NewTicker(time.Duration(a.Cfg.HeartbeatSeconds) * time.Second)
 	defer t.Stop()
@@ -203,7 +229,14 @@ func (a *Agent) beat(ctx context.Context) error {
 		kubeResults = a.Kubernetes.Results()
 		kubeStatuses = a.Kubernetes.Statuses()
 	}
-	body, _ := json.Marshal(proto.Heartbeat{DatabaseResults: a.Database.Results(), DatabaseStatuses: statuses, KubernetesResults: kubeResults, KubernetesStatuses: kubeStatuses, ManagedApps: a.Managed.Statuses(), ExecutionProgress: progress, Version: Version, Capacity: a.capacity(), Instances: a.Engine.Statuses(), Volumes: a.Engine.VolumeStatuses(), Backups: a.Engine.BackupStatuses(), LogTails: a.collectLogTails(), Results: res})
+	var dockerResults, dockerStatus json.RawMessage
+	if a.Docker != nil {
+		dockerResults, _ = json.Marshal(a.Docker.Results())
+		a.mu.Lock()
+		dockerStatus, _ = json.Marshal(a.dockerStatus)
+		a.mu.Unlock()
+	}
+	body, _ := json.Marshal(proto.Heartbeat{DatabaseResults: a.Database.Results(), DatabaseStatuses: statuses, KubernetesResults: kubeResults, KubernetesStatuses: kubeStatuses, DockerResults: dockerResults, DockerStatus: dockerStatus, ManagedApps: a.Managed.Statuses(), ExecutionProgress: progress, Version: Version, Capacity: a.capacity(), Instances: a.Engine.Statuses(), Volumes: a.Engine.VolumeStatuses(), Backups: a.Engine.BackupStatuses(), LogTails: a.collectLogTails(), Results: res})
 	resp, err := a.hc.Post(a.Cfg.ControllerURL+"/v1/heartbeat", "application/json", bytes.NewReader(body))
 	if err != nil {
 		a.requeue(res)
@@ -238,9 +271,16 @@ func (a *Agent) beat(ctx context.Context) error {
 	if a.Kubernetes != nil {
 		a.Kubernetes.Acknowledge(hr.KubernetesAcknowledged)
 	}
+	if a.Docker != nil {
+		a.Docker.Ack(hr.DockerAcknowledged)
+	}
 	for _, op := range hr.Operations {
 		if op.Action == "database-job" || op.Action == "cancel-database" {
 			a.runDatabaseOperation(ctx, op)
+			continue
+		}
+		if op.Action == "docker-job" || op.Action == "cancel-docker" {
+			a.runDockerOperation(ctx, op)
 			continue
 		}
 		if op.Action == proto.ActionKubernetesJob {
