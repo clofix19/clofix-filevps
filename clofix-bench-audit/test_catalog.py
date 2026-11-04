@@ -141,10 +141,18 @@ SUITES = [
             ("DB02", "PostgreSQL create / user / database isolation", {"skip": "not_run"}),
             ("DB03", "MongoDB access controls", {"skip": "not_run"}),
             ("DB04", "Concurrent database reads and writes", {"skip": "not_run"}),
-            ("DB05", "Database backup / download / upload / restore", {"skip": "not_run"}),
+            ("DB05", "Database backup READY artifact + download API (restore not fully validated)", {"skip": "not_run"}),
             ("DB06", "Database crash recovery", {"skip": "not_run"}),
-            ("DB07", "Storage exhaustion response", {"skip": "not_run"}),
+            ("DB07", "Managed DB disk_mb quota configured (disk-full behaviour not probed)", {"skip": "not_run"}),
             ("DB08", "Tenant database security", {"skip": "not_run"}),
+            ("DB09", "TLS required on published DB listeners", {"skip": "unit"}),
+            ("DB10", "Encrypted backup + safety-backup gate on restore", {"skip": "unit"}),
+            ("DB11", "Engine version pin + worker capability advertise", {"skip": "unit"}),
+            ("DB12", "Failed provision retry without duplicate project", {"skip": "unit"}),
+            ("DB13", "Reserved admin usernames rejected", {"skip": "unit"}),
+            ("DB14", "License quota blocks over-provision", {"skip": "unit"}),
+            ("DB15", "Redis logical DB is prefix isolation (no native backup claim)", {"skip": "unit"}),
+            ("DB16", "Stop/start bills storage-only while data retained", {"skip": "unit"}),
         ],
     ),
     (
@@ -167,20 +175,21 @@ SUITES = [
         "P1",
         [
             ("B01", "Full VPS backup and restore", {"skip": "not_run"}),
-            ("B02", "Incremental backup", {"skip": "not_run"}),
+            ("B02", "Second full snapshot after change (not true incremental)", {"skip": "not_run"}),
             ("B03", "S3-compatible storage operations", {"skip": "not_run"}),
             ("B04", "Backup checksum verification", {"skip": "not_run"}),
             ("B05", "Encrypted backup storage", {"skip": "not_run"}),
             ("B06", "Cross-worker restoration", {"skip": "not_run"}),
             ("B07", "Interrupted backup recovery", {"skip": "not_run"}),
             ("B08", "Backup retention and cleanup", {"skip": "not_run"}),
+            ("B09", "Docker volume backup create / restore / delete / redeploy", {"skip": "unit"}),
         ],
     ),
     (
         "13. Cloud Admin & Customer UI",
         "P1",
         [
-            ("U01", "User registration / login / MFA", {"skip": "not_run"}),
+            ("U01", "Admin login API (MFA enrollment/challenge not proven)", {"skip": "not_run"}),
             ("U02", "RBAC and tenant isolation", {"skip": "not_run"}),
             ("U03", "VPS create / update / delete UI", {"skip": "not_run"}),
             ("U04", "Worker and VPS usage dashboard", {"skip": "not_run"}),
@@ -198,11 +207,13 @@ SUITES = [
             ("A02", "Cross-tenant access attempts", {"audit": ["X01", "X02", "X03", "X06"]}),
             ("A03", "Command injection input validation", {"skip": "not_run"}),
             ("A04", "Privilege escalation controls", {"audit": ["I02", "I03", "F05"]}),
-            ("A05", "SSH brute-force protection", {"skip": "not_run"}),
+            ("A05", "Wrong SSH key rejected (rate-limit / brute-force detection not proven)", {"skip": "not_run"}),
             ("A06", "Malicious configuration attempts", {"skip": "not_run"}),
             ("A07", "Secrets and credentials exposure", {"skip": "not_run"}),
             ("A08", "API authorization bypass tests", {"skip": "not_run"}),
             ("A09", "Kernel attack surface hardening", {"audit": ["K02", "K04", "K07"]}),
+            ("A10", "Edge OWASP CRS WAF bindings (create / rules / error pages / delete)", {"skip": "unit"}),
+            ("A11", "WAF ModSecurity audit stats parse (hits / blocks / attacks / IPs)", {"skip": "unit"}),
         ],
     ),
     (
@@ -261,23 +272,112 @@ SUITES = [
             ("BL08", "Suspension / reactivation without data loss", {"skip": "not_run"}),
         ],
     ),
+    (
+        "19. VPS Production Controls",
+        "P0",
+        [
+            ("VP01", "Protection Mode default-on for new guests", {"skip": "unit"}),
+            ("VP02", "SSH key / PAM / Key-Only / Login Block API controls", {"skip": "unit"}),
+            ("VP03", "Delete Protection blocks accidental destroy", {"skip": "unit"}),
+            ("VP04", "Security Modes + Network Quarantine apply live controls", {"skip": "unit"}),
+            ("VP05", "Published port map stays in cloud ranges (SSH/HTTP/HTTPS/custom)", {"skip": "unit"}),
+            ("VP06", "Firewall CIDR allow/deny on mapped ports", {"skip": "unit"}),
+            ("VP07", "Edge WAF binding attach for FileVPS HTTP path", {"skip": "unit"}),
+            ("VP08", "Writable-layer backup only when stopped; restore as new VPS", {"skip": "unit"}),
+            ("VP09", "cgroup v2 CPU/RAM/PID/swap limits enforced in placement", {"skip": "unit"}),
+            ("VP10", "Cross-tenant instance API isolation", {"skip": "unit"}),
+            ("VP11", "Volume / EFS / S3 mount path conflict rejection", {"skip": "unit"}),
+            ("VP12", "IAM security:manage required for hardening mutations", {"skip": "unit"}),
+        ],
+    ),
+    (
+        "20. Managed Database Production",
+        "P0",
+        [
+            ("MDB01", "MySQL project provision metadata + TLS CA return", {"skip": "unit"}),
+            ("MDB02", "PostgreSQL / MongoDB / Redis engines advertised per worker", {"skip": "unit"}),
+            ("MDB03", "Job payload not stored plaintext on controller", {"skip": "unit"}),
+            ("MDB04", "Quota + license deny without database entitlement", {"skip": "unit"}),
+            ("MDB05", "Unknown DB / reserved user operations rejected", {"skip": "unit"}),
+            ("MDB06", "FAILED project retry requeues once", {"skip": "unit"}),
+            ("MDB07", "Backup READY artifacts carry sha256", {"skip": "unit"}),
+            ("MDB08", "Schedules / jobs inventory for ops visibility", {"skip": "unit"}),
+            ("MDB09", "Tenant cannot see another account's DB project", {"skip": "unit"}),
+            ("MDB10", "Published ports stay in 47000–51999 band", {"skip": "unit"}),
+        ],
+    ),
+    (
+        "21. CKS / EKS Production",
+        "P0",
+        [
+            ("CK01", "FileVPS infrastructure_mode rejected for kubelet", {"skip": "unit"}),
+            ("CK02", "Placement skips workers without Kubernetes capacity", {"skip": "unit"}),
+            ("CK03", "Cluster provision + kubeconfig download", {"skip": "unit"}),
+            ("CK04", "Tenant isolation on cluster list/get", {"skip": "unit"}),
+            ("CK05", "IAM kubernetes scope required for mutations", {"skip": "unit"}),
+            ("CK06", "production_ready false on lab/fake workers", {"skip": "unit"}),
+            ("CK07", "production_ready true only with real worker + CLOFIX_K8S_E2E", {"skip": "unit"}),
+            ("CK08", "Helm install / StorageClass / etcd backup encrypted", {"skip": "unit"}),
+            ("CK09", "Workload catalog + CloFix attach (LB/volume/EFS/S3)", {"skip": "unit"}),
+            ("CK10", "VPS group / node pool scale on dedicated CKS workers", {"skip": "unit"}),
+            ("CK11", "HA control-plane option recorded (3/5) without public 6443", {"skip": "unit"}),
+            ("CK12", "License max_kubernetes_* quota enforced", {"skip": "unit"}),
+        ],
+    ),
+    (
+        "22. Docker Engine Production",
+        "P0",
+        [
+            ("DCK01", "Compose policy rejects privileged / host-net / docker.sock", {"skip": "unit"}),
+            ("DCK02", "Host publish ports only in 18000–21999", {"skip": "unit"}),
+            ("DCK03", "Deploy rejected when Docker engine not ready", {"skip": "unit"}),
+            ("DCK04", "Port conflict detection against FileVPS maps", {"skip": "unit"}),
+            ("DCK05", "Cross-tenant Docker resource deny", {"skip": "unit"}),
+            ("DCK06", "License max_docker_* quota reject", {"skip": "unit"}),
+            ("DCK07", "Image / Compose / Git / Quick App create paths", {"skip": "unit"}),
+            ("DCK08", "Networks + volumes + delete protection", {"skip": "unit"}),
+            ("DCK09", "Volume backup create / restore / redeploy / delete", {"skip": "unit"}),
+            ("DCK10", "Edge WAF install path for container/app targets", {"skip": "unit"}),
+            ("DCK11", "Security scan job queue (Trivy optional)", {"skip": "unit"}),
+            ("DCK12", "FileVPS API still healthy beside Docker product", {"skip": "unit"}),
+        ],
+    ),
 ]
 
 
 def _audit_map(rows):
+    """Map audit id -> (status, title, detail)."""
     out = {}
     for row in rows:
         if len(row) < 4:
             continue
-        out[row[1]] = row[2]
+        detail = row[4] if len(row) > 4 else ""
+        out[row[1]] = (row[2], row[3], detail)
     return out
 
 
+def normalize_status(st):
+    """Catalog statuses are canonical; audit TSV uses SKIP → SKIPPED."""
+    if not st:
+        return "NOT RUN"
+    st = str(st).strip().upper().replace(" ", "_")
+    aliases = {
+        "SKIP": "SKIPPED",
+        "SKIPPED": "SKIPPED",
+        "NOT_RUN": "NOT RUN",
+        "NOTRUN": "NOT RUN",
+        "N/A": "SKIPPED",
+        "NA": "SKIPPED",
+    }
+    return aliases.get(st, st)
+
+
 def _worst(statuses):
-    order = ["FAIL", "WARN", "SKIP", "INFO", "PASS"]
+    order = ["FAIL", "WARN", "SKIPPED", "INFO", "PASS"]
     rank = {s: i for i, s in enumerate(order)}
     worst = None
     for s in statuses:
+        s = normalize_status(s)
         if s not in rank:
             continue
         if worst is None or rank[s] < rank[worst]:
@@ -285,35 +385,105 @@ def _worst(statuses):
     return worst
 
 
-def resolve(cid, case, spec, bench, audit_rows, extra=None):
-    if extra and cid in extra:
-        return extra[cid]
-    skip = spec.get("skip")
-    if skip == "density":
-        return "SKIPPED", "DENSITY_MAX=0 on a worker that already has customer VPS"
-    if skip == "destructive":
-        return "SKIPPED", "--destructive not run; live fleet must stay up"
-    if skip == "compare":
-        return "SKIPPED", "Incus/LXC/Docker were not measured on this host"
-    if skip == "not_run":
-        return "NOT RUN", "No probe in this collection"
+def _fmt_audit_ev(aid, st, title, detail):
+    bits = [f"{aid}={st}"]
+    title = (title or "").strip()
+    detail = (detail or "").strip()
+    if title:
+        bits.append(title)
+    if detail and detail not in title:
+        bits.append(detail)
+    return " · ".join(bits)
 
+
+def _thin_evidence(detail):
+    d = (detail or "").strip()
+    if not d:
+        return True
+    if d.startswith("http=") and len(d) <= 12:
+        return True
+    # Circular: only "O01=PASS" style without probe detail.
+    if "=" in d and " · " not in d and "pid=" not in d and "rps=" not in d:
+        parts = [p.strip() for p in d.split(";")]
+        if parts and all(p.endswith("=PASS") or p.endswith("=WARN") or p.endswith("=INFO") for p in parts):
+            return True
+    return False
+
+
+def _evidence_from_spec(spec, bench, audit_rows):
     evidence = []
     statuses = []
     amap = _audit_map(audit_rows)
-    for cid in spec.get("audit", []):
-        st = amap.get(cid)
-        if st:
-            statuses.append(st)
-            evidence.append(f"{cid}={st}")
+    for aid in spec.get("audit", []):
+        row = amap.get(aid)
+        if not row:
+            continue
+        st, title, detail = row
+        statuses.append(st)
+        evidence.append(_fmt_audit_ev(aid, st, title, detail))
     for key in spec.get("bench", []):
         vals = bench.get(key) or []
         if vals:
             evidence.append(f"{key}={vals[0]}" + (f"…({len(vals)})" if len(vals) > 1 else ""))
+    return statuses, evidence
+
+
+def resolve(cid, case, spec, bench, audit_rows, extra=None):
+    statuses, evidence = _evidence_from_spec(spec, bench, audit_rows)
+
+    def done(st, detail):
+        return normalize_status(st), detail
+
+    if extra and cid in extra:
+        st, detail = extra[cid]
+        st = normalize_status(st)
+        # Attach concrete audit/bench probe text when PASS evidence is thin or empty.
+        if st in ("PASS", "MEASURED", "SMOKE", "UNIT") and (_thin_evidence(detail) or not (detail or "").strip()):
+            if evidence:
+                merged = (detail or "").strip()
+                add = "; ".join(evidence)
+                detail = f"{merged} | {add}".strip(" |") if merged else add
+            elif not (detail or "").strip():
+                # Prefer suite title already stored in detail; else case name + why.
+                detail = f"why={case}" if case else "suite row had empty evidence"
+        # UI/API http-only smoke must not stay as bare PASS without saying so.
+        if st == "PASS" and (detail or "").strip().startswith("http=") and len((detail or "").strip()) <= 12:
+            st = "SMOKE"
+            detail = f"{detail} · UI/API reachability only (not a live guest/enforcement probe)"
+        # Capability / surface-only wording is SMOKE, not production PASS.
+        if st == "PASS":
+            low = (detail or "").lower()
+            if any(x in low for x in (
+                "advertised",
+                "capability check",
+                "api present",
+                "api reachable",
+                "surface only",
+                "not destructive-probed",
+                "not cryptographically proven",
+                "io.max=n/a",
+                "io.max n/a",
+            )):
+                st = "SMOKE"
+                detail = f"{detail} · demoted: surface/capability evidence only"
+        return done(st, detail)
+
+    skip = spec.get("skip")
+    if skip == "density":
+        return done("SKIPPED", "DENSITY_MAX=0 on a worker that already has customer VPS")
+    if skip == "destructive":
+        return done("SKIPPED", "--destructive not run; live fleet must stay up")
+    if skip == "compare":
+        return done("SKIPPED", "Incus/LXC/Docker were not measured on this host")
+    if skip == "not_run":
+        return done("NOT RUN", "No probe in this collection")
+    if skip == "unit":
+        return done("UNIT", "Go unit/httptest coverage expected; not a live multi-worker or performance probe")
+
     if statuses:
-        return _worst(statuses), "; ".join(evidence)
+        return done(_worst(statuses), "; ".join(evidence))
     if spec.get("bench") and evidence:
-        return "MEASURED", "; ".join(evidence)
+        return done("MEASURED", "; ".join(evidence))
     if spec.get("audit") or spec.get("bench"):
-        return "NOT RUN", "mapped probe missing from TSV"
-    return "NOT RUN", "No probe in this collection"
+        return done("NOT RUN", "mapped probe missing from TSV")
+    return done("NOT RUN", "No probe in this collection")

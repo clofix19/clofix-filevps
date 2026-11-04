@@ -105,6 +105,8 @@ func permissionResource(path string) string {
 		return "security"
 	case strings.HasPrefix(path, "/api/monitoring"):
 		return "health-checks"
+	case strings.HasPrefix(path, "/api/metrics"):
+		return "instances"
 	case strings.HasPrefix(path, "/api/load-balancers"):
 		return "load-balancers"
 	case strings.HasPrefix(path, "/api/managed-apps"):

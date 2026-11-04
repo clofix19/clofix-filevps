@@ -89,6 +89,18 @@
  function loadWAFHistory(id){
   try{const raw=JSON.parse(localStorage.getItem(wafHistKey(id))||'[]');return Array.isArray(raw)?raw:[];}catch(e){return [];}
  }
+
+ async function loadWAFServerHistory(id){
+  if(!id||typeof fetchMetricsSeries!=='function'||typeof mergeMetricsPoints!=='function')return loadWAFHistory(id);
+  const w=typeof usageWindowBounds==='function'?usageWindowBounds():{from:Date.now()-3600000,to:Date.now()};
+  const pts=await fetchMetricsSeries('waf:'+id,w.from,w.to);
+  let hist=loadWAFHistory(id);
+  if(pts.length){
+   hist=mergeMetricsPoints(hist,pts);
+   try{localStorage.setItem(wafHistKey(id),JSON.stringify(hist));}catch(e){}
+  }
+  return hist;
+ }
  function pushWAFHistory(id,s){
   if(!id||!s)return loadWAFHistory(id);
   const at=Date.parse(s.at)||Date.now();
@@ -158,7 +170,8 @@
  function renderStats(b){
   const kpis=$('wafb-stats-kpis'), note=$('wafb-stats-note');
   const s=b?.stats;
-  const hist=s?pushWAFHistory(b.id,s):loadWAFHistory(b?.id||editID);
+  let hist=s?pushWAFHistory(b.id,s):loadWAFHistory(b?.id||editID);
+  const wid=b?.id||editID;if(wid){loadWAFServerHistory(wid).then(h=>{if(Array.isArray(h)&&h.length){hist=h;renderWAFCharts(wid,hist);}}).catch(()=>{});}
   const series=key=>hist.map(p=>Number(p[key])||0);
   const cards=[
    ['Hits',s?String(s.hits??0):'—','hits',''],

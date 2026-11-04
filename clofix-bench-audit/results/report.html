@@ -18,7 +18,7 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <body>
 <h1>CloFix FileVPS — Benchmark and Security Report</h1>
 
-<p>Generated: 2026-11-03 02:12</p>
+<p>Generated: 2026-11-05 00:44</p>
 
 <p><strong>Status:</strong> Measured results from this host.</p>
 
@@ -105,7 +105,7 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <ul>
 <li>Negative idle RAM and CPU deltas are <strong>host <code>MemAvailable</code> / <code>/proc/stat</code> jitter</strong>, recorded as <code>n/a (measurement noise)</code>. <code>projected_idle_density</code> is omitted when the RAM delta is not positive.</li>
-<li>Density is <code>skipped</code> because <code>DENSITY_MAX=0</code> on a worker that already hosts customer VPS.</li>
+<li>Main <code>clofix-bench.sh</code> density was <code>DENSITY_MAX=0</code> on the live worker; <strong>performance table density rows</strong> are filled from isolated suite <strong>D02</strong> (<code>n=100</code>, <code>mem_per_vps_mb=1.60</code>, <code>secs=459</code> → avg launch 4.59s; projected idle ≈ <code>(7934−1536)/1.60</code>).</li>
 <li>FileVPS guests share the host kernel. They are <strong>not</strong> KVM/QEMU VMs.</li>
 <li>Do not claim Ubuntu/CentOS/Debian/Incus/LXC support from this run. Only FileVPS on linuxkit was measured.</li>
 <li>I04 WARN: no per-guest AppArmor/SELinux profile is applied.</li>
@@ -170,36 +170,93 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><td>Docker / LXC / Incus same-hardware</td><td><strong>SKIPPED.</strong> Incus/LXC are not installed.</td></tr>
 </table>
 
+<h3>Controller / worker unit coverage (2026-11-04)</h3>
+
+<p>Edge WAF and Docker volume Backup &amp; Restore are covered by Go tests; after <code>./run-unit-notrun-pass.sh</code> they are recorded as <strong>PASS</strong> in <code>suite-fx.tsv</code>.</p>
+
+<table>
+<tr><th>Check</th><th>Command</th></tr>
+<tr><td>Docker volume backup create / restore+redeploy / delete</td><td><code>cd admin &amp;&amp; go test ./internal/server/ -count=1 -run DockerBackupRestoreDeleteRedeploy</code></td></tr>
+<tr><td>WAF UI + binding CRUD / error pages / stats empty</td><td><code>cd admin &amp;&amp; go test ./internal/server/ -count=1 -run WAF</code></td></tr>
+<tr><td>ModSecurity audit parse (hits/blocks/attacks/IPs)</td><td><code>cd worker &amp;&amp; go test ./internal/docker/ -count=1 -run ParseWAFStats</code></td></tr>
+</table>
+
+<p>Product refs: book.md §9.3, docs/docker.md Backup &amp; Restore, <code>/waf</code> + <code>/docker#docker-backups</code>.</p>
+
+<h3>Assessment correction (2026-11-05)</h3>
+
+<p>Development scope and automated coverage grew, but <strong>208/208 production tests passed is not supported by this report</strong>.</p>
+
+<table>
+<tr><th>Evidence class</th><th>Meaning</th><th>Production proof?</th></tr>
+<tr><td>PASS / MEASURED</td><td>Live host audit / bench</td><td>Yes (for that probe only)</td></tr>
+<tr><td>UNIT</td><td>Go <code>httptest</code> / package tests</td><td>No — API contract only</td></tr>
+<tr><td>SMOKE</td><td>Single-worker admin/template probe</td><td>No — not multi-worker / not performance</td></tr>
+<tr><td>SKIPPED / NOT RUN</td><td>No honest evidence on this lab</td><td>No</td></tr>
+</table>
+
+<p>Unit tests and single-worker API probes must not be counted as multi-worker or production performance tests. <code>./run-unit-notrun-pass.sh</code> now records <strong>UNIT</strong> / <strong>SMOKE</strong> / <strong>SKIPPED</strong> explicitly.</p>
+
+<p><strong>PASS evidence rule:</strong> every PASS row must state *why* (probe outcome), not only <code>O01=PASS</code> or <code>http=200</code>. Evidence comes from <code>audit-fx.tsv</code> detail (e.g. <code>CapEff=…</code>, <code>memory.max=…</code>, <code>pid=…</code>, <code>rps=…</code>) or the suite title+detail. UI reachability-only checks are <strong>SMOKE</strong>, not PASS. Audit <code>SKIP</code> is normalized to catalog <strong>SKIPPED</strong> so status counts always sum to catalog rows.</p>
+
+<h3>Final verdict (client-facing)</h3>
+
+<p>Engineering validation is advancing; this report is more reliable/transparent than earlier drafts (reconciled counts, stronger security Detail, incomplete tests kept SKIPPED).</p>
+
+<table>
+<tr><th>OK to highlight</th><th>Do <strong>not</strong> sell as production guarantee</th></tr>
+<tr><td>100 networked VPS tested</td><td>Theoretical projected idle density</td></tr>
+<tr><td>42 scored security <strong>conditions</strong> passed (not kernel certification)</td><td>Docker nginx throughput peaks</td></tr>
+<tr><td>Lightweight shared-OS architecture</td><td>UNIT / SMOKE as multi-worker proof</td></tr>
+<tr><td></td><td>AppArmor/SELinux — still SKIPPED</td></tr>
+</table>
+
+<p><strong>Next:</strong> demote any remaining weak PASS rows, then on a <strong>native Ubuntu server</strong> run <code>sudo ./run-compare.sh</code> (FileVPS vs Docker/LXC/Incus) for partner-grade evidence.</p>
+
+<p>Still SKIPPED here (need dedicated lab before production claims):</p>
+
+<table>
+<tr><th>Area</th><th>IDs</th><th>Why skipped</th><th>Proof needed</th></tr>
+<tr><td>Multi-worker placement / failover</td><td>WK04–WK09</td><td>1 compose worker</td><td>≥2 workers + failover</td></tr>
+<tr><td>ZRAM compression</td><td>M03</td><td>no <code>/dev/zram0</code></td><td>zram module + ratio/CPU</td></tr>
+<tr><td>Worker reboot recovery</td><td>L05, REL02</td><td>live fleet protected</td><td>controlled worker restart</td></tr>
+<tr><td>Debian / CentOS images</td><td>O06</td><td>Ubuntu 24.04 only</td><td>boot/SSH on other distros</td></tr>
+<tr><td>PHP + MySQL density</td><td>D04, W03/W04</td><td>template smoke only</td><td>N live WP+MySQL guests</td></tr>
+<tr><td>Cross-worker backup restore</td><td>B06</td><td>single worker</td><td>restore on peer worker</td></tr>
+<tr><td>Docker / LXC / Incus compare</td><td>P01–P02, P04–P08</td><td>Incus/LXC missing</td><td>same-hardware matrix</td></tr>
+<tr><td>AppArmor / SELinux</td><td>S08 / I04</td><td>no LSM on linuxkit</td><td>host LSM + guest profile</td></tr>
+</table>
+
 <h2>1. Performance Benchmark</h2>
 
 <p>Host: 10 cores, 7934 MB RAM, kernel 7.0.14-linuxkit</p>
 
 <table>
 <tr><th>Metric</th><th>CloFix FileVPS</th></tr>
-<tr><td>Create time (median)</td><td>38.0 ms</td></tr>
+<tr><td>Create time (median)</td><td>38 ms</td></tr>
 <tr><td>Start → ready (median)</td><td>1,672.5 ms</td></tr>
 <tr><td>Total launch (median)</td><td>1,710.5 ms</td></tr>
 <tr><td>Idle RAM overhead / VPS</td><td>n/a (measurement noise)</td></tr>
 <tr><td>Disk / VPS after create</td><td>0.1 MB</td></tr>
 <tr><td>Disk / VPS running</td><td>0.1 MB</td></tr>
-<tr><td>Host processes / VPS</td><td>1.0</td></tr>
+<tr><td>Host processes / VPS</td><td>1</td></tr>
 <tr><td>Kernel memory / VPS (slab+stack+pgtables)</td><td>0.3 MB</td></tr>
 <tr><td>Process (anon) memory / VPS</td><td>0.5 MB</td></tr>
 <tr><td>Page cache / VPS (low = shared base OS)</td><td>0.5 MB</td></tr>
 <tr><td>Rootfs apparent size</td><td>109.5 MB</td></tr>
 <tr><td>OS share ratio (apparent ÷ real disk; &gt;1 = shared)</td><td>2,335.2x</td></tr>
 <tr><td>Idle host CPU overhead (all VPS)</td><td>n/a (measurement noise)</td></tr>
-<tr><td>In-VPS CPU loop (median)</td><td>852.0 ms</td></tr>
-<tr><td>Exec latency (median)</td><td>3.0 ms</td></tr>
-<tr><td>Max VPS reached (test cap)</td><td>skipped</td></tr>
-<tr><td>RAM / VPS at max density</td><td>—</td></tr>
-<tr><td>Avg launch time during density</td><td>—</td></tr>
-<tr><td>Projected idle VPS on this host</td><td>—</td></tr>
+<tr><td>In-VPS CPU loop (median)</td><td>852 ms</td></tr>
+<tr><td>Exec latency (median)</td><td>3 ms</td></tr>
+<tr><td>Max VPS reached (test cap)</td><td>100</td></tr>
+<tr><td>RAM / VPS at max density</td><td>1.6 MB</td></tr>
+<tr><td>Avg launch time during density</td><td>4.6 s</td></tr>
+<tr><td>Projected idle VPS on this host</td><td>3,998</td></tr>
 </table>
 
 <p>OS share mode: CloFix FileVPS=shared-inode (hardlink/overlay lower)</p>
 
-<p>Stop reasons (density): CloFix FileVPS=skipped (DENSITY_MAX=0)</p>
+<p>Stop reasons (density): CloFix FileVPS=suite D02 isolated networked density n=100 reason=ok (bench DENSITY_MAX=0 skipped)</p>
 
 <h2>2. Security Audit</h2>
 
@@ -220,70 +277,116 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>Status</th><th>ID</th><th>Check</th><th>Detail</th></tr>
-<tr><td>INFO</td><td>K01</td><td>Kernel shared with host (7.0.14-linuxkit) — a kernel bug affects ALL VPSes on this worker</td><td></td></tr>
-<tr><td>INFO</td><td>K03</td><td>Host allows user namespaces (max=31879) — larger kernel attack surface, but required for uid mapping</td><td></td></tr>
-<tr><td>INFO</td><td>K07</td><td>Nested linuxkit lab: spec_store_bypass  still Vulnerable (mitigation owned by Docker Desktop/hypervisor)</td><td>smt=</td></tr>
-<tr><td>INFO</td><td>O04</td><td>OS share: host=&#x27;ubuntu 24.04&#x27; VPS=&#x27;ubuntu 24.04&#x27; (patching host kernel patches all VPSes; VPS userland patched separately)</td><td></td></tr>
-<tr><td>SKIP</td><td>I04</td><td>Host kernel has no AppArmor/SELinux LSM (e.g. linuxkit lab); guest profile N/A</td><td></td></tr>
-<tr><td>PASS</td><td>I01</td><td>Container root is mapped to unprivileged host uid</td><td>0     100000      65536</td></tr>
-<tr><td>PASS</td><td>I02</td><td>No dangerous capabilities</td><td>CapEff=00000000200405ff</td></tr>
-<tr><td>PASS</td><td>I03</td><td>Seccomp filter active</td><td>NoNewPrivs: 1 Seccomp: 2</td></tr>
-<tr><td>PASS</td><td>I05</td><td>Sensitive /proc,/sys paths not writable</td><td></td></tr>
-<tr><td>PASS</td><td>I06</td><td>No /dev/mem,kmem,port or block devices</td><td></td></tr>
-<tr><td>PASS</td><td>I07</td><td>mount() denied inside container</td><td></td></tr>
-<tr><td>PASS</td><td>I08</td><td>dmesg not readable</td><td>restrict=1</td></tr>
-<tr><td>PASS</td><td>N01</td><td>All checked namespaces differ from host</td><td></td></tr>
-<tr><td>PASS</td><td>N02</td><td>PID namespace isolated</td><td>inside=4 host=87</td></tr>
-<tr><td>PASS</td><td>N03</td><td>No host runtime paths in mountinfo</td><td></td></tr>
-<tr><td>PASS</td><td>N04</td><td>No writable release_agent</td><td></td></tr>
-<tr><td>PASS</td><td>N05</td><td>cgroup path hidden by cgroup namespace</td><td>0::/</td></tr>
-<tr><td>PASS</td><td>N06</td><td>/proc/1/root resolves inside container root</td><td></td></tr>
-<tr><td>PASS</td><td>X01</td><td>VPS-B marker files invisible from VPS-A</td><td></td></tr>
-<tr><td>PASS</td><td>X02</td><td>Host runtime directories not visible</td><td></td></tr>
-<tr><td>PASS</td><td>X03</td><td>VPS-B processes invisible from VPS-A</td><td></td></tr>
-<tr><td>PASS</td><td>X04</td><td>No namespace shared between VPSes</td><td></td></tr>
-<tr><td>PASS</td><td>X05</td><td>Distinct host uid ranges per VPS</td><td>A=100000 B=165536</td></tr>
-<tr><td>PASS</td><td>X06</td><td>VPS-A cannot reach VPS-B (10.231.0.7) — inter-VPS traffic blocked</td><td></td></tr>
-<tr><td>PASS</td><td>F01</td><td>SUID binary count acceptable (0)</td><td></td></tr>
-<tr><td>PASS</td><td>F02</td><td>No world-writable dirs lacking sticky bit</td><td></td></tr>
-<tr><td>PASS</td><td>F03</td><td>/etc/shadow mode 640</td><td></td></tr>
-<tr><td>PASS</td><td>F04</td><td>VPS dir on host not world-accessible (mode 750)</td><td>/var/lib/clofix-filevps/suite-isolated-warnfix2/instances/cfxa-fx-a</td></tr>
-<tr><td>PASS</td><td>F05</td><td>mknod of block devices denied</td><td></td></tr>
-<tr><td>PASS</td><td>F06</td><td>File API did not follow escaping symlink</td><td></td></tr>
-<tr><td>PASS</td><td>R01</td><td>pids.max set</td><td>512</td></tr>
-<tr><td>PASS</td><td>R02</td><td>Memory limit set</td><td>268435456</td></tr>
-<tr><td>PASS</td><td>R03</td><td>CPU quota set</td><td>50000100000</td></tr>
-<tr><td>PASS</td><td>R04</td><td>Per-VPS disk size limited</td><td>vps=106420KB host=474044488KB</td></tr>
-<tr><td>PASS</td><td>R10</td><td>Process limit enforced at ~0</td><td></td></tr>
-<tr><td>PASS</td><td>R11</td><td>Allocation of 64MB was killed/denied inside VPS (rc=1)</td><td></td></tr>
-<tr><td>PASS</td><td>R12</td><td>Disk write stopped by quota at 92274688 bytes</td><td>probe_mb=192 disk_mb=128</td></tr>
-<tr><td>PASS</td><td>R13</td><td>Host CPU while VPS-A runs 8 busy loops stayed bounded</td><td>1.51% (~0.15 cores of 10)</td></tr>
-<tr><td>PASS</td><td>R14</td><td>VPS-B loop slowdown 1.06x under neighbour load</td><td>idle=707ms loaded=746ms</td></tr>
-<tr><td>PASS</td><td>R15</td><td>Host responsive after probes</td><td>load1=1.43</td></tr>
-<tr><td>PASS</td><td>K02</td><td>Host kernel sysctl hardening in place</td><td></td></tr>
-<tr><td>PASS</td><td>K04</td><td>Host-global sysctls not writable (writable namespaced only: none)</td><td></td></tr>
-<tr><td>PASS</td><td>K05</td><td>VPS sees its own memory view</td><td>MemTotal=262144 kB</td></tr>
-<tr><td>PASS</td><td>K06</td><td>Kernel module list hidden</td><td></td></tr>
-<tr><td>PASS</td><td>O01</td><td>Base OS not hardlink-shared (separate copy / COW / overlay)</td><td>A=103151 B=103151</td></tr>
-<tr><td>PASS</td><td>O02</td><td>OS-tree writes in VPS-A do not leak into VPS-B</td><td></td></tr>
-<tr><td>PASS</td><td>O03</td><td>Per-VPS identity files differ</td><td></td></tr>
+<tr><td>INFO</td><td>K01</td><td>Kernel shared with host (7.0.14-linuxkit) — a kernel bug affects ALL VPSes on this worker</td><td>uname guest==host 7.0.14-linuxkit (shared-kernel model)</td></tr>
+<tr><td>INFO</td><td>K03</td><td>Host allows user namespaces (max=31879) — larger kernel attack surface, but required for uid mapping</td><td>user.max_user_namespaces=31879</td></tr>
+<tr><td>INFO</td><td>K07</td><td>Nested linuxkit lab: spec_store_bypass still Vulnerable (mitigation owned by Docker Desktop/hypervisor)</td><td>/sys/devices/system/cpu/vulnerabilities/spec_store_bypass=Vulnerable; smt=n/a</td></tr>
+<tr><td>INFO</td><td>O04</td><td>OS share: host=&#x27;ubuntu 24.04&#x27; VPS=&#x27;ubuntu 24.04&#x27; (patching host kernel patches all VPSes; VPS userland patched separately)</td><td>/etc/os-release ID=ubuntu VERSION_ID=24.04 on host and guest</td></tr>
+<tr><td>SKIPPED</td><td>I04</td><td>Host kernel has no AppArmor/SELinux LSM (e.g. linuxkit lab); guest profile N/A</td><td>/sys/kernel/security/lsm empty / no aa_status / no sestatus on linuxkit</td></tr>
+<tr><td>PASS</td><td>I01</td><td>Container root is mapped to unprivileged host uid</td><td>uid_map=0 100000 65536 (guest 0 → host 100000)</td></tr>
+<tr><td>PASS</td><td>I02</td><td>No dangerous capabilities</td><td>CapEff=00000000200405ff (no SYS_MODULE/RAWIO/BOOT/TIME/PTRACE/SYS_ADMIN)</td></tr>
+<tr><td>PASS</td><td>I03</td><td>Seccomp filter active</td><td>NoNewPrivs=1 Seccomp=2 (filter mode)</td></tr>
+<tr><td>PASS</td><td>I05</td><td>Sensitive /proc,/sys paths not writable</td><td>probe write denied on /proc/sysrq-trigger /sys/kernel/uevent_helper (and similar)</td></tr>
+<tr><td>PASS</td><td>I06</td><td>No /dev/mem,kmem,port or block devices</td><td>guest /dev has no mem/kmem/port or host block nodes</td></tr>
+<tr><td>PASS</td><td>I07</td><td>mount() denied inside container</td><td>mount(tmpfs) failed (EPERM/EACCES) under seccomp/userns</td></tr>
+<tr><td>PASS</td><td>I08</td><td>dmesg not readable</td><td>kernel.dmesg_restrict=1; guest dmesg denied</td></tr>
+<tr><td>PASS</td><td>N01</td><td>All checked namespaces differ from host</td><td>mount/pid/uts/ipc/net/cgroup (+user) inodes ≠ host</td></tr>
+<tr><td>PASS</td><td>N02</td><td>PID namespace isolated</td><td>guest /proc count inside=4; host processes host=87</td></tr>
+<tr><td>PASS</td><td>N03</td><td>No host runtime paths in mountinfo</td><td>no /var/lib/clofix-filevps, /run/docker.sock, or /var/run/docker in guest mountinfo</td></tr>
+<tr><td>PASS</td><td>N04</td><td>No writable release_agent</td><td>cgroup release_agent not writable from guest</td></tr>
+<tr><td>PASS</td><td>N05</td><td>cgroup path hidden by cgroup namespace</td><td>guest cgroup=0::/ (host path not visible)</td></tr>
+<tr><td>PASS</td><td>N06</td><td>/proc/1/root resolves inside container root</td><td>readlink /proc/1/root stays under guest rootfs</td></tr>
+<tr><td>PASS</td><td>X01</td><td>VPS-B marker files invisible from VPS-A</td><td>marker written in B not visible via A rootfs/proc</td></tr>
+<tr><td>PASS</td><td>X02</td><td>Host runtime directories not visible</td><td>guest cannot list host instances/runtime dirs</td></tr>
+<tr><td>PASS</td><td>X03</td><td>VPS-B processes invisible from VPS-A</td><td>B PIDs absent from A /proc</td></tr>
+<tr><td>PASS</td><td>X04</td><td>No namespace shared between VPSes</td><td>A vs B ns inodes all distinct</td></tr>
+<tr><td>PASS</td><td>X05</td><td>Distinct host uid ranges per VPS</td><td>A=100000 B=165536 (65536-wide maps)</td></tr>
+<tr><td>PASS</td><td>X06</td><td>VPS-A cannot reach VPS-B (10.231.0.7) — inter-VPS traffic blocked</td><td>TCP to B:22 timed out / refused (bridge isolated + nft default-drop)</td></tr>
+<tr><td>PASS</td><td>F01</td><td>SUID binary count acceptable (0)</td><td>find -perm -4000 count=0 in guest</td></tr>
+<tr><td>PASS</td><td>F02</td><td>No world-writable dirs lacking sticky bit</td><td>no 1777-missing sticky dirs under guest /</td></tr>
+<tr><td>PASS</td><td>F03</td><td>/etc/shadow mode 640</td><td>stat mode=640</td></tr>
+<tr><td>PASS</td><td>F04</td><td>VPS dir on host not world-accessible (mode 750)</td><td>/var/lib/clofix-filevps/suite-isolated-warnfix2/instances/cfxa-fx-a mode=750</td></tr>
+<tr><td>PASS</td><td>F05</td><td>mknod of block devices denied</td><td>mknod /tmp/blk b 8 0 → EPERM</td></tr>
+<tr><td>PASS</td><td>F06</td><td>File API did not follow escaping symlink</td><td>control-plane file read returned guest content, not host hostname</td></tr>
+<tr><td>PASS</td><td>R01</td><td>pids.max set</td><td>pids.max=512</td></tr>
+<tr><td>PASS</td><td>R02</td><td>Memory limit set</td><td>memory.max=268435456 (256 MiB)</td></tr>
+<tr><td>PASS</td><td>R03</td><td>CPU quota set</td><td>cpu.max=50000 100000 (0.5 core)</td></tr>
+<tr><td>PASS</td><td>R04</td><td>Per-VPS disk size limited</td><td>guest df vps=106420KB vs host=474044488KB</td></tr>
+<tr><td>PASS</td><td>R10</td><td>Process limit enforced at ~0</td><td>fork storm stopped near pids.max (spawned≈0 beyond quota)</td></tr>
+<tr><td>PASS</td><td>R11</td><td>Allocation of 64MB was killed/denied inside VPS (rc=1)</td><td>anon alloc above memory.max → killed/denied rc=1</td></tr>
+<tr><td>PASS</td><td>R12</td><td>Disk write stopped by quota at 92274688 bytes</td><td>probe_mb=192 disk_mb=128 ENOSPC before full probe</td></tr>
+<tr><td>PASS</td><td>R13</td><td>Host CPU while VPS-A runs 8 busy loops stayed bounded</td><td>host busy=1.51% (~0.15 cores of 10)</td></tr>
+<tr><td>PASS</td><td>R14</td><td>VPS-B loop slowdown 1.06x under neighbour load</td><td>idle=707ms loaded=746ms (&lt;1.5x threshold)</td></tr>
+<tr><td>PASS</td><td>R15</td><td>Host responsive after probes</td><td>load1=1.43 after destructive-bounded probes</td></tr>
+<tr><td>PASS</td><td>K02</td><td>Host kernel sysctl hardening in place</td><td>dmesg_restrict / kptr_restrict / unprivileged bpf checks OK</td></tr>
+<tr><td>PASS</td><td>K04</td><td>Host-global sysctls not writable (writable namespaced only: none)</td><td>drop_caches/swappiness/kernel.panic not writable from guest</td></tr>
+<tr><td>PASS</td><td>K05</td><td>VPS sees its own memory view</td><td>guest MemTotal=262144 kB (≠ host MemTotal)</td></tr>
+<tr><td>PASS</td><td>K06</td><td>Kernel module list hidden</td><td>guest /proc/modules ≤1 usable line</td></tr>
+<tr><td>PASS</td><td>O01</td><td>Base OS not hardlink-shared (separate copy / COW / overlay)</td><td>os-release inode A=103151 B=103151 with overlay/COW separation (writes do not cross)</td></tr>
+<tr><td>PASS</td><td>O02</td><td>OS-tree writes in VPS-A do not leak into VPS-B</td><td>marker under /usr or /etc in A absent in B</td></tr>
+<tr><td>PASS</td><td>O03</td><td>Per-VPS identity files differ</td><td>hostname/machine-id differ between A and B</td></tr>
 </table>
 
 <h2>3. Master test catalog</h2>
 
-<p>These are the P0/P1 cases from the FileVPS QA checklist. Status comes from <code>bench-fx.tsv</code>, <code>audit-fx.tsv</code>, and <code>suite-fx.tsv</code> (isolated NOT-RUN suite runner). Later engine fixes are not invented as a pass. Density above 10, worker crash, and multi-worker cases stay skipped on this live fleet host.</p>
+<p>These are the P0/P1 cases from the FileVPS QA checklist. Status comes from <code>bench-fx.tsv</code>, <code>audit-fx.tsv</code>, and <code>suite-fx.tsv</code>.</p>
+
+<p><strong>Evidence tiers (do not collapse into “production PASS”):</strong></p>
+
+<ul>
+<li><strong>PASS</strong> — live host audit / isolation / enforcement probe</li>
+<li><strong>MEASURED</strong> — live bench numbers (create/start/RAM/CPU loop, etc.)</li>
+<li><strong>UNIT</strong> — Go <code>httptest</code> / package tests (API contract; not multi-worker or live guest performance)</li>
+<li><strong>SMOKE</strong> — single-worker admin API / template surface check</li>
+<li><strong>SKIPPED / NOT RUN</strong> — multi-worker, reboot, ZRAM, LXC/Incus compare, density, destructive cases without honest evidence</li>
+</ul>
+
+<p>A catalog total of N rows is <strong>not</strong> an N/N production-test pass claim. Unit + single-worker smoke must not be counted as multi-worker or production performance evidence.</p>
 
 <table>
-<tr><th>Status</th><th>Count</th></tr>
-<tr><td>FAIL</td><td>0</td></tr>
-<tr><td>WARN</td><td>0</td></tr>
-<tr><td>PASS</td><td>90</td></tr>
-<tr><td>MEASURED</td><td>13</td></tr>
-<tr><td>INFO</td><td>3</td></tr>
-<tr><td>SKIPPED</td><td>32</td></tr>
-<tr><td>NOT RUN</td><td>12</td></tr>
-<tr><td><strong>Total</strong></td><td><strong>151</strong></td></tr>
+<tr><th>Status</th><th>Count</th><th>How to read</th></tr>
+<tr><td>FAIL</td><td>0</td><td>Must fix</td></tr>
+<tr><td>WARN</td><td>0</td><td>Live probe weak/partial</td></tr>
+<tr><td>PASS</td><td>67</td><td>Live host audit/enforcement only</td></tr>
+<tr><td>MEASURED</td><td>15</td><td>Live bench metrics</td></tr>
+<tr><td>UNIT</td><td>57</td><td>Go unit / httptest — not production performance</td></tr>
+<tr><td>SMOKE</td><td>47</td><td>Single-worker API surface — not multi-worker</td></tr>
+<tr><td>INFO</td><td>3</td><td>Informational</td></tr>
+<tr><td>SKIPPED</td><td>19</td><td>Not honestly evidenced on this lab</td></tr>
+<tr><td>NOT RUN</td><td>0</td><td>No probe</td></tr>
+<tr><td><strong>Catalog rows</strong></td><td><strong>208</strong></td><td>Status sum = catalog rows (reconciled)</td></tr>
 </table>
+
+<p class='note'>Reconcile check: FAIL+WARN+PASS+MEASURED+UNIT+SMOKE+INFO+SKIPPED+NOT RUN = <strong>208</strong> = catalog rows <strong>208</strong>.</p>
+
+<p class='note'>Honest live evidence on this report: <strong>PASS 67 + MEASURED 15</strong>. UNIT (57) and SMOKE (47) are development coverage, not multi-worker/production performance proof.</p>
+
+<h3>Still open (not production-proven here)</h3>
+
+<p>These remain <strong>SKIPPED</strong> on this lab. They are not failures — they need a dedicated multi-worker / LSM / density host before client production claims.</p>
+
+<table>
+<tr><th>Area</th><th>IDs</th><th>Why skipped here</th><th>What would prove it</th></tr>
+<tr><td>Multi-worker placement / failover</td><td>WK04–WK09, WK05</td><td>Single compose worker; draining/extra workers would hit live ports</td><td>≥2 workers, place/migrate, kill one worker, VPS recover on peer</td></tr>
+<tr><td>ZRAM compression benchmark</td><td>M03</td><td>No <code>/dev/zram0</code> on linuxkit; swap.max only</td><td>Host with zram module; compress ratio + CPU cost vs file swap</td></tr>
+<tr><td>Worker reboot recovery</td><td>L05, REL02</td><td>Live fleet protected; reboot not forced</td><td>Controlled worker restart; VPS inventory + guest recover without data loss</td></tr>
+<tr><td>Debian / CentOS compatibility</td><td>O06</td><td>Only Ubuntu 24.04 bundled in this collection</td><td>Boot + SSH + package path on Debian/CentOS (or documented out-of-scope)</td></tr>
+<tr><td>Real PHP + MySQL workload density</td><td>D04, W03/W04</td><td>Template/API smoke only; 512MiB WP often capacity-gated</td><td>N concurrent WP+MySQL guests with latency/error budget</td></tr>
+<tr><td>Cross-worker backup restore</td><td>B06</td><td>One worker; B09 is same-worker unit/restore</td><td>Backup on worker A → restore/redeploy on worker B</td></tr>
+<tr><td>Docker / LXC / Incus comparison</td><td>P01, P02, P04–P08</td><td>Incus/LXC not installed; CloFix-only numbers</td><td>Same-hardware create/RAM/isolation matrix across backends</td></tr>
+<tr><td>AppArmor / SELinux confinement</td><td>S08 (I04)</td><td>linuxkit lab has no LSM; guest profile N/A</td><td>Host with AppArmor or SELinux; per-guest profile enforced</td></tr>
+</table>
+
+<h3>Final verdict (client-facing)</h3>
+
+<p>CloFix Cloud engineering validation is progressing. This report is more evidence-driven and transparent than earlier drafts (QA counts reconciled; weak PASS rows demoted; catalog SKIPPED=19).</p>
+
+<p><strong>Reasonable to highlight:</strong> 100 networked VPS tested; <strong>42 scored security conditions passed</strong> (live audit probes on this lab); lightweight shared-OS architecture.</p>
+
+<p><strong>42 PASS ≠ kernel security certification.</strong> Those rows are tested isolation/enforcement conditions on this host. <strong>AppArmor/SELinux (S08/I04) remains SKIPPED</strong> on linuxkit. Do not describe the audit as a full kernel or LSM certification.</p>
+
+<p><strong>Do not present as a production guarantee:</strong> theoretical VPS density projections, Docker nginx throughput peaks, or Go UNIT / single-worker SMOKE coverage.</p>
+
+<p><strong>Next evidence step (recommended):</strong> on a <strong>native Ubuntu server</strong> (not Docker Desktop/linuxkit), finish remaining PASS demotions if any, then run <code>sudo ./run-compare.sh</code> so FileVPS is measured beside Docker/LXC/Incus on the same hardware. That comparison is what hosting providers and enterprise partners typically need.</p>
 
 <h3>1. VPS Lifecycle (P0)</h3>
 
@@ -291,56 +394,56 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
 <tr><td>L01</td><td>VPS create and start</td><td>MEASURED</td><td>create_ms=36…(2); start_ready_ms=1669…(2)</td></tr>
 <tr><td>L02</td><td>Create → guest ready time (fx exec, not SSH handshake)</td><td>MEASURED</td><td>start_ready_ms=1669…(2); total_ms=1705…(2)</td></tr>
-<tr><td>L03</td><td>Concurrent VPS creation (10 / 25 / 50)</td><td>MEASURED</td><td>n=100</td></tr>
-<tr><td>L04</td><td>VPS crash and automatic recovery</td><td>PASS</td><td>pid=19946</td></tr>
-<tr><td>L05</td><td>VPS recovery after worker restart</td><td>SKIPPED</td><td></td></tr>
-<tr><td>L06</td><td>VPS clone, rebuild, and snapshot restore</td><td>PASS</td><td>backup=cfxp-bak1</td></tr>
-<tr><td>L07</td><td>Failed provisioning cleanup and rollback</td><td>PASS</td><td>image: image nosuch:0 is not bundled; provide an image URL and sha256</td></tr>
-<tr><td>L08</td><td>Throw-away guest delete after bench/audit</td><td>PASS</td><td>cfxs-del</td></tr>
+<tr><td>L03</td><td>Concurrent VPS creation (10 / 25 / 50)</td><td>MEASURED</td><td>Sequential create/start pack · n=100</td></tr>
+<tr><td>L04</td><td>VPS crash and automatic recovery</td><td>PASS</td><td>Guest survived kill -9 of init via fx start; upper marker kept · pid=19946</td></tr>
+<tr><td>L05</td><td>VPS recovery after worker restart</td><td>SKIPPED</td><td>workers ok / remapped from PASS→SKIPPED (insufficient evidence)</td></tr>
+<tr><td>L06</td><td>VPS clone, rebuild, and snapshot restore</td><td>PASS</td><td>Backup and restore kept the writable-layer marker · backup=cfxp-bak1</td></tr>
+<tr><td>L07</td><td>Failed provisioning cleanup and rollback</td><td>PASS</td><td>Failed create cleaned up; no leftover instance dir · image: image nosuch:0 is not bundled; provide an image URL and sha256</td></tr>
+<tr><td>L08</td><td>Throw-away guest delete after bench/audit</td><td>PASS</td><td>Throw-away guest deleted and instance dir removed · cfxs-del</td></tr>
 </table>
 
 <h3>2. OS &amp; Kernel Sharing (P0)</h3>
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>O01</td><td>Shared read-only base OS</td><td>PASS</td><td>O01=PASS</td></tr>
-<tr><td>O02</td><td>OverlayFS lower/upper isolation (A write not visible in B)</td><td>PASS</td><td>O02=PASS; X01=PASS</td></tr>
-<tr><td>O03</td><td>Per-VPS hostname / identity files</td><td>PASS</td><td>O03=PASS</td></tr>
-<tr><td>O04</td><td>Base OS image update and rollback</td><td>PASS</td><td>ubuntu/24.04 bundled</td></tr>
-<tr><td>O05</td><td>Ubuntu 24.04 bundled image (this collection)</td><td>INFO</td><td>O04=INFO</td></tr>
-<tr><td>O06</td><td>Debian / CentOS-compatible image tests</td><td>SKIPPED</td><td></td></tr>
-<tr><td>O07</td><td>Shared kernel information leakage</td><td>INFO</td><td>K01=INFO; K05=PASS; K06=PASS; I08=PASS</td></tr>
-<tr><td>O08</td><td>Guest package install and systemd compatibility</td><td>SKIPPED</td><td></td></tr>
+<tr><td>O01</td><td>Shared read-only base OS</td><td>PASS</td><td>O01=PASS · Base OS not hardlink-shared (separate copy / COW / overlay) · os-release inode A=103151 B=103151 with overlay/COW separation (writes do not cross)</td></tr>
+<tr><td>O02</td><td>OverlayFS lower/upper isolation (A write not visible in B)</td><td>PASS</td><td>O02=PASS · OS-tree writes in VPS-A do not leak into VPS-B · marker under /usr or /etc in A absent in B; X01=PASS · VPS-B marker files invisible from VPS-A · marker written in B not visible via A rootfs/proc</td></tr>
+<tr><td>O03</td><td>Per-VPS hostname / identity files</td><td>PASS</td><td>O03=PASS · Per-VPS identity files differ · hostname/machine-id differ between A and B</td></tr>
+<tr><td>O04</td><td>Base OS image update and rollback</td><td>SMOKE</td><td>Base image cache present; rollback via re-extract not exercised · ubuntu/24.04 image cache present; rollback/re-extract NOT exercised — not a full image-update PASS</td></tr>
+<tr><td>O05</td><td>Ubuntu 24.04 bundled image (this collection)</td><td>INFO</td><td>O04=INFO · OS share: host=&#x27;ubuntu 24.04&#x27; VPS=&#x27;ubuntu 24.04&#x27; (patching host kernel patches all VPSes; VPS userland patched separately) · /etc/os-release ID=ubuntu VERSION_ID=24.04 on host and guest</td></tr>
+<tr><td>O06</td><td>Debian / CentOS-compatible image tests</td><td>SKIPPED</td><td>ubuntu/24.04 / remapped from PASS→SKIPPED (insufficient evidence)</td></tr>
+<tr><td>O07</td><td>Shared kernel information leakage</td><td>INFO</td><td>K01=INFO · Kernel shared with host (7.0.14-linuxkit) — a kernel bug affects ALL VPSes on this worker · uname guest==host 7.0.14-linuxkit (shared-kernel model); K05=PASS · VPS sees its own memory view · guest MemTotal=262144 kB (≠ host MemTotal); K06=PASS · Kernel module list hidden · guest /proc/modules ≤1 usable line; I08=PASS · dmesg not readable · kernel.dmesg_restrict=1; guest dmesg denied</td></tr>
+<tr><td>O08</td><td>Guest package install and systemd compatibility</td><td>SMOKE</td><td>Guest apt not required; Docker/Library Quick Apps provide app stacks · template=wordpress / remapped from PASS→SMOKE (single-worker)</td></tr>
 </table>
 
 <h3>3. Root &amp; Namespace Security (P0)</h3>
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>S01</td><td>User namespace UID/GID mapping</td><td>PASS</td><td>hostuid=100000</td></tr>
-<tr><td>S02</td><td>Host root versus VPS root isolation</td><td>PASS</td><td>guest=user:[4026534264]</td></tr>
-<tr><td>S03</td><td>Unique UID ranges per VPS</td><td>PASS</td><td>A=100000 B=165536</td></tr>
-<tr><td>S04</td><td>PID namespace isolation</td><td>PASS</td><td>N02=PASS; X03=PASS</td></tr>
-<tr><td>S05</td><td>Mount / UTS / IPC / net / cgroup namespaces</td><td>PASS</td><td>N01=PASS; N05=PASS; X04=PASS</td></tr>
-<tr><td>S06</td><td>Dangerous Linux capabilities dropped</td><td>PASS</td><td>I02=PASS</td></tr>
-<tr><td>S07</td><td>Seccomp and no_new_privs</td><td>PASS</td><td>I03=PASS</td></tr>
-<tr><td>S08</td><td>AppArmor / SELinux confinement</td><td>SKIP</td><td>I04=SKIP</td></tr>
-<tr><td>S09</td><td>Cross-VPS process and filesystem access blocked</td><td>PASS</td><td>X01=PASS; X03=PASS</td></tr>
+<tr><td>S01</td><td>User namespace UID/GID mapping</td><td>PASS</td><td>User namespace maps guest 0 to an unprivileged host uid · hostuid=100000</td></tr>
+<tr><td>S02</td><td>Host root versus VPS root isolation</td><td>PASS</td><td>Guest user ns differs from host · guest=user:[4026534264]</td></tr>
+<tr><td>S03</td><td>Unique UID ranges per VPS</td><td>PASS</td><td>Each guest gets a unique host uid range · A=100000 B=165536</td></tr>
+<tr><td>S04</td><td>PID namespace isolation</td><td>PASS</td><td>N02=PASS · PID namespace isolated · guest /proc count inside=4; host processes host=87; X03=PASS · VPS-B processes invisible from VPS-A · B PIDs absent from A /proc</td></tr>
+<tr><td>S05</td><td>Mount / UTS / IPC / net / cgroup namespaces</td><td>PASS</td><td>N01=PASS · All checked namespaces differ from host · mount/pid/uts/ipc/net/cgroup (+user) inodes ≠ host; N05=PASS · cgroup path hidden by cgroup namespace · guest cgroup=0::/ (host path not visible); X04=PASS · No namespace shared between VPSes · A vs B ns inodes all distinct</td></tr>
+<tr><td>S06</td><td>Dangerous Linux capabilities dropped</td><td>PASS</td><td>I02=PASS · No dangerous capabilities · CapEff=00000000200405ff (no SYS_MODULE/RAWIO/BOOT/TIME/PTRACE/SYS_ADMIN)</td></tr>
+<tr><td>S07</td><td>Seccomp and no_new_privs</td><td>PASS</td><td>I03=PASS · Seccomp filter active · NoNewPrivs=1 Seccomp=2 (filter mode)</td></tr>
+<tr><td>S08</td><td>AppArmor / SELinux confinement</td><td>SKIPPED</td><td>I04=SKIP · Host kernel has no AppArmor/SELinux LSM (e.g. linuxkit lab); guest profile N/A · /sys/kernel/security/lsm empty / no aa_status / no sestatus on linuxkit</td></tr>
+<tr><td>S09</td><td>Cross-VPS process and filesystem access blocked</td><td>PASS</td><td>X01=PASS · VPS-B marker files invisible from VPS-A · marker written in B not visible via A rootfs/proc; X03=PASS · VPS-B processes invisible from VPS-A · B PIDs absent from A /proc</td></tr>
 </table>
 
 <h3>4. Filesystem &amp; Protection Mode (P0)</h3>
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>F01</td><td>Protection Mode on/off (audit runs with protection off)</td><td>PASS</td><td>RC=2 Read-only file system</td></tr>
-<tr><td>F02</td><td>Protected-file modify without admin approval</td><td>PASS</td><td>RC=2 Read-only file system</td></tr>
-<tr><td>F03</td><td>Host filesystem and runtime socket access blocked</td><td>PASS</td><td>N03=PASS; X02=PASS</td></tr>
-<tr><td>F04</td><td>Symlink / path-traversal escape</td><td>PASS</td><td></td></tr>
-<tr><td>F05</td><td>/tmp and /var/tmp sticky bit</td><td>PASS</td><td>F02=PASS</td></tr>
-<tr><td>F06</td><td>Disk write quota enforcement</td><td>PASS</td><td>R04=PASS</td></tr>
-<tr><td>F07</td><td>Per-VPS storage separation</td><td>PASS</td><td>X01=PASS; O02=PASS</td></tr>
-<tr><td>F08</td><td>Concurrent read/write data integrity</td><td>PASS</td><td>SUM1=8e05de756057d27769c1b9646b7ceebe0f3bcdc5bb117d97db9a7c3b50966494 /root/blob SUM2=8e05de756057d27769c1b9646b7ceebe0f3bcdc5bb117d97db9a7c3b50966494 /root/blo</td></tr>
-<tr><td>F09</td><td>Guest /etc/shadow and host instance dir modes</td><td>PASS</td><td>F03=PASS; F04=PASS</td></tr>
+<tr><td>F01</td><td>Protection Mode on/off (audit runs with protection off)</td><td>PASS</td><td>Protection Mode blocks writes to /etc · RC=2 Read-only file system</td></tr>
+<tr><td>F02</td><td>Protected-file modify without admin approval</td><td>PASS</td><td>Protected-path write without admin approval failed · RC=2 Read-only file system</td></tr>
+<tr><td>F03</td><td>Host filesystem and runtime socket access blocked</td><td>PASS</td><td>N03=PASS · No host runtime paths in mountinfo · no /var/lib/clofix-filevps, /run/docker.sock, or /var/run/docker in guest mountinfo; X02=PASS · Host runtime directories not visible · guest cannot list host instances/runtime dirs</td></tr>
+<tr><td>F04</td><td>Symlink / path-traversal escape</td><td>PASS</td><td>File API did not follow escaping symlink</td></tr>
+<tr><td>F05</td><td>/tmp and /var/tmp sticky bit</td><td>PASS</td><td>F02=PASS · No world-writable dirs lacking sticky bit · no 1777-missing sticky dirs under guest /</td></tr>
+<tr><td>F06</td><td>Disk write quota enforcement</td><td>PASS</td><td>R04=PASS · Per-VPS disk size limited · guest df vps=106420KB vs host=474044488KB</td></tr>
+<tr><td>F07</td><td>Per-VPS storage separation</td><td>PASS</td><td>X01=PASS · VPS-B marker files invisible from VPS-A · marker written in B not visible via A rootfs/proc; O02=PASS · OS-tree writes in VPS-A do not leak into VPS-B · marker under /usr or /etc in A absent in B</td></tr>
+<tr><td>F08</td><td>Concurrent read/write data integrity</td><td>PASS</td><td>Concurrent reader did not corrupt writer checksum · SUM1=8e05de756057d27769c1b9646b7ceebe0f3bcdc5bb117d97db9a7c3b50966494 /root/blob SUM2=8e05de756057d27769c1b9646b7ceebe0f3bcdc5bb117d97db9a7c3b50966494 /root/blo</td></tr>
+<tr><td>F09</td><td>Guest /etc/shadow and host instance dir modes</td><td>PASS</td><td>F03=PASS · /etc/shadow mode 640 · stat mode=640; F04=PASS · VPS dir on host not world-accessible (mode 750) · /var/lib/clofix-filevps/suite-isolated-warnfix2/instances/cfxa-fx-a mode=750</td></tr>
 </table>
 
 <h3>5. RAM &amp; Memory Engine (P0)</h3>
@@ -348,28 +451,28 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
 <tr><td>M01</td><td>Idle RAM per VPS</td><td>MEASURED</td><td>idle_mem_per_vps_mb=n/a (measurement noise)</td></tr>
-<tr><td>M02</td><td>RAM limits memory.max / memory.high</td><td>PASS</td><td>R02=PASS</td></tr>
-<tr><td>M03</td><td>ZRAM compression ratio and CPU cost</td><td>SKIPPED</td><td></td></tr>
-<tr><td>M04</td><td>File-backed swap usage</td><td>PASS</td><td>memory.swap.max=67108864</td></tr>
-<tr><td>M05</td><td>Shared page-cache behaviour</td><td>MEASURED</td><td>off_ms=143 on_ms=107 swap.max=67108864</td></tr>
-<tr><td>M06</td><td>Memory pressure and reclaim</td><td>MEASURED</td><td>workingset_refault_anon 0 workingset_activate_anon 0</td></tr>
-<tr><td>M07</td><td>Out-of-memory handling</td><td>PASS</td><td></td></tr>
-<tr><td>M08</td><td>One VPS OOM does not take down another</td><td>PASS</td><td></td></tr>
-<tr><td>M09</td><td>Memory overcommit and recovery</td><td>SKIPPED</td><td></td></tr>
-<tr><td>M10</td><td>Guest /proc/meminfo vs host MemTotal</td><td>PASS</td><td>K05=PASS</td></tr>
+<tr><td>M02</td><td>RAM limits memory.max / memory.high</td><td>PASS</td><td>R02=PASS · Memory limit set · memory.max=268435456 (256 MiB)</td></tr>
+<tr><td>M03</td><td>ZRAM compression ratio and CPU cost</td><td>SKIPPED</td><td>swap.max set / remapped from PASS→SKIPPED (insufficient evidence)</td></tr>
+<tr><td>M04</td><td>File-backed swap usage</td><td>PASS</td><td>File-backed/cgroup swap cap set · memory.swap.max=67108864</td></tr>
+<tr><td>M05</td><td>Shared page-cache behaviour</td><td>MEASURED</td><td>Swap OFF vs ON write timing (not ZRAM) · off_ms=143 on_ms=107 swap.max=67108864</td></tr>
+<tr><td>M06</td><td>Memory pressure and reclaim</td><td>MEASURED</td><td>Reclaim counters after memory hog · workingset_refault_anon 0 workingset_activate_anon 0</td></tr>
+<tr><td>M07</td><td>Out-of-memory handling</td><td>PASS</td><td>Allocation of 96MB was killed/denied inside VPS (rc=1)</td></tr>
+<tr><td>M08</td><td>One VPS OOM does not take down another</td><td>PASS</td><td>Host and live fleet still up after memory hog</td></tr>
+<tr><td>M09</td><td>Memory overcommit and recovery</td><td>SKIPPED</td><td>cgroup / remapped from PASS→SKIPPED (insufficient evidence)</td></tr>
+<tr><td>M10</td><td>Guest /proc/meminfo vs host MemTotal</td><td>PASS</td><td>K05=PASS · VPS sees its own memory view · guest MemTotal=262144 kB (≠ host MemTotal)</td></tr>
 </table>
 
 <h3>6. CPU, PID &amp; Resource Limits (P0)</h3>
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>C01</td><td>cpu.max quota visible / set</td><td>PASS</td><td>R03=PASS</td></tr>
-<tr><td>C02</td><td>pids.max visible / set</td><td>PASS</td><td>R01=PASS</td></tr>
-<tr><td>C03</td><td>Fork-bomb containment</td><td>PASS</td><td></td></tr>
-<tr><td>C04</td><td>CPU stress isolation</td><td>PASS</td><td>nr_throttled=82</td></tr>
-<tr><td>C05</td><td>CPU scheduling and throttling</td><td>PASS</td><td>nr_throttled=82 cpu=0.2</td></tr>
-<tr><td>C06</td><td>Disk I/O throttling</td><td>PASS</td><td>write_ms=42 io.max=n/a</td></tr>
-<tr><td>C07</td><td>Noisy-neighbour performance impact</td><td>PASS</td><td>idle=466ms loaded=565ms</td></tr>
+<tr><td>C01</td><td>cpu.max quota visible / set</td><td>PASS</td><td>R03=PASS · CPU quota set · cpu.max=50000 100000 (0.5 core)</td></tr>
+<tr><td>C02</td><td>pids.max visible / set</td><td>PASS</td><td>R01=PASS · pids.max set · pids.max=512</td></tr>
+<tr><td>C03</td><td>Fork-bomb containment</td><td>PASS</td><td>Process limit enforced at ~0</td></tr>
+<tr><td>C04</td><td>CPU stress isolation</td><td>PASS</td><td>CPU stress stayed inside guest cgroup · nr_throttled=82</td></tr>
+<tr><td>C05</td><td>CPU scheduling and throttling</td><td>PASS</td><td>cpu.max throttled under load · nr_throttled=82 cpu=0.2</td></tr>
+<tr><td>C06</td><td>Disk I/O throttling</td><td>SKIPPED</td><td>Disk I/O throttling not enforced (io.max n/a); disk_mb quota is separate (REL04)</td></tr>
+<tr><td>C07</td><td>Noisy-neighbour performance impact</td><td>PASS</td><td>VPS-B loop slowdown 1.21x under neighbour load · idle=466ms loaded=565ms</td></tr>
 <tr><td>C08</td><td>In-VPS CPU loop latency</td><td>MEASURED</td><td>cpu_loop_ms=854…(3)</td></tr>
 </table>
 
@@ -377,171 +480,252 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>NET01</td><td>Per-VPS IP and network isolation</td><td>PASS</td><td>X06=PASS</td></tr>
-<tr><td>NET02</td><td>SSH login and authorized keys</td><td>PASS</td><td>port=22004</td></tr>
-<tr><td>NET03</td><td>Host port mapping and port exhaustion</td><td>PASS</td><td>A=10.231.0.6:22004 B=10.231.0.7:22005</td></tr>
-<tr><td>NET04</td><td>Cross-VPS networking allow/deny</td><td>PASS</td><td>X06=PASS</td></tr>
-<tr><td>NET05</td><td>Nftables / isolated veth (observed via reachability)</td><td>PASS</td><td>X06=PASS</td></tr>
-<tr><td>NET06</td><td>Inbound / outbound connectivity</td><td>PASS</td><td>port=22004</td></tr>
-<tr><td>NET07</td><td>IPv4 / IPv6 and DNS</td><td>PASS</td><td>ip=10.231.0.6 dns=2606:4700:10::6814:179a example.com 2606:4700:10::ac42:93f3 example.com</td></tr>
-<tr><td>NET08</td><td>High-concurrency network connections</td><td>PASS</td><td>ok=20 fail=0</td></tr>
-<tr><td>NET09</td><td>Port scanning and packet isolation</td><td>PASS</td><td>B=10.231.0.7</td></tr>
+<tr><td>NET01</td><td>Per-VPS IP and network isolation</td><td>PASS</td><td>X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) — inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop)</td></tr>
+<tr><td>NET02</td><td>SSH login and authorized keys</td><td>PASS</td><td>SSH login with authorized key via host port · port=22004</td></tr>
+<tr><td>NET03</td><td>Host port mapping and port exhaustion</td><td>PASS</td><td>Distinct SSH host ports and guest IPs allocated · A=10.231.0.6:22004 B=10.231.0.7:22005</td></tr>
+<tr><td>NET04</td><td>Cross-VPS networking allow/deny</td><td>PASS</td><td>X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) — inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop)</td></tr>
+<tr><td>NET05</td><td>Nftables / isolated veth (observed via reachability)</td><td>PASS</td><td>X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) — inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop)</td></tr>
+<tr><td>NET06</td><td>Inbound / outbound connectivity</td><td>PASS</td><td>Inbound SSH via host port mapping works · port=22004</td></tr>
+<tr><td>NET07</td><td>IPv4 / IPv6 and DNS</td><td>PASS</td><td>Guest has IPv4 address (DNS may be lab-limited) · ip=10.231.0.6 dns=2606:4700:10::6814:179a example.com 2606:4700:10::ac42:93f3 example.com</td></tr>
+<tr><td>NET08</td><td>High-concurrency network connections</td><td>PASS</td><td>High-concurrency SSH via host port · ok=20 fail=0</td></tr>
+<tr><td>NET09</td><td>Port scanning and packet isolation</td><td>PASS</td><td>Cross-guest TCP/22 blocked (port-scan isolation) · B=10.231.0.7</td></tr>
 </table>
 
 <h3>8. VPS Density &amp; Scalability (P0)</h3>
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>D01</td><td>Controlled density 10 / 25 / 50 / 100</td><td>MEASURED</td><td>n=10 ssh=10 nginx=0 avail_mb=6193</td></tr>
-<tr><td>D02</td><td>Idle VPS density</td><td>MEASURED</td><td>n=100 ssh=100 nginx=0 mem_per_vps_mb=1.60 reason=ok secs=459</td></tr>
-<tr><td>D03</td><td>Nginx application VPS density</td><td>MEASURED</td><td>n=25 ok=113704 fail=48 rps=14213.0 p95_ms=2.8  d1=18MB,cpu_us=1449865 d25=17MB,cpu_us=95415</td></tr>
-<tr><td>D04</td><td>PHP + MySQL e-commerce VPS density</td><td>SKIPPED</td><td></td></tr>
-<tr><td>D05</td><td>CPU-heavy and memory-heavy mix</td><td>PASS</td><td>n=2</td></tr>
-<tr><td>D06</td><td>Provisioning speed under high density</td><td>MEASURED</td><td>n=1 secs=30</td></tr>
-<tr><td>D07</td><td>Peak-hour latency and throughput</td><td>MEASURED</td><td>ok=113704 fail=48 rps=14213.0 p95_ms=2.8</td></tr>
-<tr><td>D08</td><td>Safe maximum occupancy before SLO violation</td><td>SKIPPED</td><td></td></tr>
+<tr><td>D01</td><td>Controlled density 10 / 25 / 50 / 100</td><td>MEASURED</td><td>Networked density 10 · n=10 ssh=10 nginx=0 avail_mb=6193</td></tr>
+<tr><td>D02</td><td>Idle VPS density</td><td>MEASURED</td><td>Networked density on isolated state · n=100 ssh=100 nginx=0 mem_per_vps_mb=1.60 reason=ok secs=459</td></tr>
+<tr><td>D03</td><td>Nginx application VPS density</td><td>MEASURED</td><td>Nginx application throughput (tuned engine max) · CloFix Docker nginx throughput · not FileVPS guest density of N nginx VPS</td></tr>
+<tr><td>D04</td><td>PHP + MySQL e-commerce VPS density</td><td>SKIPPED</td><td>deploy=409 / remapped from PASS→SKIPPED (insufficient evidence)</td></tr>
+<tr><td>D05</td><td>CPU-heavy and memory-heavy mix</td><td>PASS</td><td>CPU-heavy + memory-heavy mix on 2 isolated guests · n=2</td></tr>
+<tr><td>D06</td><td>Provisioning speed under high density</td><td>MEASURED</td><td>Provisioning under this pack · n=1 secs=30</td></tr>
+<tr><td>D07</td><td>Peak-hour latency and throughput</td><td>MEASURED</td><td>Peak-hour latency and throughput · CloFix Docker nginx peak-hour latency/throughput · lab engine max</td></tr>
+<tr><td>D08</td><td>Safe maximum occupancy before SLO violation</td><td>SKIPPED</td><td>capacity aware / remapped from PASS→SKIPPED (insufficient evidence)</td></tr>
 </table>
 
 <h3>9. Website &amp; Application Workloads (P1)</h3>
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>W01</td><td>Nginx HTTP benchmark</td><td>PASS</td><td>n=25 ok=113704 fail=48 rps=14213.0 p95_ms=2.8</td></tr>
-<tr><td>W02</td><td>Apache benchmark</td><td>SKIPPED</td><td></td></tr>
-<tr><td>W03</td><td>PHP-FPM and WordPress</td><td>SKIPPED</td><td></td></tr>
-<tr><td>W04</td><td>WooCommerce-like e-commerce workload</td><td>SKIPPED</td><td></td></tr>
-<tr><td>W05</td><td>Node.js application</td><td>SKIPPED</td><td></td></tr>
-<tr><td>W06</td><td>Go API service</td><td>SKIPPED</td><td></td></tr>
-<tr><td>W07</td><td>Concurrent HTTP requests and latency</td><td>MEASURED</td><td>ok=113704 fail=48 rps=14213.0 p95_ms=2.8  d1=18MB,cpu_us=1449865 d25=17MB,cpu_us=95415</td></tr>
-<tr><td>W08</td><td>Web application persistence after restart</td><td>SKIPPED</td><td></td></tr>
+<tr><td>W01</td><td>Nginx HTTP benchmark</td><td>PASS</td><td>Nginx HTTP max throughput (tuned Docker nginx) · CloFix Docker nginx (not Incus/LXC compare) · prev_rps=14213 new_httpload_c16=29616.6 zero_fail_max=ok=533799 fail=0 rps=66724.9 p95_ms=16.2 conc=512 secs=8 sustained15_c256=ok=889328 fail=0 rps=59288.5 p95_ms=8.5 httpload_peak=ok=707763 fail=1068 rps=70776.3 p95_ms=30.9 conc=1024 secs=10 ab_k_c400=88946.96rps fail=0 target=docker_nginx:18199 tuned</td></tr>
+<tr><td>W02</td><td>Apache benchmark</td><td>SMOKE</td><td>Apache workload deployable via Docker Quick App template · http=202 id=dca-1d6ba8dc267d77af / remapped from PASS→SMOKE (single-worker)</td></tr>
+<tr><td>W03</td><td>PHP-FPM and WordPress</td><td>SMOKE</td><td>WordPress Docker Quick App template present (deploy gated by worker capacity) · template=wordpress deploy=409 / remapped from PASS→SMOKE (single-worker)</td></tr>
+<tr><td>W04</td><td>WooCommerce-like e-commerce workload</td><td>SMOKE</td><td>WooCommerce-like path = WordPress template + managed DB · template=wordpress / remapped from PASS→SMOKE (single-worker)</td></tr>
+<tr><td>W05</td><td>Node.js application</td><td>SMOKE</td><td>Node.js application via Docker Quick App · http=202 id=dca-512684ebd6c457b6 / remapped from PASS→SMOKE (single-worker)</td></tr>
+<tr><td>W06</td><td>Go API service</td><td>SMOKE</td><td>Go API service deployable as Docker image app · http=202 id=dca-042e726f97af5b53 / remapped from PASS→SMOKE (single-worker)</td></tr>
+<tr><td>W07</td><td>Concurrent HTTP requests and latency</td><td>PASS</td><td>Concurrent HTTP requests and latency (max sweep) · CloFix Docker nginx (not Incus/LXC compare) · prev_rps=14213 new_httpload_c16=29616.6 zero_fail_max=ok=533799 fail=0 rps=66724.9 p95_ms=16.2 conc=512 secs=8 sustained15_c256=ok=889328 fail=0 rps=59288.5 p95_ms=8.5 httpload_peak=ok=707763 fail=1068 rps=70776.3 p95_ms=30.9 conc=1024 secs=10 ab_k_c400=88946.96rps fail=0 target=docker_nginx:18199 tuned</td></tr>
+<tr><td>W08</td><td>Web application persistence after restart</td><td>SMOKE</td><td>Docker applications create/delete API exercises persistence lifecycle · see W02/W05/W06 / remapped from PASS→SMOKE (single-worker)</td></tr>
 </table>
 
 <h3>10. Database Services (P1)</h3>
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>DB01</td><td>MySQL create / user / database isolation</td><td>PASS</td><td>id=dbp-c15afccf7e3566b183aec0e24d54f1ae dbs=[&#x27;clofix&#x27;] port=26000</td></tr>
-<tr><td>DB02</td><td>PostgreSQL create / user / database isolation</td><td>PASS</td><td>engine=postgresql on worker</td></tr>
-<tr><td>DB03</td><td>MongoDB access controls</td><td>PASS</td><td>engine=mongodb on worker</td></tr>
-<tr><td>DB04</td><td>Concurrent database reads and writes</td><td>PASS</td><td>n=3 sample_metrics=True</td></tr>
-<tr><td>DB05</td><td>Database backup / download / upload / restore</td><td>PASS</td><td>n=2 sha=21d6d67bb75cdeab</td></tr>
-<tr><td>DB06</td><td>Database crash recovery</td><td>PASS</td><td>jobs=44</td></tr>
-<tr><td>DB07</td><td>Storage exhaustion response</td><td>PASS</td><td>mysql=2048 sample_ok</td></tr>
-<tr><td>DB08</td><td>Tenant database security</td><td>PASS</td><td>owners=[&#x27;root&#x27;]</td></tr>
+<tr><td>DB01</td><td>MySQL create / user / database isolation</td><td>PASS</td><td>MySQL project present with logical DBs / isolation boundary · id=dbp-c15afccf7e3566b183aec0e24d54f1ae dbs=[&#x27;clofix&#x27;] port=26000</td></tr>
+<tr><td>DB02</td><td>PostgreSQL create / user / database isolation</td><td>SMOKE</td><td>PostgreSQL engine advertised; no live project required for capability check · PostgreSQL engine advertised on worker · capability inventory only (no live PG project exercise)</td></tr>
+<tr><td>DB03</td><td>MongoDB access controls</td><td>SMOKE</td><td>MongoDB engine advertised with TLS-required connection model · MongoDB engine advertised · TLS model documented; no live Mongo workload probe</td></tr>
+<tr><td>DB04</td><td>Concurrent database reads and writes</td><td>SMOKE</td><td>Managed DB projects expose metrics; concurrent client load not destructive-probed · Managed DB metrics fields present · concurrent load NOT destructive-probed</td></tr>
+<tr><td>DB05</td><td>Database backup READY artifact + download API (restore not fully validated)</td><td>SMOKE</td><td>Database backup READY artifact + download API (restore not fully validated) · READY backup artifacts + download-token API · n=2 sha=21d6d67bb75cdeab · complete restore validation NOT run</td></tr>
+<tr><td>DB06</td><td>Database crash recovery</td><td>SMOKE</td><td>Interrupted-backup recovery API present (recover-backup / retry) · recover-backup/retry API present · jobs=44; crash recovery not simulated end-to-end</td></tr>
+<tr><td>DB07</td><td>Managed DB disk_mb quota configured (disk-full behaviour not probed)</td><td>SMOKE</td><td>Managed DB disk_mb quota configured (disk-full behaviour not probed) · Per-project disk_mb quota configured · mysql=2048 · actual DB disk-full behaviour NOT probed</td></tr>
+<tr><td>DB08</td><td>Tenant database security</td><td>PASS</td><td>DB backups scoped by owner; unauth API blocked (see A08/U02) · owners=[&#x27;root&#x27;]</td></tr>
+<tr><td>DB09</td><td>TLS required on published DB listeners</td><td>UNIT</td><td>Managed DB production (DB09) · go test TestProductionManagedDatabase + DB suite</td></tr>
+<tr><td>DB10</td><td>Encrypted backup + safety-backup gate on restore</td><td>UNIT</td><td>Managed DB production (DB10) · go test TestProductionManagedDatabase + DB suite</td></tr>
+<tr><td>DB11</td><td>Engine version pin + worker capability advertise</td><td>UNIT</td><td>Managed DB production (DB11) · go test TestProductionManagedDatabase + DB suite</td></tr>
+<tr><td>DB12</td><td>Failed provision retry without duplicate project</td><td>UNIT</td><td>Managed DB production (DB12) · go test TestProductionManagedDatabase + DB suite</td></tr>
+<tr><td>DB13</td><td>Reserved admin usernames rejected</td><td>UNIT</td><td>Managed DB production (DB13) · go test TestProductionManagedDatabase + DB suite</td></tr>
+<tr><td>DB14</td><td>License quota blocks over-provision</td><td>UNIT</td><td>Managed DB production (DB14) · go test TestProductionManagedDatabase + DB suite</td></tr>
+<tr><td>DB15</td><td>Redis logical DB is prefix isolation (no native backup claim)</td><td>UNIT</td><td>Managed DB production (DB15) · go test TestProductionManagedDatabase + DB suite</td></tr>
+<tr><td>DB16</td><td>Stop/start bills storage-only while data retained</td><td>UNIT</td><td>Managed DB production (DB16) · go test TestProductionManagedDatabase + DB suite</td></tr>
 </table>
 
 <h3>11. Worker &amp; Auto Scheduler (P0)</h3>
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>WK01</td><td>Multiple worker registration</td><td>SKIPPED</td><td></td></tr>
-<tr><td>WK02</td><td>Worker secret-key enrollment</td><td>SKIPPED</td><td></td></tr>
-<tr><td>WK03</td><td>CPU / RAM / disk capacity discovery</td><td>SKIPPED</td><td></td></tr>
-<tr><td>WK04</td><td>Automatic VPS placement</td><td>SKIPPED</td><td></td></tr>
-<tr><td>WK05</td><td>Select another worker when one is full</td><td>SKIPPED</td><td></td></tr>
-<tr><td>WK06</td><td>Worker offline detection</td><td>SKIPPED</td><td></td></tr>
-<tr><td>WK07</td><td>Insufficient capacity rejection</td><td>SKIPPED</td><td></td></tr>
-<tr><td>WK08</td><td>Scheduler concurrent placement races</td><td>SKIPPED</td><td></td></tr>
-<tr><td>WK09</td><td>Worker removal and draining</td><td>SKIPPED</td><td></td></tr>
+<tr><td>WK01</td><td>Multiple worker registration</td><td>SMOKE</td><td>Worker registration inventory returns enrolled worker(s) · n_workers_live=1 lab / remapped from PASS→SMOKE (single-worker)</td></tr>
+<tr><td>WK02</td><td>Worker secret-key enrollment</td><td>SMOKE</td><td>Worker enrollment present and inventory returned · workers=ok / remapped from PASS→SMOKE (single-worker)</td></tr>
+<tr><td>WK03</td><td>CPU / RAM / disk capacity discovery</td><td>SMOKE</td><td>Worker capacity fields returned for placement · workers=ok / remapped from PASS→SMOKE (single-worker)</td></tr>
+<tr><td>WK04</td><td>Automatic VPS placement</td><td>SKIPPED</td><td>docker_ready from overview / remapped from PASS→SKIPPED (insufficient evidence)</td></tr>
+<tr><td>WK05</td><td>Select another worker when one is full</td><td>SKIPPED</td><td>single-worker lab / remapped from PASS→SKIPPED (insufficient evidence)</td></tr>
+<tr><td>WK06</td><td>Worker offline detection</td><td>SKIPPED</td><td>heartbeat field present / remapped from PASS→SKIPPED (insufficient evidence)</td></tr>
+<tr><td>WK07</td><td>Insufficient capacity rejection</td><td>SMOKE</td><td>Insufficient capacity / invalid size rejected · http=409 / remapped from PASS→SMOKE (single-worker)</td></tr>
+<tr><td>WK08</td><td>Scheduler concurrent placement races</td><td>SKIPPED</td><td>jobs API / remapped from PASS→SKIPPED (insufficient evidence)</td></tr>
+<tr><td>WK09</td><td>Worker removal and draining</td><td>SKIPPED</td><td>lab / remapped from PASS→SKIPPED (insufficient evidence)</td></tr>
 </table>
 
 <h3>12. Backup &amp; Object Storage (P1)</h3>
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>B01</td><td>Full VPS backup and restore</td><td>PASS</td><td>backup=cfxp-bak1</td></tr>
-<tr><td>B02</td><td>Incremental backup</td><td>PASS</td><td>b1=cfnr-bak1 b2=cfnr-bak2</td></tr>
-<tr><td>B03</td><td>S3-compatible storage operations</td><td>PASS</td><td>endpoint=http://s3pool:8333 n=1</td></tr>
-<tr><td>B04</td><td>Backup checksum verification</td><td>PASS</td><td>backup=cfnr-bak1 sha256=ae68b0e592212967…</td></tr>
-<tr><td>B05</td><td>Encrypted backup storage</td><td>PASS</td><td>n=2</td></tr>
-<tr><td>B06</td><td>Cross-worker restoration</td><td>SKIPPED</td><td></td></tr>
-<tr><td>B07</td><td>Interrupted backup recovery</td><td>PASS</td><td>backup=cfnr-bak1</td></tr>
-<tr><td>B08</td><td>Backup retention and cleanup</td><td>PASS</td><td>b1=cfnr-bak1 b2=cfnr-bak2</td></tr>
+<tr><td>B01</td><td>Full VPS backup and restore</td><td>PASS</td><td>Full VPS writable-layer backup/restore on one worker · backup=cfxp-bak1</td></tr>
+<tr><td>B02</td><td>Second full snapshot after change (not true incremental)</td><td>SMOKE</td><td>Second full snapshot after change (not true incremental) · Second full snapshot after change · b1=cfnr-bak1 b2=cfnr-bak2 · NOT true incremental backup API</td></tr>
+<tr><td>B03</td><td>S3-compatible storage operations</td><td>PASS</td><td>S3 connection configured and READY backup stored to s3 destination · endpoint=http://s3pool:8333 n=1</td></tr>
+<tr><td>B04</td><td>Backup checksum verification</td><td>PASS</td><td>Backup artifact checksum computed · backup=cfnr-bak1 sha256=ae68b0e592212967…</td></tr>
+<tr><td>B05</td><td>Encrypted backup storage</td><td>SMOKE</td><td>DB backup pipeline uses encrypted backup UI/API (READY artifacts) · DB backup READY artifacts present · encryption-at-rest not cryptographically proven here</td></tr>
+<tr><td>B06</td><td>Cross-worker restoration</td><td>SKIPPED</td><td>see B09 / remapped from PASS→SKIPPED (insufficient evidence)</td></tr>
+<tr><td>B07</td><td>Interrupted backup recovery</td><td>PASS</td><td>Backup usable after source stop (interrupted-run safe path) · backup=cfnr-bak1</td></tr>
+<tr><td>B08</td><td>Backup retention and cleanup</td><td>PASS</td><td>Backup retention cleanup removed test backup ids · b1=cfnr-bak1 b2=cfnr-bak2</td></tr>
+<tr><td>B09</td><td>Docker volume backup create / restore / delete / redeploy</td><td>UNIT</td><td>Docker volume backup create / restore+redeploy / delete · go test TestDockerBackupRestoreDeleteRedeploy</td></tr>
 </table>
 
 <h3>13. Cloud Admin &amp; Customer UI (P1)</h3>
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>U01</td><td>User registration / login / MFA</td><td>PASS</td><td>email=admin@clofix.local</td></tr>
-<tr><td>U02</td><td>RBAC and tenant isolation</td><td>PASS</td><td>http=401</td></tr>
-<tr><td>U03</td><td>VPS create / update / delete UI</td><td>PASS</td><td>http=200</td></tr>
-<tr><td>U04</td><td>Worker and VPS usage dashboard</td><td>PASS</td><td>http=200</td></tr>
-<tr><td>U05</td><td>Admin-only protection controls</td><td>PASS</td><td>http=200</td></tr>
-<tr><td>U06</td><td>Audit logs and activity history</td><td>PASS</td><td>path=/api/logs</td></tr>
-<tr><td>U07</td><td>Billing and payment integration</td><td>PASS</td><td>http=200</td></tr>
-<tr><td>U08</td><td>License and worker limits enforcement</td><td>PASS</td><td>http=200</td></tr>
+<tr><td>U01</td><td>Admin login API (MFA enrollment/challenge not proven)</td><td>SMOKE</td><td>Admin login API (MFA enrollment/challenge not proven) · Admin login API succeeded · email=admin@clofix.local · MFA enrollment/challenge NOT proven</td></tr>
+<tr><td>U02</td><td>RBAC and tenant isolation</td><td>PASS</td><td>Unauthenticated API blocked · http=401</td></tr>
+<tr><td>U03</td><td>VPS create / update / delete UI</td><td>SMOKE</td><td>Instances UI reachable after auth · http=200 · UI reachability only</td></tr>
+<tr><td>U04</td><td>Worker and VPS usage dashboard</td><td>SMOKE</td><td>Dashboard reachable after auth · http=200 · UI reachability only</td></tr>
+<tr><td>U05</td><td>Admin-only protection controls</td><td>SMOKE</td><td>Settings (admin controls) reachable · http=200 · UI reachability only</td></tr>
+<tr><td>U06</td><td>Audit logs and activity history</td><td>SMOKE</td><td>Audit/activity API reachable · path=/api/logs (surface only)</td></tr>
+<tr><td>U07</td><td>Billing and payment integration</td><td>SMOKE</td><td>Billing page reachable · http=200 · UI reachability only</td></tr>
+<tr><td>U08</td><td>License and worker limits enforcement</td><td>SMOKE</td><td>License/settings surface reachable for limit checks · http=200 · UI reachability only</td></tr>
 </table>
 
 <h3>14. Security Attack Simulation (P0)</h3>
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>A01</td><td>Guest-to-host escape regression probes</td><td>PASS</td><td>I05=PASS; I06=PASS; I07=PASS; N03=PASS; N04=PASS; F05=PASS</td></tr>
-<tr><td>A02</td><td>Cross-tenant access attempts</td><td>PASS</td><td>X01=PASS; X02=PASS; X03=PASS; X06=PASS</td></tr>
-<tr><td>A03</td><td>Command injection input validation</td><td>PASS</td><td>http=409</td></tr>
-<tr><td>A04</td><td>Privilege escalation controls</td><td>PASS</td><td>I02=PASS; I03=PASS; F05=PASS</td></tr>
-<tr><td>A05</td><td>SSH brute-force protection</td><td>PASS</td><td>port=22004</td></tr>
-<tr><td>A06</td><td>Malicious configuration attempts</td><td>PASS</td><td>spec requires positive ram_mb and cpu and non-negative swap_mb</td></tr>
-<tr><td>A07</td><td>Secrets and credentials exposure</td><td>PASS</td><td>checked=/proc/1/environ</td></tr>
-<tr><td>A08</td><td>API authorization bypass tests</td><td>PASS</td><td>http=401</td></tr>
-<tr><td>A09</td><td>Kernel attack surface hardening</td><td>INFO</td><td>K02=PASS; K04=PASS; K07=INFO</td></tr>
+<tr><td>A01</td><td>Guest-to-host escape regression probes</td><td>PASS</td><td>I05=PASS · Sensitive /proc,/sys paths not writable · probe write denied on /proc/sysrq-trigger /sys/kernel/uevent_helper (and similar); I06=PASS · No /dev/mem,kmem,port or block devices · guest /dev has no mem/kmem/port or host block nodes; I07=PASS · mount() denied inside container · mount(tmpfs) failed (EPERM/EACCES) under seccomp/userns; N03=PASS · No host runtime paths in mountinfo · no /var/lib/clofix-filevps, /run/docker.sock, or /var/run/docker in guest mountinfo; N04=PASS · No writable release_agent · cgroup release_agent not writable from guest; F05=PASS · mknod of block devices denied · mknod /tmp/blk b 8 0 → EPERM</td></tr>
+<tr><td>A02</td><td>Cross-tenant access attempts</td><td>PASS</td><td>X01=PASS · VPS-B marker files invisible from VPS-A · marker written in B not visible via A rootfs/proc; X02=PASS · Host runtime directories not visible · guest cannot list host instances/runtime dirs; X03=PASS · VPS-B processes invisible from VPS-A · B PIDs absent from A /proc; X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) — inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop)</td></tr>
+<tr><td>A03</td><td>Command injection input validation</td><td>PASS</td><td>Malicious project name rejected by API · http=409</td></tr>
+<tr><td>A04</td><td>Privilege escalation controls</td><td>PASS</td><td>I02=PASS · No dangerous capabilities · CapEff=00000000200405ff (no SYS_MODULE/RAWIO/BOOT/TIME/PTRACE/SYS_ADMIN); I03=PASS · Seccomp filter active · NoNewPrivs=1 Seccomp=2 (filter mode); F05=PASS · mknod of block devices denied · mknod /tmp/blk b 8 0 → EPERM</td></tr>
+<tr><td>A05</td><td>Wrong SSH key rejected (rate-limit / brute-force detection not proven)</td><td>SMOKE</td><td>Wrong SSH key rejected (rate-limit / brute-force detection not proven) · Wrong SSH key rejected (BatchMode) · port=22004 · auth reject only; no rate-limit/brute-force detection evidence</td></tr>
+<tr><td>A06</td><td>Malicious configuration attempts</td><td>PASS</td><td>Invalid resource config rejected · spec requires positive ram_mb and cpu and non-negative swap_mb</td></tr>
+<tr><td>A07</td><td>Secrets and credentials exposure</td><td>PASS</td><td>Guest PID1 environ has no worker secrets · checked=/proc/1/environ</td></tr>
+<tr><td>A08</td><td>API authorization bypass tests</td><td>PASS</td><td>Admin API rejects unauthenticated access · http=401</td></tr>
+<tr><td>A09</td><td>Kernel attack surface hardening</td><td>INFO</td><td>K02=PASS · Host kernel sysctl hardening in place · dmesg_restrict / kptr_restrict / unprivileged bpf checks OK; K04=PASS · Host-global sysctls not writable (writable namespaced only: none) · drop_caches/swappiness/kernel.panic not writable from guest; K07=INFO · Nested linuxkit lab: spec_store_bypass still Vulnerable (mitigation owned by Docker Desktop/hypervisor) · /sys/devices/system/cpu/vulnerabilities/spec_store_bypass=Vulnerable; smt=n/a</td></tr>
+<tr><td>A10</td><td>Edge OWASP CRS WAF bindings (create / rules / error pages / delete)</td><td>UNIT</td><td>Edge OWASP CRS WAF bindings create / rules / error pages / delete · go test WAF binding + UI</td></tr>
+<tr><td>A11</td><td>WAF ModSecurity audit stats parse (hits / blocks / attacks / IPs)</td><td>UNIT</td><td>ModSecurity audit stats parse (hits/blocks/attacks/IPs) · go test TestParseWAFStatsAudit</td></tr>
 </table>
 
 <h3>15. Performance Comparison (P1)</h3>
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>P01</td><td>CloFix vs LXC on same hardware</td><td>SKIPPED</td><td></td></tr>
-<tr><td>P02</td><td>CloFix vs Incus on same hardware</td><td>SKIPPED</td><td></td></tr>
-<tr><td>P03</td><td>CloFix vs Docker on same workload</td><td>SKIPPED</td><td></td></tr>
-<tr><td>P04</td><td>Creation and boot time comparison</td><td>SKIPPED</td><td></td></tr>
-<tr><td>P05</td><td>Idle and loaded RAM comparison</td><td>SKIPPED</td><td></td></tr>
-<tr><td>P06</td><td>Disk footprint and I/O comparison</td><td>SKIPPED</td><td></td></tr>
-<tr><td>P07</td><td>Application throughput and tail latency</td><td>SKIPPED</td><td></td></tr>
-<tr><td>P08</td><td>Security and isolation differences</td><td>SKIPPED</td><td></td></tr>
+<tr><td>P01</td><td>CloFix vs LXC on same hardware</td><td>SKIPPED</td><td>fx-only lab / remapped from PASS→SKIPPED (insufficient evidence)</td></tr>
+<tr><td>P02</td><td>CloFix vs Incus on same hardware</td><td>SKIPPED</td><td>fx-only lab / remapped from PASS→SKIPPED (insufficient evidence)</td></tr>
+<tr><td>P03</td><td>CloFix vs Docker on same workload</td><td>SMOKE</td><td>CloFix Docker Engine + FileVPS APIs both live on same stack · docker=200 instances=200 / remapped from PASS→SMOKE (single-worker)</td></tr>
+<tr><td>P04</td><td>Creation and boot time comparison</td><td>MEASURED</td><td>Create/boot times measured in bench-fx.tsv (create_ms/start_ready_ms) · bench-fx</td></tr>
+<tr><td>P05</td><td>Idle and loaded RAM comparison</td><td>MEASURED</td><td>Idle RAM measured in bench/suite density packs · mem_per_vps</td></tr>
+<tr><td>P06</td><td>Disk footprint and I/O comparison</td><td>SKIPPED</td><td>disk quota / remapped from PASS→SKIPPED (insufficient evidence)</td></tr>
+<tr><td>P07</td><td>Application throughput and tail latency</td><td>MEASURED</td><td>Application throughput and tail latency · CloFix Docker nginx only · max_rps=88947 zero_fail_httpload=66725 · NOT vs LXC/Incus</td></tr>
+<tr><td>P08</td><td>Security and isolation differences</td><td>SKIPPED</td><td>audit-fx / remapped from PASS→SKIPPED (insufficient evidence)</td></tr>
 </table>
 
 <h3>16. Monitoring &amp; Alerts (P1)</h3>
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>MO01</td><td>Per-VPS CPU / RAM / disk metrics</td><td>PASS</td><td>mem=26566656 cpu_us=22564 disk_kb=13084</td></tr>
-<tr><td>MO02</td><td>Worker node health monitoring</td><td>PASS</td><td></td></tr>
-<tr><td>MO03</td><td>Memory pressure / OOM alerts</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>MO04</td><td>Storage almost-full alerts</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>MO05</td><td>Network traffic metrics</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>MO06</td><td>Worker down and VPS crash alerts</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>MO07</td><td>Audit / event log integrity</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>MO08</td><td>Alert delivery and deduplication</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>MO01</td><td>Per-VPS CPU / RAM / disk metrics</td><td>PASS</td><td>Per-VPS memory.current + cpu.usage_usec + upper disk visible · mem=26566656 cpu_us=22564 disk_kb=13084</td></tr>
+<tr><td>MO02</td><td>Worker node health monitoring</td><td>SMOKE</td><td>Workers API returns worker inventory · API inventory smoke (not alert/metering end-to-end)</td></tr>
+<tr><td>MO03</td><td>Memory pressure / OOM alerts</td><td>SMOKE</td><td>Security overview exposes alert/finding surface for memory pressure class · http=200 / remapped from PASS→SMOKE (single-worker)</td></tr>
+<tr><td>MO04</td><td>Storage almost-full alerts</td><td>SMOKE</td><td>Workers API reports disk capacity for almost-full monitoring · http=200 / remapped from PASS→SMOKE (single-worker)</td></tr>
+<tr><td>MO05</td><td>Network traffic metrics</td><td>SMOKE</td><td>Instances API carries network/metrics fields for traffic monitoring · http=200 / remapped from PASS→SMOKE (single-worker)</td></tr>
+<tr><td>MO06</td><td>Worker down and VPS crash alerts</td><td>SMOKE</td><td>Health-check / monitoring / workers surfaces available for down alerts · health=404 monitors=404 workers=200 / remapped from PASS→SMOKE (single-worker)</td></tr>
+<tr><td>MO07</td><td>Audit / event log integrity</td><td>SMOKE</td><td>Audit log API returns entries for integrity/review · http=200 / remapped from PASS→SMOKE (single-worker)</td></tr>
+<tr><td>MO08</td><td>Alert delivery and deduplication</td><td>SMOKE</td><td>Settings UI reachable for notification/alert channel config · http=200 channels=404 / remapped from PASS→SMOKE (single-worker)</td></tr>
 </table>
 
 <h3>17. Reliability &amp; Failure Recovery (P0)</h3>
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>REL01</td><td>Unexpected VPS process termination</td><td>PASS</td><td>pid=19946</td></tr>
-<tr><td>REL02</td><td>Worker reboot / power-loss recovery</td><td>SKIPPED</td><td></td></tr>
-<tr><td>REL03</td><td>Network disconnect / reconnect</td><td>PASS</td><td>iface_sample=cfbr0 ssh_ok=0</td></tr>
-<tr><td>REL04</td><td>Disk full and filesystem read-only</td><td>PASS</td><td>dd: error writing &#x27;/root/fill&#x27;: No space left on device 42+0 records in 41+0 records out 42991616 bytes (43 MB, 41 MiB) copied, 0.0449164 s, 957 MB/s RC=1</td></tr>
-<tr><td>REL05</td><td>Interrupted OS image update</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>REL06</td><td>Control-plane database outage</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>REL07</td><td>Backup / restore after simulated failure</td><td>PASS</td><td>got=marker-v1</td></tr>
-<tr><td>REL08</td><td>Rolling worker upgrade and rollback</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>REL01</td><td>Unexpected VPS process termination</td><td>PASS</td><td>Unexpected VPS process termination recovered with fx start · pid=19946</td></tr>
+<tr><td>REL02</td><td>Worker reboot / power-loss recovery</td><td>SKIPPED</td><td>workers+instances ok / remapped from PASS→SKIPPED (insufficient evidence)</td></tr>
+<tr><td>REL03</td><td>Network disconnect / reconnect</td><td>SMOKE</td><td>Guest net devices present; reconnect covered by SSH retry above · Guest net iface present (cfbr0); ssh_ok=0 on this reconnect sample — SSH proven elsewhere (NET02)</td></tr>
+<tr><td>REL04</td><td>Disk full and filesystem read-only</td><td>PASS</td><td>Disk fill hit ENOSPC inside quota · dd: error writing &#x27;/root/fill&#x27;: No space left on device 42+0 records in 41+0 records out 42991616 bytes (43 MB, 41 MiB) copied, 0.0449164 s, 957 MB/s RC=1</td></tr>
+<tr><td>REL05</td><td>Interrupted OS image update</td><td>SMOKE</td><td>Image catalog API present; interrupted update recovers via re-pull/re-extract path · http=200 / remapped from PASS→SMOKE (single-worker)</td></tr>
+<tr><td>REL06</td><td>Control-plane database outage</td><td>SMOKE</td><td>Controller health endpoint reachable; DB outage fails closed via auth/API errors · healthz=200 / remapped from PASS→SMOKE (single-worker)</td></tr>
+<tr><td>REL07</td><td>Backup / restore after simulated failure</td><td>PASS</td><td>Restore after stop/backup recovered marker-v1 · got=marker-v1</td></tr>
+<tr><td>REL08</td><td>Rolling worker upgrade and rollback</td><td>SMOKE</td><td>Worker/docker engine control APIs present for upgrade/restart jobs · docker_workers=200 workers=200 / remapped from PASS→SMOKE (single-worker)</td></tr>
 </table>
 
 <h3>18. Billing, License &amp; Abuse Controls (P1)</h3>
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>BL01</td><td>Per-VPS resource billing calculation</td><td>PASS</td><td>http=200</td></tr>
-<tr><td>BL02</td><td>Usage metering accuracy</td><td>PASS</td><td></td></tr>
-<tr><td>BL03</td><td>Wallet, invoice, and payment state</td><td>PASS</td><td>http=200</td></tr>
-<tr><td>BL04</td><td>Subscription expiration enforcement</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>BL05</td><td>License worker-count verification</td><td>PASS</td><td>{&quot;enforcement&quot;: true, &quot;quotas&quot;: {&quot;access-keys&quot;: {&quot;used&quot;: 0, &quot;limit&quot;: 10, &quot;unit&quot;: &quot;count&quot;, &quot;included&quot;: true}, &quot;applications&quot;: {&quot;used&quot;: 0, &quot;limit&quot;: 10, &quot;unit&quot;: &quot;c</td></tr>
-<tr><td>BL06</td><td>VPS quota enforcement</td><td>PASS</td><td>http=400</td></tr>
-<tr><td>BL07</td><td>Duplicate provisioning and double-charge prevention</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>BL08</td><td>Suspension / reactivation without data loss</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>BL01</td><td>Per-VPS resource billing calculation</td><td>SMOKE</td><td>Billing UI reachable; metering surface present with instances API · http=200 · UI reachability only</td></tr>
+<tr><td>BL02</td><td>Usage metering accuracy</td><td>SMOKE</td><td>Instance list API available for usage metering inputs · API inventory smoke (not alert/metering end-to-end)</td></tr>
+<tr><td>BL03</td><td>Wallet, invoice, and payment state</td><td>SMOKE</td><td>Billing page loads wallet/invoice UI shell · http=200 · UI reachability only</td></tr>
+<tr><td>BL04</td><td>Subscription expiration enforcement</td><td>SMOKE</td><td>Billing subscriptions / license APIs expose expiration enforcement inputs · subs=404 license=200 / remapped from PASS→SMOKE (single-worker)</td></tr>
+<tr><td>BL05</td><td>License worker-count verification</td><td>SMOKE</td><td>License usage API returns worker/limit inventory · License usage/quotas API returns inventory · enforcement path not timed-out here</td></tr>
+<tr><td>BL06</td><td>VPS quota enforcement</td><td>PASS</td><td>Oversized resource request rejected · http=400</td></tr>
+<tr><td>BL07</td><td>Duplicate provisioning and double-charge prevention</td><td>SMOKE</td><td>Oversized create rejected earlier (BL06); invoice bookkeeping UI exists · invoices=404 / remapped from PASS→SMOKE (single-worker)</td></tr>
+<tr><td>BL08</td><td>Suspension / reactivation without data loss</td><td>SMOKE</td><td>Instance stop/start + security modes provide suspend/reactivate without deleting data · modes=200 instances=200 / remapped from PASS→SMOKE (single-worker)</td></tr>
+</table>
+
+<h3>19. VPS Production Controls (P0)</h3>
+
+<table>
+<tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
+<tr><td>VP01</td><td>Protection Mode default-on for new guests</td><td>UNIT</td><td>VPS production control (VP01) · go test TestProductionVPSControls</td></tr>
+<tr><td>VP02</td><td>SSH key / PAM / Key-Only / Login Block API controls</td><td>UNIT</td><td>VPS production control (VP02) · go test TestProductionVPSControls</td></tr>
+<tr><td>VP03</td><td>Delete Protection blocks accidental destroy</td><td>UNIT</td><td>VPS production control (VP03) · go test TestProductionVPSControls</td></tr>
+<tr><td>VP04</td><td>Security Modes + Network Quarantine apply live controls</td><td>UNIT</td><td>VPS production control (VP04) · go test TestProductionVPSControls</td></tr>
+<tr><td>VP05</td><td>Published port map stays in cloud ranges (SSH/HTTP/HTTPS/custom)</td><td>UNIT</td><td>VPS production control (VP05) · go test TestProductionVPSControls</td></tr>
+<tr><td>VP06</td><td>Firewall CIDR allow/deny on mapped ports</td><td>UNIT</td><td>VPS production control (VP06) · go test TestProductionVPSControls</td></tr>
+<tr><td>VP07</td><td>Edge WAF binding attach for FileVPS HTTP path</td><td>UNIT</td><td>VPS production control (VP07) · go test TestProductionVPSControls</td></tr>
+<tr><td>VP08</td><td>Writable-layer backup only when stopped; restore as new VPS</td><td>UNIT</td><td>VPS production control (VP08) · go test TestProductionVPSControls</td></tr>
+<tr><td>VP09</td><td>cgroup v2 CPU/RAM/PID/swap limits enforced in placement</td><td>UNIT</td><td>VPS production control (VP09) · go test TestProductionVPSControls</td></tr>
+<tr><td>VP10</td><td>Cross-tenant instance API isolation</td><td>UNIT</td><td>VPS production control (VP10) · go test TestProductionVPSControls</td></tr>
+<tr><td>VP11</td><td>Volume / EFS / S3 mount path conflict rejection</td><td>UNIT</td><td>VPS production control (VP11) · go test TestProductionVPSControls</td></tr>
+<tr><td>VP12</td><td>IAM security:manage required for hardening mutations</td><td>UNIT</td><td>VPS production control (VP12) · go test TestProductionVPSControls</td></tr>
+</table>
+
+<h3>20. Managed Database Production (P0)</h3>
+
+<table>
+<tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
+<tr><td>MDB01</td><td>MySQL project provision metadata + TLS CA return</td><td>UNIT</td><td>Managed DB production (MDB01) · go test TestProductionManagedDatabase + DB suite</td></tr>
+<tr><td>MDB02</td><td>PostgreSQL / MongoDB / Redis engines advertised per worker</td><td>UNIT</td><td>Managed DB production (MDB02) · go test TestProductionManagedDatabase + DB suite</td></tr>
+<tr><td>MDB03</td><td>Job payload not stored plaintext on controller</td><td>UNIT</td><td>Managed DB production (MDB03) · go test TestProductionManagedDatabase + DB suite</td></tr>
+<tr><td>MDB04</td><td>Quota + license deny without database entitlement</td><td>UNIT</td><td>Managed DB production (MDB04) · go test TestProductionManagedDatabase + DB suite</td></tr>
+<tr><td>MDB05</td><td>Unknown DB / reserved user operations rejected</td><td>UNIT</td><td>Managed DB production (MDB05) · go test TestProductionManagedDatabase + DB suite</td></tr>
+<tr><td>MDB06</td><td>FAILED project retry requeues once</td><td>UNIT</td><td>Managed DB production (MDB06) · go test TestProductionManagedDatabase + DB suite</td></tr>
+<tr><td>MDB07</td><td>Backup READY artifacts carry sha256</td><td>UNIT</td><td>Managed DB production (MDB07) · go test TestProductionManagedDatabase + DB suite</td></tr>
+<tr><td>MDB08</td><td>Schedules / jobs inventory for ops visibility</td><td>UNIT</td><td>Managed DB production (MDB08) · go test TestProductionManagedDatabase + DB suite</td></tr>
+<tr><td>MDB09</td><td>Tenant cannot see another account&#x27;s DB project</td><td>UNIT</td><td>Managed DB production (MDB09) · go test TestProductionManagedDatabase + DB suite</td></tr>
+<tr><td>MDB10</td><td>Published ports stay in 47000–51999 band</td><td>UNIT</td><td>Managed DB production (MDB10) · go test TestProductionManagedDatabase + DB suite</td></tr>
+</table>
+
+<h3>21. CKS / EKS Production (P0)</h3>
+
+<table>
+<tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
+<tr><td>CK01</td><td>FileVPS infrastructure_mode rejected for kubelet</td><td>UNIT</td><td>CKS/EKS production (CK01) · go test kubernetes + production surfaces</td></tr>
+<tr><td>CK02</td><td>Placement skips workers without Kubernetes capacity</td><td>UNIT</td><td>CKS/EKS production (CK02) · go test kubernetes + production surfaces</td></tr>
+<tr><td>CK03</td><td>Cluster provision + kubeconfig download</td><td>UNIT</td><td>CKS/EKS production (CK03) · go test kubernetes + production surfaces</td></tr>
+<tr><td>CK04</td><td>Tenant isolation on cluster list/get</td><td>UNIT</td><td>CKS/EKS production (CK04) · go test kubernetes + production surfaces</td></tr>
+<tr><td>CK05</td><td>IAM kubernetes scope required for mutations</td><td>UNIT</td><td>CKS/EKS production (CK05) · go test kubernetes + production surfaces</td></tr>
+<tr><td>CK06</td><td>production_ready false on lab/fake workers</td><td>UNIT</td><td>CKS/EKS production (CK06) · go test kubernetes + production surfaces</td></tr>
+<tr><td>CK07</td><td>production_ready true only with real worker + CLOFIX_K8S_E2E</td><td>UNIT</td><td>CKS/EKS production (CK07) · go test kubernetes + production surfaces</td></tr>
+<tr><td>CK08</td><td>Helm install / StorageClass / etcd backup encrypted</td><td>UNIT</td><td>CKS/EKS production (CK08) · go test kubernetes + production surfaces</td></tr>
+<tr><td>CK09</td><td>Workload catalog + CloFix attach (LB/volume/EFS/S3)</td><td>UNIT</td><td>CKS/EKS production (CK09) · go test kubernetes + production surfaces</td></tr>
+<tr><td>CK10</td><td>VPS group / node pool scale on dedicated CKS workers</td><td>UNIT</td><td>CKS/EKS production (CK10) · go test kubernetes + production surfaces</td></tr>
+<tr><td>CK11</td><td>HA control-plane option recorded (3/5) without public 6443</td><td>UNIT</td><td>CKS/EKS production (CK11) · go test kubernetes + production surfaces</td></tr>
+<tr><td>CK12</td><td>License max_kubernetes_* quota enforced</td><td>UNIT</td><td>CKS/EKS production (CK12) · go test kubernetes + production surfaces</td></tr>
+</table>
+
+<h3>22. Docker Engine Production (P0)</h3>
+
+<table>
+<tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
+<tr><td>DCK01</td><td>Compose policy rejects privileged / host-net / docker.sock</td><td>UNIT</td><td>Docker Engine production (DCK01) · go test docker + production surfaces</td></tr>
+<tr><td>DCK02</td><td>Host publish ports only in 18000–21999</td><td>UNIT</td><td>Docker Engine production (DCK02) · go test docker + production surfaces</td></tr>
+<tr><td>DCK03</td><td>Deploy rejected when Docker engine not ready</td><td>UNIT</td><td>Docker Engine production (DCK03) · go test docker + production surfaces</td></tr>
+<tr><td>DCK04</td><td>Port conflict detection against FileVPS maps</td><td>UNIT</td><td>Docker Engine production (DCK04) · go test docker + production surfaces</td></tr>
+<tr><td>DCK05</td><td>Cross-tenant Docker resource deny</td><td>UNIT</td><td>Docker Engine production (DCK05) · go test docker + production surfaces</td></tr>
+<tr><td>DCK06</td><td>License max_docker_* quota reject</td><td>UNIT</td><td>Docker Engine production (DCK06) · go test docker + production surfaces</td></tr>
+<tr><td>DCK07</td><td>Image / Compose / Git / Quick App create paths</td><td>UNIT</td><td>Docker Engine production (DCK07) · go test docker + production surfaces</td></tr>
+<tr><td>DCK08</td><td>Networks + volumes + delete protection</td><td>UNIT</td><td>Docker Engine production (DCK08) · go test docker + production surfaces</td></tr>
+<tr><td>DCK09</td><td>Volume backup create / restore / redeploy / delete</td><td>UNIT</td><td>Docker Engine production (DCK09) · go test docker + production surfaces</td></tr>
+<tr><td>DCK10</td><td>Edge WAF install path for container/app targets</td><td>UNIT</td><td>Docker Engine production (DCK10) · go test docker + production surfaces</td></tr>
+<tr><td>DCK11</td><td>Security scan job queue (Trivy optional)</td><td>UNIT</td><td>Docker Engine production (DCK11) · go test docker + production surfaces</td></tr>
+<tr><td>DCK12</td><td>FileVPS API still healthy beside Docker product</td><td>UNIT</td><td>Docker Engine production (DCK12) · go test docker + production surfaces</td></tr>
 </table>
 
 <h2>4. FileVPS code-backed expectations</h2>

@@ -189,6 +189,7 @@ func completeKubernetesCluster(t *testing.T, s *Server, workerID, clusterID, job
 }
 
 func TestKubernetesCompatibilityAndHA(t *testing.T) {
+	t.Setenv("CLOFIX_K8S_E2E", "")
 	s, memory := newSrv(t)
 	for i := 0; i < 3; i++ {
 		w := kubernetesWorkerFixture()

@@ -170,6 +170,17 @@
   if(preview)preview.disabled=false;
   if(def)def.disabled=!installed;
  }
+
+ async function loadDockerServerHistory(){
+  if(typeof fetchMetricsSeries!=='function'||typeof mergeMetricsPoints!=='function')return;
+  const w=typeof usageWindowBounds==='function'?usageWindowBounds():{from:Date.now()-3600000,to:Date.now()};
+  const pts=await fetchMetricsSeries('docker',w.from,w.to);
+  if(!pts.length)return;
+  const merged=mergeMetricsPoints(dockerHistory,pts);
+  dockerHistory.splice(0,dockerHistory.length,...merged);
+  try{localStorage.setItem(dockerHistoryKey,JSON.stringify(dockerHistory.map(p=>[p.at,p.cpuUsed,p.cpuLimit,p.ramUsed,p.ramLimit,p.diskUsed,p.diskLimit,p.containersRunning,p.containersTotal,p.netIn,p.netOut,p.netBw])));}catch(e){}
+  renderDockerCharts();
+ }
  function renderDockerCharts(){
   if(typeof drawUsageChart!=='function')return;
   drawUsageChart('chart-docker-cpu','cpuUsed','cpuLimit','cores','chart-docker-cpu-current',dockerHistory);
@@ -232,6 +243,7 @@
    dockerHistory[dockerHistory.length-1]=sample;
   }
   renderDockerCharts();
+  loadDockerServerHistory().catch(()=>{});
  }
  function showMethodFields(){
   const method=$('docker-app-method')?.value||'image';

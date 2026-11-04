@@ -110,6 +110,13 @@
   requestAnimationFrame(()=>{restore();requestAnimationFrame(restore);});
   setTimeout(restore,0);setTimeout(restore,40);setTimeout(restore,120);
   if(typeof window.enhanceStatWaves==='function')requestAnimationFrame(()=>window.enhanceStatWaves());
+  // Charts may have been drawn while this panel was hidden (0×0). Redraw when shown.
+  if(selected && !selected.hidden && selected.querySelector('svg.chart-svg')){
+   if(typeof window.invalidateUsageCharts==='function')window.invalidateUsageCharts();
+   if(typeof window.renderUsageCharts==='function')requestAnimationFrame(()=>window.renderUsageCharts());
+   if(typeof window.renderDockerCharts==='function')requestAnimationFrame(()=>window.renderDockerCharts());
+   if(typeof window.renderLBCharts==='function')requestAnimationFrame(()=>window.renderLBCharts());
+  }
  }
 
  function goHash(hash,push){

@@ -147,7 +147,8 @@ else rec CAT NISO SKIPPED "Need two networked guests" "n=$count"; fi
 
 if [ "$ngx_n" -ge 25 ] && [ -x "$LOAD" ]; then
   sample_ip=$(guest_ip cfxn-1)
-  load_out=$("$LOAD" "http://$sample_ip/" 8 16 2>/dev/null || true)
+  # Keep-alive httpload; raise concurrency vs historical 8s/16c (~14k rps).
+  load_out=$("$LOAD" "http://$sample_ip/" 10 256 2>/dev/null || true)
   ram_cpu=""
   for i in 1 25; do
     [ "$i" -le "$count" ] || continue

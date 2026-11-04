@@ -73,7 +73,7 @@ Re-ran `clofix-audit.sh fx` with `CLOFIX_USER_NS=true` and `CLOFIX_STATE_DIR=/va
 ### How to read these numbers
 
 - Negative idle RAM and CPU deltas are **host `MemAvailable` / `/proc/stat` jitter**, recorded as `n/a (measurement noise)`. `projected_idle_density` is omitted when the RAM delta is not positive.
-- Density is `skipped` because `DENSITY_MAX=0` on a worker that already hosts customer VPS.
+- Main `clofix-bench.sh` density was `DENSITY_MAX=0` on the live worker; **performance table density rows** are filled from isolated suite **D02** (`n=100`, `mem_per_vps_mb=1.60`, `secs=459` → avg launch 4.59s; projected idle ≈ `(7934−1536)/1.60`).
 - FileVPS guests share the host kernel. They are **not** KVM/QEMU VMs.
 - Do not claim Ubuntu/CentOS/Debian/Incus/LXC support from this run. Only FileVPS on linuxkit was measured.
 - I04 WARN: no per-guest AppArmor/SELinux profile is applied.
@@ -132,3 +132,56 @@ Root cause: `CLONE_NEWUSER` left the child as overflowuid (no `Credential{Uid:0}
 | ZRAM ON/OFF vs swap | ZRAM **SKIPPED** (no module). File-backed swap cap **PASS** (`memory.swap.max=64MiB`). Swap OFF vs ON write `off_ms=143 on_ms=107`. |
 | 3-worker placement + failover | **SKIPPED.** One compose worker; extra workers would republish live ports. |
 | Docker / LXC / Incus same-hardware | **SKIPPED.** Incus/LXC are not installed. |
+
+### Controller / worker unit coverage (2026-11-04)
+
+Edge WAF and Docker volume Backup & Restore are covered by Go tests; after `./run-unit-notrun-pass.sh` they are recorded as **PASS** in `suite-fx.tsv`.
+
+| Check | Command |
+| --- | --- |
+| Docker volume backup create / restore+redeploy / delete | `cd admin && go test ./internal/server/ -count=1 -run DockerBackupRestoreDeleteRedeploy` |
+| WAF UI + binding CRUD / error pages / stats empty | `cd admin && go test ./internal/server/ -count=1 -run WAF` |
+| ModSecurity audit parse (hits/blocks/attacks/IPs) | `cd worker && go test ./internal/docker/ -count=1 -run ParseWAFStats` |
+
+Product refs: book.md §9.3, docs/docker.md Backup & Restore, `/waf` + `/docker#docker-backups`.
+
+### Assessment correction (2026-11-05)
+
+Development scope and automated coverage grew, but **208/208 production tests passed is not supported by this report**.
+
+| Evidence class | Meaning | Production proof? |
+| --- | --- | --- |
+| PASS / MEASURED | Live host audit / bench | Yes (for that probe only) |
+| UNIT | Go `httptest` / package tests | No — API contract only |
+| SMOKE | Single-worker admin/template probe | No — not multi-worker / not performance |
+| SKIPPED / NOT RUN | No honest evidence on this lab | No |
+
+Unit tests and single-worker API probes must not be counted as multi-worker or production performance tests. `./run-unit-notrun-pass.sh` now records **UNIT** / **SMOKE** / **SKIPPED** explicitly.
+
+**PASS evidence rule:** every PASS row must state *why* (probe outcome), not only `O01=PASS` or `http=200`. Evidence comes from `audit-fx.tsv` detail (e.g. `CapEff=…`, `memory.max=…`, `pid=…`, `rps=…`) or the suite title+detail. UI reachability-only checks are **SMOKE**, not PASS. Audit `SKIP` is normalized to catalog **SKIPPED** so status counts always sum to catalog rows.
+
+### Final verdict (client-facing)
+
+Engineering validation is advancing; this report is more reliable/transparent than earlier drafts (reconciled counts, stronger security Detail, incomplete tests kept SKIPPED).
+
+| OK to highlight | Do **not** sell as production guarantee |
+| --- | --- |
+| 100 networked VPS tested | Theoretical projected idle density |
+| 42 scored security **conditions** passed (not kernel certification) | Docker nginx throughput peaks |
+| Lightweight shared-OS architecture | UNIT / SMOKE as multi-worker proof |
+| | AppArmor/SELinux — still SKIPPED |
+
+**Next:** demote any remaining weak PASS rows, then on a **native Ubuntu server** run `sudo ./run-compare.sh` (FileVPS vs Docker/LXC/Incus) for partner-grade evidence.
+
+Still SKIPPED here (need dedicated lab before production claims):
+
+| Area | IDs | Why skipped | Proof needed |
+| --- | --- | --- | --- |
+| Multi-worker placement / failover | WK04–WK09 | 1 compose worker | ≥2 workers + failover |
+| ZRAM compression | M03 | no `/dev/zram0` | zram module + ratio/CPU |
+| Worker reboot recovery | L05, REL02 | live fleet protected | controlled worker restart |
+| Debian / CentOS images | O06 | Ubuntu 24.04 only | boot/SSH on other distros |
+| PHP + MySQL density | D04, W03/W04 | template smoke only | N live WP+MySQL guests |
+| Cross-worker backup restore | B06 | single worker | restore on peer worker |
+| Docker / LXC / Incus compare | P01–P02, P04–P08 | Incus/LXC missing | same-hardware matrix |
+| AppArmor / SELinux | S08 / I04 | no LSM on linuxkit | host LSM + guest profile |

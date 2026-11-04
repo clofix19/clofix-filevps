@@ -1,11 +1,13 @@
-// Small HTTP load generator for isolated FileVPS nginx probes.
+// Small HTTP load generator for isolated FileVPS / Docker nginx probes.
 package main
 
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
 	"sync"
@@ -35,24 +37,47 @@ func main() {
 	}
 	deadline := time.Now().Add(time.Duration(sec) * time.Second)
 	var ok, fail atomic.Int64
-	lat := make([]time.Duration, 0, 4096)
+	lat := make([]time.Duration, 0, 65536)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	client := &http.Client{Timeout: 2 * time.Second}
+	transport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   2 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     false,
+		MaxIdleConns:          n * 2,
+		MaxIdleConnsPerHost:   n * 2,
+		MaxConnsPerHost:       0,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   2 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		DisableCompression:    true,
+	}
+	client := &http.Client{Timeout: 2 * time.Second, Transport: transport}
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	for i := 0; i < n; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for time.Now().Before(deadline) {
+				req, err := http.NewRequest(http.MethodGet, url, nil)
+				if err != nil {
+					fail.Add(1)
+					continue
+				}
+				req.Header.Set("Connection", "keep-alive")
+				req.Header.Set("Accept-Encoding", "identity")
 				t0 := time.Now()
-				resp, err := client.Get(url)
+				resp, err := client.Do(req)
 				d := time.Since(t0)
 				if err != nil {
 					fail.Add(1)
-					time.Sleep(20 * time.Millisecond)
+					time.Sleep(5 * time.Millisecond)
 					continue
 				}
-				io.Copy(io.Discard, resp.Body)
+				_, _ = io.Copy(io.Discard, resp.Body)
 				resp.Body.Close()
 				if resp.StatusCode >= 200 && resp.StatusCode < 400 {
 					ok.Add(1)
@@ -71,6 +96,7 @@ func main() {
 		sort.Slice(lat, func(i, j int) bool { return lat[i] < lat[j] })
 		p95 = float64(lat[len(lat)*95/100]) / float64(time.Millisecond)
 	}
-	rps := float64(ok.Load()) / float64(sec)
-	fmt.Printf("ok=%d fail=%d rps=%.1f p95_ms=%.1f\n", ok.Load(), fail.Load(), rps, p95)
+	elapsed := float64(sec)
+	rps := float64(ok.Load()) / elapsed
+	fmt.Printf("ok=%d fail=%d rps=%.1f p95_ms=%.1f conc=%d secs=%d\n", ok.Load(), fail.Load(), rps, p95, n, sec)
 }

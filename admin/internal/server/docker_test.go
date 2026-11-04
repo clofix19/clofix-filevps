@@ -225,6 +225,15 @@ func TestDockerNetworksVolumesBackupsSecurity(t *testing.T) {
 			v.ID = id
 		}
 	}
+	if v.ID == "" {
+		var wrap map[string]any
+		_ = json.Unmarshal(vol.Body.Bytes(), &wrap)
+		if volObj, _ := wrap["volume"].(map[string]any); volObj != nil {
+			if id, _ := volObj["id"].(string); id != "" {
+				v.ID = id
+			}
+		}
+	}
 	if v.ID != "" {
 		del := do(h, "DELETE", "/api/docker/volumes/"+v.ID, "", tok)
 		if del.Code != 409 && del.Code != 400 {
@@ -245,6 +254,104 @@ func TestDockerNetworksVolumesBackupsSecurity(t *testing.T) {
 	scan := do(h, "POST", "/api/docker/security/scan", `{"image":"nginx:alpine"}`, tok)
 	if scan.Code != 202 && scan.Code != 200 {
 		t.Fatalf("scan: %d %s", scan.Code, scan.Body.String())
+	}
+}
+
+func TestDockerBackupRestoreDeleteRedeploy(t *testing.T) {
+	s, m := newSrv(t)
+	_ = m.UpsertWorker(store.Worker{
+		ID: "wrk-docker-bak", Hostname: "d3", Status: "active", LastHeartbeat: time.Now(),
+		Capacity: scheduler.Capacity{RAMTotal: 8 << 30, HostReserve: 512 << 20, MemAvailable: 7 << 30, CPUCores: 4, DiskTotal: 100 << 30, DiskFree: 50 << 30, DockerReady: true},
+	})
+	h := s.AdminHandler()
+	vol := do(h, "POST", "/api/docker/volumes", `{"name":"bak-vol","delete_protection":false}`, tok)
+	if vol.Code != 202 && vol.Code != 201 && vol.Code != 200 {
+		t.Fatalf("volume: %d %s", vol.Code, vol.Body.String())
+	}
+	var wrap map[string]any
+	_ = json.Unmarshal(vol.Body.Bytes(), &wrap)
+	volObj, _ := wrap["volume"].(map[string]any)
+	volID, _ := volObj["id"].(string)
+	if volID == "" {
+		t.Fatal("missing volume id")
+	}
+	bak := do(h, "POST", "/api/docker/backups", `{"kind":"volume","target_id":"`+volID+`"}`, tok)
+	if bak.Code != 202 {
+		t.Fatalf("backup create: %d %s", bak.Code, bak.Body.String())
+	}
+	var bakWrap map[string]any
+	_ = json.Unmarshal(bak.Body.Bytes(), &bakWrap)
+	bObj, _ := bakWrap["backup"].(map[string]any)
+	bakID, _ := bObj["id"].(string)
+	if bakID == "" {
+		t.Fatal("missing backup id")
+	}
+	// Restore rejected while RUNNING.
+	if w := do(h, "POST", "/api/docker/backups/"+bakID+"/restore", `{}`, tok); w.Code != 409 {
+		t.Fatalf("restore while running want 409 got %d %s", w.Code, w.Body.String())
+	}
+	// Mark READY (simulates worker volume-backup success) then restore + redeploy.
+	s.docker.mu.Lock()
+	b := s.docker.Backups[bakID]
+	b.State, b.Error = "READY", ""
+	s.docker.Backups[bakID] = b
+	owner := b.Owner
+	workerID := b.WorkerID
+	cid := dockerRandID("dck")
+	s.docker.Containers[cid] = dockerContainer{
+		ID: cid, Owner: owner, Name: "web", WorkerID: workerID, State: "Running",
+		Spec: dock.ContainerSpec{ID: cid, Name: "web", Image: "nginx", Tag: "alpine", RAMMB: 128, CPU: 0.5,
+			Volumes: []dock.VolumeMount{{VolumeID: volID, Target: "/data"}},
+		},
+	}
+	s.docker.mu.Unlock()
+
+	rst := do(h, "POST", "/api/docker/backups/"+bakID+"/restore", `{"redeploy":true}`, tok)
+	if rst.Code != 202 {
+		t.Fatalf("restore+redeploy: %d %s", rst.Code, rst.Body.String())
+	}
+	var rstBody map[string]any
+	_ = json.Unmarshal(rst.Body.Bytes(), &rstBody)
+	if rstBody["redeploy_after"] != true {
+		t.Fatalf("redeploy_after: %#v", rstBody["redeploy_after"])
+	}
+	s.docker.mu.Lock()
+	cur := s.docker.Backups[bakID]
+	if cur.State != "RESTORING" || !cur.RedeployAfter {
+		s.docker.mu.Unlock()
+		t.Fatalf("backup state after restore: %+v", cur)
+	}
+	// Simulate restore job success → READY and schedule redeploy outside lock path.
+	j := dockerJob{ID: "dcj-test", Action: "volume-restore", Op: dock.Operation{BackupID: bakID}}
+	volHint, ownerHint := s.applyDockerJobResultLocked(j, dock.Result{JobID: "dcj-test", State: "SUCCEEDED"})
+	s.docker.mu.Unlock()
+	if volHint != volID || ownerHint != owner {
+		t.Fatalf("redeploy hint vol=%q owner=%q", volHint, ownerHint)
+	}
+	redeployed := s.dockerRedeployAfterVolumeRestore(volID, owner)
+	if len(redeployed) == 0 || redeployed[0] != cid {
+		t.Fatalf("redeployed=%v want %s", redeployed, cid)
+	}
+
+	// Delete archive (READY after success).
+	s.docker.mu.Lock()
+	ready := s.docker.Backups[bakID]
+	ready.State, ready.RedeployAfter = "READY", false
+	s.docker.Backups[bakID] = ready
+	s.docker.mu.Unlock()
+	del := do(h, "DELETE", "/api/docker/backups/"+bakID, "", tok)
+	if del.Code != 202 {
+		t.Fatalf("delete backup: %d %s", del.Code, del.Body.String())
+	}
+	s.docker.mu.Lock()
+	st := s.docker.Backups[bakID].State
+	s.docker.mu.Unlock()
+	if st != "DELETING" {
+		t.Fatalf("delete state=%s want DELETING", st)
+	}
+	list := do(h, "GET", "/api/docker/backups", "", tok)
+	if list.Code != 200 {
+		t.Fatal(list.Body.String())
 	}
 }
 

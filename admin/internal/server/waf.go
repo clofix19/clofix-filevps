@@ -1145,6 +1145,7 @@ func (s *Server) applyWAFStatsJobResult(targetID, mode string, data json.RawMess
 				b.Stats = &stats
 				b.Updated = time.Now().UTC()
 				_ = s.waf.put(b)
+				s.recordWAFMetrics(b.ID, &stats)
 				return
 			}
 		}
@@ -1161,4 +1162,5 @@ func (s *Server) applyWAFStatsJobResult(targetID, mode string, data json.RawMess
 	}
 	b.Updated = time.Now().UTC()
 	_ = s.waf.put(b)
+	s.recordWAFMetrics(b.ID, &stats)
 }
