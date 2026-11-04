@@ -156,6 +156,8 @@ func (s *Server) AdminHandler() http.Handler {
 	mux.HandleFunc("POST /api/profile/mfa/disable", s.auth(s.disableProfileMFA))
 	mux.HandleFunc("GET /api/accounts", s.auth(s.listAccounts))
 	mux.HandleFunc("POST /api/accounts", s.auth(s.createAccountUser))
+	mux.HandleFunc("PUT /api/accounts/{id}", s.auth(s.updateAccountUser))
+	mux.HandleFunc("DELETE /api/accounts/{id}", s.auth(s.deleteAccountUser))
 	mux.HandleFunc("POST /api/enrollment-tokens", s.auth(s.createToken))
 	mux.HandleFunc("GET /api/iam/me", s.auth(s.iamMe))
 	mux.HandleFunc("GET /api/iam/users", s.auth(s.listIAMUsers))

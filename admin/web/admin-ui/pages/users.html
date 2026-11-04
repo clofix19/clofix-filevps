@@ -27,4 +27,17 @@
     <div class="message" id="users-message" role="status"></div>
   </div>
 </section>
+<dialog class="terminal-dialog form-dialog" id="users-edit-dialog">
+  <form id="users-edit-form">
+    <div class="section-head"><h2>Edit account</h2><button class="secondary dialog-close" type="button">Close</button></div>
+    <input id="users-edit-id" type="hidden">
+    <p class="muted" id="users-edit-meta"></p>
+    <div class="form-grid">
+      <div class="form-field"><label for="users-edit-name">Account name</label><input id="users-edit-name" maxlength="80" required></div>
+      <div class="form-field"><label for="users-edit-email">Email</label><input id="users-edit-email" type="email" autocomplete="off"></div>
+      <div class="form-field form-span"><label for="users-edit-password">New password (optional)</label><input id="users-edit-password" type="password" minlength="12" autocomplete="new-password" placeholder="Leave blank to keep current password"></div>
+    </div>
+    <div class="inline-fields"><button class="primary" type="submit">Save</button><span class="message" id="users-edit-message" role="status"></span></div>
+  </form>
+</dialog>
 {{end}}

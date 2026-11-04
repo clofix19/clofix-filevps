@@ -18,6 +18,8 @@ open http://localhost:8080/login
 
 Local Compose publishes admin UI/API on `8080`, worker mTLS on `8443`, and a loopback NLB test port on `127.0.0.1:18080`. UI files are volume-mounted (`./admin/web:/app/web:ro`); HTML/JS/CSS changes do not require an image rebuild. Go API changes do.
 
+The Compose worker defaults to `CLOFIX_KUBERNETES_FAKE=1` (lab CKS without host kubeadm — never on production workers) and `CLOFIX_USER_NS=false` (Docker Desktop). Do **not** set the worker’s DNS to public resolvers only (`8.8.8.8` / `1.1.1.1`); that breaks Docker service discovery (`admin`, `s3pool`) and stalls heartbeats / CKS readiness.
+
 The Compose worker bundles an Ubuntu 24.04 userspace for new VPSs, so the default Ubuntu image needs no URL or checksum. VPSs using the same image share its read-only base rootfs layer; each VPS has its own writable OverlayFS layer, so its file changes stay separate. Removing a VPS removes its writable layer, not the shared base image. VPSs also share the worker's Linux kernel and physical CPU and RAM. CPU, memory, swap, and process limits are enforced per VPS with cgroup v2; these are limits on shared host resources, not dedicated cores or RAM. Custom images still need a URL and SHA-256. Production workers need a matching bundled rootfs installed or a custom image URL and SHA-256.
 
 ## Admin UI
@@ -27,23 +29,31 @@ Open `http://localhost:8080/login` with the bootstrap admin email and password f
 | Section | Pages |
 |---|---|
 | Overview | Dashboard — VPS/worker counts, guest and host CPU/RAM/disk/swap, VPS and worker network IN/OUT/bandwidth charts |
-| Compute | FileVPS, Library (Quick Apps + VPS software), Jobs & Functions, CKS (dedicated workers; FileVPS kubelet unavailable) |
-| Storage | Volumes, Object Storage, Backups, Databases |
-| Networking | Load Balancers, DNS Service, Health Checks |
-| Security | Security (Protection Mode, WAF, ports), Users (Admin/Partner), IAM |
+| Compute | FileVPS, Library (Quick Apps + VPS software), Jobs & Functions, CKS (`/kubernetes` — dedicated workers; FileVPS kubelet unavailable) |
+| Storage | Volumes, EFS, Object Storage, Backups, Databases |
+| Networking | Load Balancers, VPC, DNS Service, Health Checks, Firewall |
+| Security | Security Center (score, modes, Protection/WAF), Users (partner / client / admin cards + create/edit/delete), IAM |
 | Platform | Workers, Billing & Payments, Settings (General, Pricing & Plans, NLB pool, notifications, License) |
 
-IAM scopes match those resources (`instances`, `databases`, `kubernetes`, `load-balancers`, `dns`, `pricing`, `billing`, and the rest). Admin is the CloFix owner; partners manage their clients; root and IAM users stay inside one client account.
+IAM scopes match those resources (`instances`, `databases`, `kubernetes`, `load-balancers`, `dns`, `pricing`, `billing`, and the rest). Admin is the CloFix owner; partners manage their clients; root and IAM users stay inside one client account. **Users** (`/users`) shows partner / client / admin counts and a directory with Create, Edit, and Delete (guards block deleting your own session and unsafe last-admin cases).
 
 ## FileVPS
 
-New VPSs start automatically with Protection Mode enabled. The guest root filesystem is read-only; `/run`, `/tmp`, `/var/log`, and APT indexes/cache use temporary storage and are cleared on restart. `apt update` can refresh temporary indexes, but installing packages requires disabling protection. An admin can toggle the mode from VPS Details; changing it restarts a running VPS. Protection Mode does not stop processes or network activity and is not a substitute for VM isolation.
+New VPSs start automatically with Protection Mode enabled. The guest root filesystem is read-only; `/run`, `/tmp`, `/var/log`, and APT indexes/cache use temporary storage and are cleared on restart. `apt update` can refresh temporary indexes, but installing packages requires disabling protection. An admin can toggle the mode from **VPS Details → Security**; changing it restarts a running VPS. Protection Mode does not stop processes or network activity, does **not** inspect HTTP payloads (use OWASP CRS WAF for SQLi/XSS/RCE), and is not a substitute for VM isolation.
+
+**Details → Security** also covers SSH Login Block, SSH Key-Only, Delete Protection, **Network Quarantine** (Protection + SSH block + delete lock + inbound restrict), and **Security Modes** (Standard, Hardened, Lockdown, Maintenance, Web Block). Modes apply those live controls together; Quarantine is a separate incident action, not a mode card. Fleet dry-run/apply lives on Security Center → Modes.
+
+**OWASP CRS WAF** (catalog `owasp-waf`) installs Nginx + ModSecurity on the guest. Toggle rule groups for protocol/scanners, SQLi/XSS/RCE/LFI, languages (PHP, Node.js, Java, shell/PowerShell, JavaScript, ASP.NET), and response leakage. Install/uninstall/rule changes need Protection Mode off. Custom HTML for WAF 403 responses is on the same panel. WAF covers HTTP/HTTPS through that Nginx only — not SSH or raw TCP forwards.
 
 Paste an SSH public key in the create form; on macOS, create one with `ssh-keygen -t ed25519` and copy `cat ~/.ssh/id_ed25519.pub`. VPS Details shows CPU, RAM, swap, and guest network IN/OUT. The Workers page shows host CPU, RAM, disk, swap, ZRAM and network. New VPSs default to a 512 MB swap limit, adjustable during creation (0 disables it). Host-wide ZRAM is optional and configured with `zram_mb` in the worker config; local Docker Desktop may not expose ZRAM devices.
 
 The UI shows each private worker IP and local SSH, HTTP, and HTTPS access. Compose publishes cloud-scale ranges: SSH `22000–26999`, HTTP `27000–31999` (guest 80 = SSH+5000), HTTPS `32000–36999` (guest 443 = SSH+10000), custom maps `37000–41999`, managed apps `42000–46999`, databases `47000–51999`. For example, SSH `22000` is HTTP at `http://localhost:27000`. The `10.231.0.x` addresses are private to the worker and are not directly reachable from the Mac. VPS Details includes an SSH command helper for Terminal; it is not an in-browser shell.
 
 The Backups page snapshots a stopped VPS writable root layer to compressed worker-local storage. **Run as VPS** restores it as a new VPS on the same worker. Persistent volumes and S3 mounts are outside the backup. Cross-worker restore is not available.
+
+## CKS (CloFix Kubernetes Service)
+
+`/kubernetes` (also `/cks`) manages EKS-style clusters on **dedicated CKS workers**, not FileVPS guests. From the UI: create/select clusters, Open / Resources / Kubeconfig / Edit, VPS groups (node pools) with optional autoscaling, workloads (Deployments, StatefulSets, Services, Ingress, Secrets, ConfigMaps, PVC, Jobs, HPA, NetworkPolicy, pod logs), Helm, CloFix attach (LB / FileVPS / volume / EFS / S3), add-ons, and etcd backup/upgrade. Local Compose uses the lab fake executor — see [docs/cks.md](docs/cks.md) and [book.md](book.md) §6.4.
 
 ## Shared S3 storage pool
 
@@ -104,6 +114,7 @@ No enrollment secret lives in Compose files. The local worker hostname is `clofi
 
 ## More documentation
 
+- [book.md](book.md) — client book (Security Modes, WAF, CKS, Users, storage, billing)
 - [admin/README.md](admin/README.md) — IAM, backups, VPS login helper
 - [worker/README.md](worker/README.md) — worker package and fx engine
 - [docs/cks.md](docs/cks.md) — CloFix Kubernetes Service (node pools, Helm, HA, backups; FileVPS kubelet unavailable)
