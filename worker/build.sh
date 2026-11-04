@@ -6,6 +6,7 @@ TARGET="${1:-all}"
 export VERSION="${VERSION:-0.1.0}"
 export GOARCH="${GOARCH:-amd64}"
 export SEAWEEDFS_VERSION="${SEAWEEDFS_VERSION:-4.51}"
+export PATH="$(go env GOPATH 2>/dev/null)/bin:${PATH:-}"
 mkdir -p dist
 
 build_bin() {
@@ -13,6 +14,10 @@ build_bin() {
     go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
     -o "dist/clofix-worker-linux-${GOARCH}" ./cmd/clofix-worker
   echo "built dist/clofix-worker-linux-${GOARCH}"
+  if [ -x dist/weed ]; then
+    echo "reusing dist/weed"
+    return 0
+  fi
   local weed_archive="dist/seaweedfs-linux_${GOARCH}.tar.gz"
   local weed_tmp weed_path
   weed_tmp="$(mktemp -d)"
@@ -25,8 +30,13 @@ build_bin() {
   rm -f "$weed_archive"
 }
 pkg() {
-  command -v nfpm >/dev/null || { echo "nfpm not found: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest"; exit 1; }
-  nfpm package -f packaging/nfpm.yaml -p "$1" -t dist/
+  command -v nfpm >/dev/null || { echo "nfpm not found: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest" >&2; exit 1; }
+  # nfpm v2 no longer expands ${GOARCH}/${VERSION} from the process env in contents globs.
+  local rendered
+  rendered="$(mktemp)"
+  sed -e "s/\${GOARCH}/${GOARCH}/g" -e "s/\${VERSION}/${VERSION}/g" packaging/nfpm.yaml > "$rendered"
+  nfpm package -f "$rendered" -p "$1" -t dist/
+  rm -f "$rendered"
 }
 case "$TARGET" in
   bin) build_bin ;;

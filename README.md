@@ -112,6 +112,16 @@ docker compose exec -it worker clofix-worker enroll --controller https://admin:8
 
 No enrollment secret lives in Compose files. The local worker hostname is `clofix-local-worker`.
 
+## Remote deploy (one by one)
+
+See [deploy/README.md](deploy/README.md):
+
+1. `./deploy/license/deploy.sh` — company license server  
+2. `./deploy/admin/deploy.sh` — customer controller + DB + S3 master  
+3. `./deploy/worker/build-worker.sh deb` then `./deploy/worker/push-join-worker.sh` — Linux worker  
+
+Each step has its own `deploy/<component>/.env` (remote IP / user / password).
+
 ## Build
 
 - worker: `cd worker && ./build.sh [bin|deb|rpm|all]`

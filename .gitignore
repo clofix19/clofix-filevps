@@ -1,2 +1,7 @@
 # Local Compose credentials
 .env
+deploy/**/.env
+deploy/worker/dist/
+
+# Worker / deploy build artifacts (SeaweedFS weed ~150MB)
+worker/dist/

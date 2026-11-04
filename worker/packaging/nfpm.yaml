@@ -18,6 +18,9 @@ contents:
   - src: ./packaging/config/worker.json
     dst: /etc/clofix-filevps/worker.json
     type: config|noreplace
+  - src: ./scripts/build-managed-templates.sh
+    dst: /usr/local/lib/clofix/build-managed-templates.sh
+    file_info: { mode: 0755 }
 scripts:
   postinstall: ./packaging/scripts/postinstall.sh
   preremove: ./packaging/scripts/preremove.sh
