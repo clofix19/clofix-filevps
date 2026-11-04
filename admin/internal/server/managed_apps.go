@@ -59,6 +59,12 @@ func (s *Server) managedTemplates(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "cannot list workers")
 		return
 	}
+	active := 0
+	for _, wk := range workers {
+		if wk.Status == "active" && time.Since(wk.LastHeartbeat) <= time.Minute {
+			active++
+		}
+	}
 	out := []map[string]any{}
 	for _, t := range proto.ManagedTemplates {
 		count := 0
@@ -72,7 +78,13 @@ func (s *Server) managedTemplates(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		out = append(out, map[string]any{"id": t.ID, "name": t.Name, "description": t.Description, "ram_mb": t.RAMMB, "ready_workers": count})
+		// preparing is kept for older UIs; missing means the template rootfs was
+		// never published on an active worker (build-managed-templates.sh).
+		out = append(out, map[string]any{
+			"id": t.ID, "name": t.Name, "description": t.Description, "ram_mb": t.RAMMB,
+			"ready_workers": count, "active_workers": active,
+			"preparing": active > 0 && count == 0, "missing": active > 0 && count == 0,
+		})
 	}
 	writeJSON(w, 200, out)
 }

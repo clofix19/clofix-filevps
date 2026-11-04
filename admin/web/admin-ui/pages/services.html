@@ -8,7 +8,7 @@
         </nav>
         <div class="settings-content">
           <div class="settings-section" id="library-apps" data-settings-panel aria-labelledby="library-heading-apps">
-            <div class="panel"><div class="section-head"><div><h2 id="library-heading-apps" tabindex="-1">Quick Apps</h2><p>Deploy Adminer, Jenkins, Grafana, Prometheus, Loki, Jaeger, OpenTelemetry Collector, or a managed web app from a ZIP (static HTML, PHP, Node.js, Next.js, or WordPress), attach an existing managed database, and run it from this page.</p></div></div><div class="table-wrap"><table id="managed-templates-table"></table></div></div>
+            <div class="panel"><div class="section-head"><div><h2 id="library-heading-apps" tabindex="-1">Quick Apps</h2><p>Deploy Adminer, Jenkins, Grafana, Prometheus, Loki, Jaeger, OpenTelemetry Collector, or a managed web app from a ZIP (static HTML, PHP, Node.js, Next.js, or WordPress), attach an existing managed database, and run it from this page. Missing templates are prepared automatically on the worker after it joins; Deploy enables when each template reports ready.</p></div></div><p class="message managed-library-status" id="managed-library-status" role="status" aria-live="polite">Checking workers…</p><div class="table-wrap"><table id="managed-templates-table"></table></div></div>
             <div class="panel"><div class="section-head"><h2>Your managed apps</h2></div><p class="message" id="managed-message" role="status" aria-live="polite"></p><div class="table-wrap"><table id="managed-apps-table"></table></div></div>
           </div>
           <div class="settings-section" id="library-software" data-settings-panel aria-labelledby="library-heading-software" hidden>

@@ -180,7 +180,7 @@ Open the console search box. This is the live product map.
 | Compute | FileVPS, Library, Jobs & Functions, **CKS** |
 | Storage | Volumes, EFS, Object Storage (S3), Backups, Databases |
 | Networking | Load Balancers, VPC, DNS Service, Health Checks, Firewall |
-| Security | Security (Protection Mode, SSH, WAF, ports), Firewall, IAM, Users (admin/partner) |
+| Security | Security Center (score, audit, modes, Protection/WAF), Firewall, IAM, Users (admin/partner) |
 | Platform | Log Service, Workers (admin), Billing & Payments, Settings |
 
 IAM scopes match those resources. Admin is the CloFix owner; partners manage clients; root and IAM stay inside one client account.
@@ -411,9 +411,36 @@ Controller zone (default **`clofix.internal`**). This is CloFix DNS, not a publi
 CloFix security has two layers clients should treat separately:
 
 1. **Engine isolation** — what the FileVPS runtime always does (namespaces, seccomp, cgroup, isolated bridge).
-2. **VPS controls** — what you turn on per guest in **Security**, **VPS Details**, and **Firewall**.
+2. **VPS controls** — what you turn on per guest in **Security Center**, **VPS Details**, and **Firewall**.
 
-Open **Security** (`/security`) for fleet coverage: Protection Mode on/off counts, SSH Login Block, Delete Protection, OWASP CRS WAF installed, custom port forwards, and active workers. Open a VPS for the same switches on that guest.
+Open **Security Center** (`/security`) for the fleet hub: transparent global score, findings ledger, audit trail (`GET /api/audit`), alerts summary, Security Modes, detection/FIM, DB/CKS panels, AutoPilot/incidents/compliance export, plus the existing Protection Mode / SSH / Delete / WAF tables. Open a VPS for the same per-guest switches.
+
+### 9.0a Advanced Protection System (roadmap)
+
+Security Center → **Advanced Protection** maps the full protection feature list (#1–72 + management controls) as `live`, `satisfied_by_ro`, `partial`, or `planned`.
+
+- **Protection Mode** (RO guest root) stays orthogonal to **Security Modes** profiles.
+- Features #2–5/#8/#13–14 are **satisfied_by_ro** when Protection Mode is on (critical paths under read-only root).
+- **Temporary unlock** (`POST /api/security/unlock`), **scheduler tick**, **approvals**, **rollback**, **quarantine**, **SSH key-only**, and **volume delete protection** are live management APIs.
+- Egress firewall, AppArmor/SELinux, S3 object-lock/versioning remain **planned** until engine support exists. Docker Desktop keeps `CLOFIX_USER_NS=false` (lab).
+
+Catalog: `GET /api/security/protection-catalog`.
+
+### 9.0 Security Center score (deterministic)
+
+`GET /api/security/overview` starts at **100** and subtracts capped deltas from **live inventory only**:
+
+| Finding | Delta | Cap |
+|---|---|---|
+| Protection Mode off (per VPS) | −4 | −20 |
+| Delete Protection off (per VPS) | −1 | −8 |
+| HTTP/HTTPS without OWASP WAF (per VPS) | −5 | −20 |
+| Extra port forward without WAF | −3 | −12 |
+| Inactive worker | −10 | (uncapped per worker) |
+| Detectable `user_ns=false` lab posture | −15 | −15 |
+| Open log alert-event (last 24h) | −8 | −24 |
+
+Response shape: `{ score, findings:[{id,scope,asset,delta,reason}], posture, alerts, deep_links, … }`. Tenant/VPS/worker score blocks are included for drill-down. **Protection Mode** (read-only rootfs) stays orthogonal to **Security Modes** (policy templates with dry-run/apply for supported controls).
 
 ### 9.1 FileVPS isolation (always on)
 
@@ -447,7 +474,7 @@ These live on **VPS Details → Security** and on **Security → VPS controls**.
 | **Custom port forwards** | SSH / HTTP / HTTPS mapped by CloFix | Extra guest TCP/UDP ports on unique host ports (`37000–41999`). Each forward **exposes** that service. | Review **Security → Port forwards**. Remove unused maps. WAF does not cover raw TCP. |
 | **Inbound security group** | Unrestricted until you restrict | Who may use **already-mapped** ports (CIDR allow/deny). Mapping still publishes the port. Established/related traffic stays allowed. | Set this on Firewall → VPS, also linked from VPS Details → Networking. |
 
-**Security overview cards** tell you how many VPS have Protection Mode off, SSH blocked, delete protection, WAF installed, and extra forwards — a daily hygiene check.
+**Security Center posture cards** tell you how many VPS have Protection Mode off, SSH blocked, delete protection, WAF installed, and extra forwards — a daily hygiene check alongside the global score.
 
 ### 9.3 OWASP CRS WAF (HTTP firewall)
 

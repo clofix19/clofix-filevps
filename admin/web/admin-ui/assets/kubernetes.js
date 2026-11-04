@@ -47,6 +47,7 @@
  }
  function fillWorkers(){
   const select=get('cks-worker'),version=get('cks-version'),poolWorker=get('cks-pool-worker');
+  if(!select||!version)return;
   const currentWorker=select.value,currentVersion=version.value,currentPoolWorker=poolWorker?poolWorker.value:'';
   select.replaceChildren(new Option('Automatic placement',''));
   if(poolWorker)poolWorker.replaceChildren(new Option('Automatic placement',''));
@@ -64,9 +65,32 @@
   if([...version.options].some(option=>option.value===currentVersion))version.value=currentVersion;
   estimate();
  }
+ function selectCluster(id){
+  selected=id||'';
+  if(selected){
+   history.replaceState({},'',`/kubernetes/${selected}`);
+   document.body.dataset.instanceId=selected;
+   if(typeof window.syncTopbarBack==='function')window.syncTopbarBack();
+   else if(typeof window.updateTopbarMeta==='function')window.updateTopbarMeta();
+  }
+ }
+ function openClusterResources(id){
+  selectCluster(id);
+  location.hash='#cks-workloads';
+  if(typeof window.applySettingsNav==='function')window.applySettingsNav();
+  render();
+ }
+ async function downloadKubeconfig(){
+  const current=cluster();if(!current){message('Select a cluster first.');return;}
+  const response=await fetch(`/api/v1/kubernetes/clusters/${current.id}/kubeconfig`,{credentials:'include',cache:'no-store'});
+  if(!response.ok){let problem={};try{problem=await response.json();}catch(e){}message(problem.error||'Kubeconfig is not available');return;}
+  const blob=await response.blob();const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=current.id+'.kubeconfig';link.click();URL.revokeObjectURL(url);
+  message('Kubeconfig download started.');
+ }
  function render(){
+  if(!selected&&(state.clusters||[]).length)selected=state.clusters[0].id;
   const running=state.clusters.filter(item=>item.state==='RUNNING').length,activeJobs=(state.jobs||[]).filter(job=>!['SUCCEEDED','FAILED','CANCELLED'].includes(job.state));
-  get('cks-cluster-count').textContent=state.clusters.length;
+  if(get('cks-cluster-count'))get('cks-cluster-count').textContent=state.clusters.length;
   get('cks-ready-count').textContent=running;
   get('cks-worker-count').textContent=(state.ready_workers||[]).length;
   get('cks-job-count').textContent=activeJobs.length;
@@ -78,17 +102,25 @@
   const readiness=get('cks-readiness'),create=get('cks-create');
   if(!(state.ready_workers||[]).length){
     readiness.hidden=false;
-    readiness.textContent='No worker is advertising CKS. Restart the Compose worker, or install containerd, kubeadm, kubelet and kubectl on a host Ubuntu worker.';
+    readiness.textContent='No live CKS worker heartbeat. Ensure the worker can resolve admin (Docker DNS), then restart worker. Lab mode: CLOFIX_KUBERNETES_FAKE=1.';
   }else{
     readiness.hidden=true;
     readiness.textContent='';
+  }
+  const compat=get('cks-compat-note');
+  if(compat){
+   const gate=state.production_gate||{};
+   const workers=(state.ready_workers||[]).length;
+   compat.textContent=workers?(gate.reason||(state.production_ready?'Production gate: ready.':'Lab CKS ready — manage clusters below.')):'Clusters stay listed from inventory; create/scale need a live CKS worker.';
   }
   create.disabled=!(state.ready_workers||[]).length;create.title=create.disabled?'A CKS-ready worker is required.':'';
   const table=get('cks-clusters-table');row(table,['Name','Version','Mode','Nodes','Status','Actions'],true);
   if(!state.clusters.length)row(table,['No clusters yet. Use Create cluster.','','','','','']);
   state.clusters.forEach(item=>{
    const actions=document.createElement('div');actions.className='row-actions';
-   actions.append(action('Open',()=>{selected=item.id;history.replaceState({},'',`/kubernetes/${item.id}`);render();}));
+   actions.append(action('Open',()=>{selectCluster(item.id);render();}));
+   actions.append(action('Resources',()=>openClusterResources(item.id)));
+   actions.append(action('Kubeconfig',async()=>{selectCluster(item.id);await downloadKubeconfig();}));
    actions.append(action('Edit',()=>openEditCluster(item)));
    row(table,[item.name,item.version,item.infrastructure_mode,(item.nodes||[]).length||item.node_pool?.count||0,badge(item.state),actions]);
   });
@@ -136,7 +168,20 @@
     actions.prepend(action('Scale',async()=>{const replicas=Number(prompt('Replicas',item.replicas||1));if(!Number.isFinite(replicas))return;watch(await api('POST',`/api/v1/kubernetes/clusters/${current.id}/workloads`,{action:'scale',kind:'Deployment',namespace:item.namespace,name:item.name,replicas}));message('Scale queued.');}));
     row(deploys,[item.namespace,item.name,`${item.ready||0}/${item.replicas||0}`,actions]);
    });
-   workloadRows(get('cks-sts-table'),['Namespace','Name','Ready','Actions'],current.inventory?.stateful_sets,'No StatefulSets.',item=>[item.namespace,item.name,`${item.ready||0}/${item.replicas||0}`,resourceActions('StatefulSet',item)]);
+   const sts=get('cks-sts-table');row(sts,['Namespace','Name','Ready','Actions'],true);
+   const stsList=(current.inventory?.stateful_sets||[]).filter(inNs);
+   if(!stsList.length)row(sts,['No StatefulSets.','','','']);
+   stsList.forEach(item=>{
+    const actions=resourceActions('StatefulSet',item);
+    actions.prepend(action('Restart',async()=>{watch(await api('POST',`/api/v1/kubernetes/clusters/${current.id}/workloads`,{action:'restart',kind:'StatefulSet',namespace:item.namespace,name:item.name}));message('StatefulSet restart queued.');}));
+    actions.prepend(action('Scale',async()=>{const replicas=Number(prompt('Replicas',item.replicas||1));if(!Number.isFinite(replicas))return;watch(await api('POST',`/api/v1/kubernetes/clusters/${current.id}/workloads`,{action:'scale',kind:'StatefulSet',namespace:item.namespace,name:item.name,replicas}));message('StatefulSet scale queued.');}));
+    row(sts,[item.namespace,item.name,`${item.ready||0}/${item.replicas||0}`,actions]);
+   });
+   if(get('cks-rs-table'))workloadRows(get('cks-rs-table'),['Namespace','Name','Ready','Actions'],current.inventory?.replica_sets,'No ReplicaSets.',item=>{
+    const actions=document.createElement('div');actions.className='row-actions';
+    actions.append(action('Delete',()=>removeResource('ReplicaSet',item.namespace,item.name)));
+    return [item.namespace,item.name,`${item.ready||0}/${item.replicas||0}`,actions];
+   });
    workloadRows(get('cks-ds-table'),['Namespace','Name','Actions'],current.inventory?.daemon_sets,'No DaemonSets.',item=>[item.namespace,item.name,resourceActions('DaemonSet',item)]);
    const svcs=get('cks-svc-table');row(svcs,['Namespace','Name','URL','Actions'],true);
    const svcList=(current.inventory?.services||[]).filter(inNs);
@@ -164,14 +209,15 @@
     const actions=document.createElement('div');actions.className='row-actions';
     actions.append(action('Scale',async()=>{const count=Number(prompt('Desired VPS count',pool.count||1));if(!Number.isFinite(count))return;watch(await api('POST',`/api/v1/kubernetes/clusters/${current.id}/node-pools/${encodeURIComponent(pool.id)}/scale`,{count}));message('VPS group scale queued.');await refresh();}));
     if(pool.name!=='default')actions.append(action('Delete',async()=>{if(prompt('Type DELETE to remove this VPS group')!=='DELETE')return;watch(await api('DELETE',`/api/v1/kubernetes/clusters/${current.id}/node-pools/${encodeURIComponent(pool.id)}`));message('VPS group deletion queued.');await refresh();}));
-    row(pools,[pool.name,pool.kind==='vps-group'?'VPS group':'Node pool',pool.count,pool.cpu,pool.ram_mb,pool.disk_mb,actions]);
+    const countLabel=pool.autoscaling?`${pool.count} (auto ${pool.min||0}-${pool.max||pool.count})`:pool.count;
+   row(pools,[pool.name,pool.kind==='vps-group'?'VPS group':'Node pool',countLabel,pool.cpu,pool.ram_mb,pool.disk_mb,actions]);
    });
    const helm=get('cks-helm-table');row(helm,['Release','Namespace','Chart','Status'],true);
    const helmList=current.helm||current.inventory?.helm||[];
    if(!helmList.length)row(helm,['No Helm releases.','','','']);
    helmList.forEach(item=>row(helm,[item.name,item.namespace||'default',item.chart||'—',item.status||'—']));
    const addons=get('cks-addon-table');row(addons,['Kind','Name','Namespace'],true);
-   const addonItems=[...(current.inventory?.volumes||[]),...(current.inventory?.ingresses||[]),...(current.inventory?.rbac||[]),...(current.inventory?.hpa||[])];
+   const addonItems=[...(current.inventory?.volumes||[]),...(current.inventory?.storage_classes||[]).map(item=>({...item,kind:item.kind||'StorageClass'})),...(current.inventory?.ingresses||[]),...(current.inventory?.rbac||[]),...(current.inventory?.hpa||[])];
    if(!addonItems.length)row(addons,['No storage, ingress, RBAC or HPA objects yet.','','']);
    addonItems.forEach(item=>row(addons,[item.kind||'—',item.name,item.namespace||'default']));
    const backups=get('cks-backup-table');row(backups,['Backup','State','Size','Digest'],true);
@@ -201,7 +247,7 @@
   if(busy)return;busy=true;
   try{
    state=await api('GET','/api/v1/kubernetes');
-   if(selected&&!cluster()&&state.clusters?.length)selected=state.clusters[0].id;
+   if((!selected||!cluster())&&state.clusters?.length)selected=state.clusters[0].id;
    if(selected){try{catalog=await api('GET',`/api/v1/kubernetes/clusters/${selected}/catalog`);}catch(e){catalog={load_balancers:[],volumes:[],efs:[],s3:[],vps:[]};}}
    const gate=get('cks-gate-note');
    if(gate&&state.production_gate?.reason)gate.textContent=state.production_gate.reason;
@@ -240,12 +286,7 @@
   const current=cluster();if(!current)return;
   try{await api('POST',`/api/v1/kubernetes/clusters/${current.id}/protection`,{delete_protection:!current.delete_protection});await refresh();}catch(error){message(error.message);}
  };
- get('cks-download-kubeconfig').onclick=async()=>{
-  const current=cluster();if(!current)return;
-  const response=await fetch(`/api/v1/kubernetes/clusters/${current.id}/kubeconfig`,{credentials:'include',cache:'no-store'});
-  if(!response.ok){let problem={};try{problem=await response.json();}catch(e){}message(problem.error||'Kubeconfig is not available');return;}
-  const blob=await response.blob();const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=current.id+'.kubeconfig';link.click();URL.revokeObjectURL(url);
- };
+ get('cks-download-kubeconfig').onclick=()=>downloadKubeconfig();
  function openPoolForm(kind){
   const current=cluster();if(!current){message('Select a cluster first.');return;}
   fillWorkers();
@@ -291,7 +332,7 @@
   event.preventDefault();
   const current=cluster();if(!current)return;
   const kind=get('cks-pool-kind').value;
-  try{watch(await api('POST',`/api/v1/kubernetes/clusters/${current.id}/node-pools`,{name:get('cks-pool-name').value.trim(),kind,count:Number(get('cks-pool-count').value),cpu:Number(get('cks-pool-cpu').value),ram_mb:Number(get('cks-pool-ram').value),disk_mb:Number(get('cks-pool-disk').value),worker_id:get('cks-pool-worker').value}));get('cks-pool-dialog').close();message(kind==='vps-group'?'VPS group queued.':'Node pool queued.');await refresh();}
+  try{watch(await api('POST',`/api/v1/kubernetes/clusters/${current.id}/node-pools`,{name:get('cks-pool-name').value.trim(),kind,count:Number(get('cks-pool-count').value),cpu:Number(get('cks-pool-cpu').value),ram_mb:Number(get('cks-pool-ram').value),disk_mb:Number(get('cks-pool-disk').value),worker_id:get('cks-pool-worker').value,autoscaling:!!get('cks-pool-autoscaling')?.checked,min:Number(get('cks-pool-min')?.value||1),max:Number(get('cks-pool-max')?.value||3)}));get('cks-pool-dialog').close();message(kind==='vps-group'?'VPS group queued.':'Node pool queued.');await refresh();}
   catch(error){message(error.message);}
  };
  get('cks-helm-form').onsubmit=async event=>{
@@ -434,6 +475,6 @@
   activateCksResourceTab(tab.getAttribute('data-cks-tab'));
  });
  activateCksResourceTab(document.querySelector('.cks-resource-tabs [aria-selected="true"]')?.getAttribute('data-cks-tab')||'ns');
- }catch(e){}
+ }catch(e){message(e.message||String(e));}
  refresh();setInterval(()=>{if(!document.hidden)refresh();},5000);
 })();

@@ -21,9 +21,11 @@ RUN export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -
 
 # DEV ONLY image. Production workers are installed as a signed package on Ubuntu.
 FROM ubuntu:24.04
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tar iproute2 nftables util-linux e2fsprogs kmod s3fs openssl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tar iproute2 nftables util-linux e2fsprogs kmod s3fs openssl curl wget unzip debootstrap && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/clofix-worker /usr/local/bin/clofix-worker
 COPY --from=seaweed /usr/bin/weed /usr/local/bin/weed
 COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=builtin-rootfs /tmp/rootfs.tar.gz /opt/clofix/builtin/ubuntu/24.04/rootfs.tar.gz
+COPY scripts/build-managed-templates.sh /usr/local/lib/clofix/build-managed-templates.sh
+RUN mkdir -p /usr/local/lib/clofix && chmod 0755 /usr/local/lib/clofix/build-managed-templates.sh
 CMD ["clofix-worker", "run"]

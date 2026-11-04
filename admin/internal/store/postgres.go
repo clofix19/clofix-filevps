@@ -49,6 +49,7 @@ func (p *Postgres) EnsureSchema() error {
 		`CREATE INDEX IF NOT EXISTS cf_sessions_user ON cf_sessions(user_id, expires)`,
 		`ALTER TABLE cf_instances ADD COLUMN IF NOT EXISTS account_id TEXT`,
 		`ALTER TABLE cf_volumes ADD COLUMN IF NOT EXISTS account_id TEXT`,
+		`ALTER TABLE cf_volumes ADD COLUMN IF NOT EXISTS delete_protection BOOLEAN NOT NULL DEFAULT FALSE`,
 	} {
 		if _, err := p.db.Exec(ddl); err != nil {
 			return err
@@ -188,8 +189,8 @@ func (p *Postgres) DeleteInstance(id string) error {
 }
 
 func (p *Postgres) SaveVolume(v Volume) error {
-	_, err := p.db.Exec(`INSERT INTO cf_volumes(id,name,worker_id,state,instance_id,guest_path,usage_bytes,limit_mb,error,created,account_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-		ON CONFLICT(id) DO UPDATE SET name=$2,worker_id=$3,state=$4,instance_id=$5,guest_path=$6,usage_bytes=$7,limit_mb=$8,error=$9,account_id=$11`, v.ID, v.Name, v.WorkerID, v.State, nullString(v.InstanceID), nullString(v.GuestPath), v.UsageBytes, v.LimitMB, nullString(v.Error), v.Created, nullString(v.AccountID))
+	_, err := p.db.Exec(`INSERT INTO cf_volumes(id,name,worker_id,state,instance_id,guest_path,usage_bytes,limit_mb,error,created,account_id,delete_protection) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		ON CONFLICT(id) DO UPDATE SET name=$2,worker_id=$3,state=$4,instance_id=$5,guest_path=$6,usage_bytes=$7,limit_mb=$8,error=$9,account_id=$11,delete_protection=$12`, v.ID, v.Name, v.WorkerID, v.State, nullString(v.InstanceID), nullString(v.GuestPath), v.UsageBytes, v.LimitMB, nullString(v.Error), v.Created, nullString(v.AccountID), v.DeleteProtection)
 	return err
 }
 
@@ -202,14 +203,14 @@ func nullString(s string) any {
 func scanVolume(s scanner) (Volume, error) {
 	var v Volume
 	var inst, path, errText, account sql.NullString
-	if err := s.Scan(&v.ID, &v.Name, &v.WorkerID, &v.State, &inst, &path, &v.UsageBytes, &v.LimitMB, &errText, &v.Created, &account); err != nil {
+	if err := s.Scan(&v.ID, &v.Name, &v.WorkerID, &v.State, &inst, &path, &v.UsageBytes, &v.LimitMB, &errText, &v.Created, &account, &v.DeleteProtection); err != nil {
 		return v, err
 	}
 	v.InstanceID, v.GuestPath, v.Error, v.AccountID = inst.String, path.String, errText.String, account.String
 	return v, nil
 }
 
-const volumeCols = `id,name,worker_id,state,instance_id,guest_path,usage_bytes,limit_mb,error,created,account_id`
+const volumeCols = `id,name,worker_id,state,instance_id,guest_path,usage_bytes,limit_mb,error,created,account_id,delete_protection`
 
 func (p *Postgres) GetVolume(id string) (Volume, error) {
 	v, err := scanVolume(p.db.QueryRow(`SELECT `+volumeCols+` FROM cf_volumes WHERE id=$1`, id))
@@ -269,6 +270,29 @@ func (p *Postgres) TakeOps(workerID string) ([]proto.Operation, error) {
 func (p *Postgres) Audit(actor, action, target, result string) error {
 	_, err := p.db.Exec(`INSERT INTO cf_audit(actor,action,target,result) VALUES($1,$2,$3,$4)`, actor, action, target, result)
 	return err
+}
+
+func (p *Postgres) ListAudit(limit int) ([]AuditEntry, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	rows, err := p.db.Query(`SELECT id, ts, COALESCE(actor,''), action, COALESCE(target,''), COALESCE(result,'') FROM cf_audit ORDER BY id DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []AuditEntry{}
+	for rows.Next() {
+		var e AuditEntry
+		if err := rows.Scan(&e.ID, &e.At, &e.Actor, &e.Action, &e.Target, &e.Result); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
 
 func scanIAMUser(s scanner) (IAMUser, error) {

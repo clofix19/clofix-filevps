@@ -55,9 +55,10 @@ type Volume struct {
 	InstanceID string    `json:"instance_id,omitempty"`
 	GuestPath  string    `json:"guest_path,omitempty"`
 	UsageBytes uint64    `json:"usage_bytes"`
-	LimitMB    int64     `json:"limit_mb"`
-	Error      string    `json:"error,omitempty"`
-	Created    time.Time `json:"created"`
+	LimitMB          int64     `json:"limit_mb"`
+	DeleteProtection bool      `json:"delete_protection,omitempty"`
+	Error            string    `json:"error,omitempty"`
+	Created          time.Time `json:"created"`
 }
 
 type Account struct {
@@ -169,4 +170,15 @@ type Store interface {
 	TakeOps(workerID string) ([]proto.Operation, error)
 
 	Audit(actor, action, target, result string) error
+	ListAudit(limit int) ([]AuditEntry, error)
+}
+
+// AuditEntry is a cf_audit row returned newest-first by ListAudit.
+type AuditEntry struct {
+	ID     int64     `json:"id"`
+	At     time.Time `json:"at"`
+	Actor  string    `json:"actor"`
+	Action string    `json:"action"`
+	Target string    `json:"target"`
+	Result string    `json:"result,omitempty"`
 }

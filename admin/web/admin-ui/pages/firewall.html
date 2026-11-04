@@ -1,57 +1,73 @@
 {{define "content"}}
-<section class="page active">
-<div class="section-head"><div><p class="eyebrow">Networking</p><h2>Firewall</h2><p>Choose which source CIDRs may use CloFix published ports. Port maps and VPC addressing stay as they are. Host SSH 22 and admin ports are not filtered.</p></div><a class="secondary" href="/vpc">Open VPC</a></div>
-<p class="message" id="fw-message" role="status" aria-live="polite"></p>
-<div class="settings-layout">
-  <nav class="settings-nav" aria-label="Firewall sections">
-    <a href="#firewall-workers" data-settings-link aria-controls="firewall-workers" aria-current="location"><strong>Workers</strong><span>Host inbound on CloFix ports</span></a>
-    <a href="#firewall-vps" data-settings-link aria-controls="firewall-vps"><strong>VPS</strong><span>Security groups on mapped ports</span></a>
-  </nav>
-  <div class="settings-content">
-    <div class="panel settings-section" id="firewall-workers" data-settings-panel aria-labelledby="fw-heading-workers">
-      <h3 id="fw-heading-workers" tabindex="-1">Worker host firewall</h3>
-      <p class="muted">Applies to FileVPS DNAT (SSH/HTTP/HTTPS/custom), managed-app gateways (42000–46999) and database TLS (47000–51999). With Restrict on, add Allow rules for the ranges you need. Default allow keeps current Compose behavior.</p>
-      <div class="form-grid">
-        <div class="form-field"><label for="fw-worker">Worker</label><select id="fw-worker"></select></div>
-        <label class="form-field"><input id="fw-worker-restrict" type="checkbox"> Restrict inbound on CloFix ports</label>
+<section class="page active" id="page-firewall">
+  <div class="section-head"><div><p class="eyebrow">Networking</p><h2>Firewall</h2><p>Choose which source CIDRs may use CloFix published ports. Port maps and VPC addressing stay as they are. Host SSH 22 and admin ports are not filtered.</p></div><a class="secondary" href="/vpc">Open VPC</a></div>
+  <p class="message" id="fw-message" role="status" aria-live="polite"></p>
+  <div class="settings-layout">
+    <nav class="settings-nav" aria-label="Firewall sections">
+      <a href="#firewall-workers" data-settings-link aria-controls="firewall-workers" aria-current="location"><strong>Workers</strong><span>Host inbound on CloFix ports</span></a>
+      <a href="#firewall-vps" data-settings-link aria-controls="firewall-vps"><strong>VPS</strong><span>Security groups on mapped ports</span></a>
+    </nav>
+    <div class="settings-content">
+      <div class="panel settings-section" id="firewall-workers" data-settings-panel aria-labelledby="fw-heading-workers">
+        <h2 id="fw-heading-workers" tabindex="-1">Worker host firewall</h2>
+        <p class="muted">Applies to FileVPS DNAT (SSH/HTTP/HTTPS/custom), managed-app gateways (42000–46999) and database TLS (47000–51999). With Restrict on, add Allow rules for the host ports you need.</p>
+        <div class="form-block">
+          <div class="form-grid">
+            <div class="form-field"><label for="fw-worker">Worker</label><select id="fw-worker"></select></div>
+            <div class="form-field"><label class="check-row" for="fw-worker-restrict"><input id="fw-worker-restrict" type="checkbox"> Restrict inbound on CloFix ports</label></div>
+          </div>
+          <p class="muted" id="fw-worker-ports"></p>
+          <p class="muted" id="fw-worker-hint"></p>
+          <div class="form-actions row-actions">
+            <button class="primary" id="fw-worker-add" type="button">＋ Add allow / block</button>
+          </div>
+        </div>
+        <div class="table-wrap"><table id="fw-worker-rules" data-inline-actions></table></div>
       </div>
-      <p class="muted" id="fw-worker-ports"></p>
-      <div class="section-head"><h3>Inbound rules</h3><button class="primary" id="fw-worker-add" type="button">＋ Add rule</button></div>
-      <div class="table-wrap"><table id="fw-worker-rules"></table></div>
-    </div>
-    <div class="panel settings-section" id="firewall-vps" data-settings-panel aria-labelledby="fw-heading-vps" hidden>
-      <h3 id="fw-heading-vps" tabindex="-1">VPS security group</h3>
-      <p class="muted">Filters who may use an already-mapped port. A port must still be published. Established and related traffic stays allowed.</p>
-      <div class="form-grid">
-        <div class="form-field"><label for="fw-instance">VPS</label><select id="fw-instance"></select></div>
-        <label class="form-field"><input id="fw-instance-restrict" type="checkbox"> Restrict inbound</label>
+      <div class="panel settings-section" id="firewall-vps" data-settings-panel aria-labelledby="fw-heading-vps" hidden>
+        <h2 id="fw-heading-vps" tabindex="-1">VPS security group</h2>
+        <p class="muted">Allow or block source CIDRs for already-mapped guest ports (22 / 80 / 443 / custom). Edit or delete rules in the table, or use the quick allow buttons.</p>
+        <div class="form-block">
+          <div class="form-grid">
+            <div class="form-field"><label for="fw-instance">VPS</label><select id="fw-instance"></select></div>
+            <div class="form-field"><label class="check-row" for="fw-instance-restrict"><input id="fw-instance-restrict" type="checkbox"> Restrict inbound</label></div>
+          </div>
+          <p class="muted" id="fw-instance-meta"></p>
+          <p class="muted" id="fw-instance-hint"></p>
+          <div class="form-actions row-actions" id="fw-instance-presets" hidden>
+            <button class="primary" id="fw-instance-add" type="button">＋ Add allow / block</button>
+            <button class="secondary" id="fw-allow-ssh" type="button">Allow SSH · 22</button>
+            <button class="secondary" id="fw-allow-http" type="button">Allow HTTP · 80</button>
+            <button class="secondary" id="fw-allow-https" type="button">Allow HTTPS · 443</button>
+          </div>
+        </div>
+        <div class="table-wrap"><table id="fw-instance-maps"></table></div>
+        <p class="muted fw-rules-caption">Inbound rules · guest ports SSH 22 · HTTP 80 · HTTPS 443</p>
+        <div class="table-wrap"><table id="fw-instance-rules" data-inline-actions></table></div>
       </div>
-      <p class="muted" id="fw-instance-meta"></p>
-      <div class="table-wrap"><table id="fw-instance-maps"></table></div>
-      <div class="section-head"><h3>Inbound rules</h3><button class="primary" id="fw-instance-add" type="button">＋ Add rule</button></div>
-      <div class="table-wrap"><table id="fw-instance-rules"></table></div>
     </div>
   </div>
-</div>
 </section>
 <dialog class="terminal-dialog form-dialog" id="fw-dialog" aria-labelledby="fw-form-title">
   <form id="fw-rule-form">
-    <div class="section-head"><h2 id="fw-form-title">Add rule</h2><button class="secondary" id="fw-close" type="button">Close</button></div>
+    <div class="section-head"><div><h2 id="fw-form-title">Add rule</h2></div><button class="secondary" id="fw-close" type="button">Close</button></div>
     <div class="form-grid">
-      <div class="form-field"><label for="fw-action">Action</label><select id="fw-action"><option value="allow">Allow</option><option value="deny">Deny</option></select></div>
+      <div class="form-field"><label for="fw-action">Action</label><select id="fw-action"><option value="allow">Allow</option><option value="deny">Block</option></select></div>
       <div class="form-field"><label for="fw-proto">Protocol</label><select id="fw-proto"><option value="tcp">TCP</option><option value="udp">UDP</option><option value="icmp">ICMP</option><option value="any">Any</option></select></div>
-      <div class="form-field"><label for="fw-port">Port</label><input id="fw-port" type="number" min="1" max="65535" placeholder="Leave empty for all"></div>
+      <div class="form-field"><label for="fw-port">Port</label><input id="fw-port" type="number" min="1" max="65535" placeholder="VPS guest port e.g. 80"></div>
       <div class="form-field"><label for="fw-port-end">Port end</label><input id="fw-port-end" type="number" min="1" max="65535" placeholder="Optional range"></div>
       <div class="form-field form-span"><label for="fw-source">Source CIDR</label><input id="fw-source" required placeholder="0.0.0.0/0"></div>
     </div>
     <div class="inline-fields">
-      <button class="small-btn" id="fw-src-any" type="button">0.0.0.0/0</button>
+      <button class="small-btn" id="fw-src-any" type="button">Anywhere · 0.0.0.0/0</button>
       <button class="small-btn" id="fw-src-vpc" type="button">Same VPC</button>
     </div>
     <p class="message" id="fw-form-message" role="status" aria-live="polite"></p>
-    <button class="primary" id="fw-save" type="submit">Add rule</button>
-    <button class="secondary" id="fw-reset" type="button">Cancel</button>
+    <div class="form-actions row-actions">
+      <button class="primary" id="fw-save" type="submit">Add rule</button>
+      <button class="secondary" id="fw-reset" type="button">Cancel</button>
+    </div>
   </form>
-  <p class="muted">IPv4 CIDR only. Worker host rules must stay on CloFix published ports.</p>
+  <p class="muted">IPv4 CIDR only. VPS rules use guest ports (22/80/443). Worker rules must use CloFix published host ports.</p>
 </dialog>
 {{end}}

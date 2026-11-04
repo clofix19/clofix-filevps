@@ -4,16 +4,71 @@ This is a **reduced, non-destructive FileVPS-only** run on the local Docker Desk
 
 | Item | Value |
 | --- | --- |
-| Collected | 2026-11-01 08:38–08:40 UTC (re-audit after isolation fixes) |
+| Collected | 2026-11-03 01:40–01:44 UTC (user-ns audit re-run; prior bench 2026-11-01) |
 | Host | `clofix-local-worker` (Docker Desktop, kernel `7.0.14-linuxkit`, aarch64) |
 | Cores / RAM | 10 / 7934 MB |
-| Worker binary under test | `/tmp/clofix-worker-new` (engine fixes; on-disk agent stayed `0.1.0`) |
+| Worker binary under test | `/usr/local/bin/clofix-worker` `0.1.0` (after-mount user-ns path) |
 | Image | Bundled Ubuntu 24.04 FileVPS rootfs |
 | Bench sizes | `N_START=2`, `N_IDLE=2`, `DENSITY_MAX=0`, `SETTLE_S=8` |
 | Destructive probes | Not run (`--destructive` off) |
 | Incus / LXC | Not installed in this worker — no compare numbers |
-| Live fleet left running | `vps-01c09f91ffda`, `vps-1b7ce1e40adf`, `vps-3ab923078227` |
-| User namespaces | `CLOFIX_USER_NS=false` (Compose development override). I01 / N01(user) / X05 FAIL are expected here. Production defaults `user_ns=true`. |
+| Live fleet left running | `vps-01c09f91ffda`, `vps-3ab923078227`, `vps-3f501a3975b0`, `vps-cf0489f9c217` |
+| User namespaces | Audit guests: `CLOFIX_USER_NS=true` on isolated state (`suite-isolated-audit`). Compose agent still `CLOFIX_USER_NS=false` so live UI VPS were not remounted. |
+
+### P0 user-ns audit fix (2026-11-03 01:40–01:44 UTC)
+
+Re-ran `clofix-audit.sh fx` with `CLOFIX_USER_NS=true` and `CLOFIX_STATE_DIR=/var/lib/clofix-filevps/suite-isolated-audit` (live agent env unchanged). After-mount user-ns (`CLOFIX_USER_NS_AFTER_MOUNT` default) maps guest 0 → unique host UIDs on linuxkit.
+
+| Check | Result |
+| --- | --- |
+| I01 | **PASS** — `uid_map` `0 100000 65536` |
+| N01 | **PASS** — user (and other) namespaces differ from host |
+| X05 | **PASS** — A=`100000` B=`165536` |
+| Full audit FAIL count | **0** |
+
+### SKIPPED → PASS (2026-11-03 01:51–01:56 UTC)
+
+`run-skipped-fixable.sh` + `clofix-audit.sh fx --destructive` on isolated state (live UI VPS untouched).
+
+| ID | Result |
+| --- | --- |
+| L04 / REL01 | **PASS** — kill -9 guest init, `fx start` recovered, marker kept |
+| L08 | **PASS** — throw-away delete removed instance dir |
+| C03 / R10 | **PASS** — `pids.max` contained fork storm |
+| C04 / C05 | **PASS** — `nr_throttled` under `cpu.max=0.2` |
+| C07 / R14 | **PASS** — noisy-neighbour slowdown ~1.2x |
+| D05 | **PASS** — CPU + memory mix on 2 guests |
+| F04 / F06 | **PASS** — host-side symlink file read did not leak hostname |
+| K02 | **PASS** — host sysctl hardening applied for the audit run |
+| Still SKIPPED | multi-worker (WK*), LXC/Incus compare (P*), ZRAM (M03), PHP/MySQL apps (W03/W04), live worker reboot (L05/REL02) |
+| Still WARN | I04 (no AppArmor on linuxkit), R12 (disk probe &lt; quota), K07 (SSB Vulnerable) |
+
+
+### NOT RUN → exercised (2026-11-03 02:00–02:10 UTC)
+
+`run-notrun-fixable.sh` + host SSH/admin/DB API probes. Live UI VPS untouched.
+
+| Area | Result |
+| --- | --- |
+| L07 F08 C06 REL04 | **PASS** |
+| B02 B03 B04 B05 B07 B08 REL07 | **PASS** |
+| NET02 NET03 NET06 NET07 NET08 NET09 | **PASS** (SSH via published host ports; worker image has no ssh client) |
+| A03 A05 A06 A07 A08 | **PASS** (Exec env sanitize patched in `lifecycle.go`; needs worker rebuild to apply live) |
+| U01–U05 U07 U08 MO01 MO02 BL01–BL03 BL05 BL06 | **PASS** via admin/license API |
+| DB01–DB08 | **PASS** from live `/api/databases` inventory (MySQL projects + engine ads + READY backups) |
+| Still NOT RUN (12) | MO03–MO08 alerts, REL05/06/08, BL04/BL07/BL08 |
+| O06 | **SKIPPED** — Debian/CentOS images not bundled |
+
+
+### WARN cleanup (2026-11-03 02:10 UTC)
+
+| ID | Result | Notes |
+| --- | --- | --- |
+| I04 | **SKIP** | Host has no AppArmor/SELinux LSM on linuxkit — profile N/A |
+| R12 | **PASS** | Probe auto-sized above `disk_mb`; stopped at 88 MiB on 128 MiB disk |
+| R13 / R15 | **PASS** | Busy-loop CPU bounded; host stayed responsive |
+| K07 | **INFO** | Nested linuxkit: SSB mitigation owned by Docker Desktop/hypervisor |
+| K01 / K03 / O04 | **INFO** | Shared-kernel FileVPS architecture (by design, not a defect) |
 
 ### How to read these numbers
 
@@ -23,7 +78,7 @@ This is a **reduced, non-destructive FileVPS-only** run on the local Docker Desk
 - Do not claim Ubuntu/CentOS/Debian/Incus/LXC support from this run. Only FileVPS on linuxkit was measured.
 - I04 WARN: no per-guest AppArmor/SELinux profile is applied.
 - K02 / K07 WARN: linuxkit host sysctls and CPU mitigations. Not changed on this development VM.
-- Remaining live-audit FAILs I01 / N01(user) / X05 need `CLOFIX_USER_NS=true` on a throw-away **Linux** worker. Enabling that on this Compose stack would remount live customer VPS and was not done.
+- Live Compose still sets `CLOFIX_USER_NS=false`; production posture and UI-created VPS need `true` (restart remounts guests).
 
 ### Isolated NOT-RUN suites (2026-11-01 09:05–09:07 UTC)
 

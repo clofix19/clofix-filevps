@@ -225,24 +225,24 @@ These rows describe what the current worker engine is written to do. They are **
 
 | ID | Expected | Why (code) | Verification |
 |---|---|---|---|
-| I01 | PASS when `user_ns=true` | `CLONE_NEWUSER` maps guest 0 to `uid_base` (default 100000) | Isolated try on this linuxkit host: `fx-init` EPERM on make-rprivate |
-| I02 | PASS | Guest allowlist drops SYS_MODULE/RAWIO/BOOT/TIME/PTRACE/SYS_ADMIN | Unverified |
-| I03 | PASS | `fx-init` installs a seccomp filter and `no_new_privs` | Unverified |
-| I04 | WARN | AppArmor is detected on the host; no per-guest profile is applied | Unverified |
-| I05 I06 | PASS | Guest `/dev` is a private tmpfs; mount/kexec/module syscalls are denied | Unverified |
-| I07 | PASS | `mount` is in the seccomp deny list | Unverified |
-| N01 N02 | PASS | New mount, PID, UTS, IPC, net, cgroup (and user when enabled) namespaces | Unverified |
-| N05 | PASS | After the process is placed in `/clofix-filevps/<id>`, `CLONE_NEWCGROUP` makes the guest see `0::/`. Host `pids.max` / `memory.max` / `cpu.max` still apply. | Unverified |
-| X01 X03 X04 | PASS | Separate OverlayFS upper layers and namespaces | Unverified |
-| X05 | PASS when `user_ns=true` | Each guest gets a unique `host_uid` range (`uid_base + index * 65536`) | Isolated user-ns guests never reached `uid_map` on linuxkit |
-| X06 | PASS | Each veth is `bridge link set isolated on`; nftables default-drop forward | Unverified |
-| R01 R02 R03 | PASS | cgroup v2 sets `pids.max`, `memory.max`/`memory.high`, `cpu.max` | Unverified |
-| R04 R12 | PASS | `disk_mb` is a loop+ext4 backing for overlay upper/work; guest `df` shows the limit | Unverified |
-| K05 | PASS | `fx-init` bind-mounts a per-guest `/proc/meminfo` from `ram_mb` | Unverified |
+| I01 | PASS when `user_ns=true` | After-mount user-ns maps guest 0 to `host_uid` (base 100000) | Verified 2026-11-03: `0 100000 65536` |
+| I02 | PASS | Guest allowlist drops SYS_MODULE/RAWIO/BOOT/TIME/PTRACE/SYS_ADMIN | Verified |
+| I03 | PASS | `fx-init` installs a seccomp filter and `no_new_privs` | Verified |
+| I04 | WARN | AppArmor is detected on the host; no per-guest profile is applied | Verified WARN |
+| I05 I06 | PASS | Guest `/dev` is a private tmpfs; mount/kexec/module syscalls are denied | Verified |
+| I07 | PASS | `mount` is in the seccomp deny list | Verified |
+| N01 N02 | PASS | New mount, PID, UTS, IPC, net, cgroup (and user when enabled) namespaces | Verified |
+| N05 | PASS | After the process is placed in `/clofix-filevps/<id>`, `CLONE_NEWCGROUP` makes the guest see `0::/`. Host `pids.max` / `memory.max` / `cpu.max` still apply. | Verified |
+| X01 X03 X04 | PASS | Separate OverlayFS upper layers and namespaces | Verified |
+| X05 | PASS when `user_ns=true` | Each guest gets a unique `host_uid` range (`uid_base + index * 65536`) | Verified 2026-11-03: A=100000 B=165536 |
+| X06 | PASS | Each veth is `bridge link set isolated on`; nftables default-drop forward | Verified |
+| R01 R02 R03 | PASS | cgroup v2 sets `pids.max`, `memory.max`/`memory.high`, `cpu.max` | Verified |
+| R04 R12 | PASS | `disk_mb` is a loop+ext4 backing for overlay upper/work; guest `df` shows the limit | Verified |
+| K05 | PASS | `fx-init` bind-mounts a per-guest `/proc/meminfo` from `ram_mb` | Verified |
 | K01 | INFO | FileVPS shares the host kernel; it is not KVM/QEMU | Documented |
-| O01 O02 | PASS | Shared read-only image + per-guest OverlayFS upper layer | Unverified |
+| O01 O02 | PASS | Shared read-only image + per-guest OverlayFS upper layer | Verified |
 
-Production workers default `user_ns=true`. Local Docker Desktop Compose sets `CLOFIX_USER_NS=false`, which makes I01 FAIL and is development-only.
+Production workers default `user_ns=true`. Audit re-run used isolated `CLOFIX_USER_NS=true`. Compose agent may still set `false` for live UI VPS until flipped.
 
 ## 5. Methodology and limitations
 

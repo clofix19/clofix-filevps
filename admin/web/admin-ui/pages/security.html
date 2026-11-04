@@ -1,20 +1,166 @@
 {{define "content"}}
 <section class="page active" id="page-security">
-      <div class="section-head"><div><p class="eyebrow">Security</p><h2>Security overview</h2><p>Per-VPS protection, SSH access, deletion safeguards, WAF state, and exposed custom ports. Packet filtering for worker and VPS inbound CIDRs is on <a href="/firewall">Firewall</a>. The WAF stays HTTP-only.</p></div></div>
-      <div class="security-loading" id="security-loading" role="status" aria-live="polite">Loading VPS and worker security status…</div>
-      <div class="security-empty" id="security-empty" hidden><strong>No VPS instances yet</strong><p>Create a VPS to manage its security controls here.</p><a class="primary" href="/instances?create=1">Create FileVPS</a></div>
+      <div class="section-head"><div><p class="eyebrow">Security Center</p><h2>CloFix Security Center</h2><p>Transparent posture score, findings, audit trail, and alerts. Existing Protection Mode, SSH Login Block, Delete Protection, and WAF controls stay on this page. Packet filtering is on <a href="/firewall">Firewall</a>.</p></div></div>
+      <div class="security-loading" id="security-loading" role="status" aria-live="polite">Loading Security Center…</div>
+      <div class="security-empty" id="security-empty" hidden><strong>No VPS instances yet</strong><p>Create a VPS to manage its security controls here. Score and audit still load from the fleet.</p><a class="primary" href="/instances?create=1">Create FileVPS</a></div>
       <div class="settings-layout">
-        <nav class="settings-nav" aria-label="Security sections">
-          <a href="#security-overview" data-settings-link aria-controls="security-overview" aria-current="location"><strong>Overview</strong><span>Coverage across the fleet</span></a>
-          <a href="#security-vps" data-settings-link aria-controls="security-vps"><strong>VPS controls</strong><span>Protection, SSH and WAF</span></a>
-          <a href="#security-port-forwards" data-settings-link aria-controls="security-port-forwards"><strong>Port forwards</strong><span>Custom host exposure</span></a>
-          <a href="#security-guide" data-settings-link aria-controls="security-guide"><strong>Guide</strong><span>What each control does</span></a>
+        <nav class="settings-nav" aria-label="Security Center sections">
+          <a href="#security-score" data-settings-link aria-controls="security-score" aria-current="location"><span class="settings-nav-icon" aria-hidden="true">◎</span><span class="settings-nav-text"><strong>Score</strong><span>Global posture 0–100</span></span></a>
+          <a href="#security-findings" data-settings-link aria-controls="security-findings"><span class="settings-nav-icon" aria-hidden="true">▦</span><span class="settings-nav-text"><strong>Findings</strong><span>Why the score moved</span></span></a>
+          <a href="#security-overview" data-settings-link aria-controls="security-overview"><span class="settings-nav-icon" aria-hidden="true">▣</span><span class="settings-nav-text"><strong>Posture</strong><span>Coverage across the fleet</span></span></a>
+          <a href="#security-alerts" data-settings-link aria-controls="security-alerts"><span class="settings-nav-icon" aria-hidden="true">⚑</span><span class="settings-nav-text"><strong>Alerts</strong><span>Log alert-events hub</span></span></a>
+          <a href="#security-audit" data-settings-link aria-controls="security-audit"><span class="settings-nav-icon" aria-hidden="true">⎘</span><span class="settings-nav-text"><strong>Audit</strong><span>Controller change trail</span></span></a>
+          <a href="#security-modes" data-settings-link aria-controls="security-modes"><span class="settings-nav-icon" aria-hidden="true">☰</span><span class="settings-nav-text"><strong>Modes</strong><span>Policies dry-run / apply</span></span></a>
+          <a href="#security-protection" data-settings-link aria-controls="security-protection"><span class="settings-nav-icon" aria-hidden="true">◈</span><span class="settings-nav-text"><strong>Advanced Protection</strong><span>Catalog #1–72 + unlock</span></span></a>
+          <a href="#security-detections" data-settings-link aria-controls="security-detections"><span class="settings-nav-icon" aria-hidden="true">⌖</span><span class="settings-nav-text"><strong>Detection</strong><span>Events and FIM</span></span></a>
+          <a href="#security-vulns" data-settings-link aria-controls="security-vulns"><span class="settings-nav-icon" aria-hidden="true">◫</span><span class="settings-nav-text"><strong>Vulns / DB / CKS</strong><span>Panel scores</span></span></a>
+          <a href="#security-autopilot" data-settings-link aria-controls="security-autopilot"><span class="settings-nav-icon" aria-hidden="true">▶</span><span class="settings-nav-text"><strong>AutoPilot</strong><span>Incidents and compliance</span></span></a>
+          <a href="#security-vps" data-settings-link aria-controls="security-vps"><span class="settings-nav-icon" aria-hidden="true">◉</span><span class="settings-nav-text"><strong>VPS controls</strong><span>Protection, SSH and WAF</span></span></a>
+          <a href="#security-port-forwards" data-settings-link aria-controls="security-port-forwards"><span class="settings-nav-icon" aria-hidden="true">⇄</span><span class="settings-nav-text"><strong>Port forwards</strong><span>Custom host exposure</span></span></a>
+          <a href="#security-guide" data-settings-link aria-controls="security-guide"><span class="settings-nav-icon" aria-hidden="true">?</span><span class="settings-nav-text"><strong>Guide</strong><span>What each control does · open linked panels</span></span></a>
         </nav>
         <div class="settings-content">
-          <div class="settings-section" id="security-overview" data-settings-panel aria-labelledby="security-heading-overview">
-            <h2 id="security-heading-overview" class="visually-hidden" tabindex="-1">Overview</h2>
+          <div class="settings-section" id="security-score" data-settings-panel aria-labelledby="security-heading-score">
+            <h2 id="security-heading-score" class="visually-hidden" tabindex="-1">Score</h2>
+            <div class="cards">
+              <div class="stat"><div class="stat-label">Global score</div><div class="stat-value" id="security-score-value">—</div><div class="stat-note" id="security-score-note">Starts at 100; findings subtract capped deltas</div></div>
+              <div class="stat"><div class="stat-label">Findings</div><div class="stat-value" id="security-score-findings-count">—</div><div class="stat-note">Live inventory only</div></div>
+              <div class="stat"><div class="stat-label">Open alerts (24h)</div><div class="stat-value" id="security-score-alerts">—</div><div class="stat-note">Log alert-events</div></div>
+              <div class="stat"><div class="stat-label">User namespaces</div><div class="stat-value" id="security-score-userns">—</div><div class="stat-note">Worker lab posture</div></div>
+            </div>
+            <p class="muted" id="security-score-formula">Formula loads with overview.</p>
+            <div class="security-deeplinks" id="security-deeplinks"></div>
+          </div>
+
+          <div class="panel settings-section" id="security-findings" data-settings-panel aria-labelledby="security-heading-findings" hidden>
+            <div class="section-head"><div><h2 id="security-heading-findings" tabindex="-1">Findings ledger</h2><p>Each row is a deterministic delta from the live inventory.</p></div></div>
+            <div class="table-wrap"><table id="security-findings-table"></table></div>
+          </div>
+
+          <div class="settings-section" id="security-overview" data-settings-panel aria-labelledby="security-heading-overview" hidden>
+            <h2 id="security-heading-overview" class="visually-hidden" tabindex="-1">Posture</h2>
             <div class="cards"><div class="stat"><div class="stat-label">Protection Mode enabled</div><div class="stat-value" id="security-protected">—</div><div class="stat-note">Read-only guest root</div></div><div class="stat"><div class="stat-label">Protection Mode disabled</div><div class="stat-value" id="security-unprotected">—</div><div class="stat-note">Review these VPSs</div></div><div class="stat"><div class="stat-label">SSH Login Block enabled</div><div class="stat-value" id="security-ssh-blocked">—</div><div class="stat-note">Blocks new SSH logins</div></div><div class="stat"><div class="stat-label">Delete Protection enabled</div><div class="stat-value" id="security-delete-protected">—</div><div class="stat-note">Guards admin and worker deletion</div></div><div class="stat"><div class="stat-label">OWASP CRS WAF installed</div><div class="stat-value" id="security-waf">—</div><div class="stat-note">HTTP/HTTPS through guest Nginx</div></div><div class="stat"><div class="stat-label">Custom port forwards</div><div class="stat-value" id="security-forwards">—</div><div class="stat-note">Additional host exposure</div></div><div class="stat"><div class="stat-label">Active workers</div><div class="stat-value" id="security-workers">—</div><div class="stat-note">Workers reporting capacity</div></div></div>
           </div>
+
+          <div class="panel settings-section" id="security-alerts" data-settings-panel aria-labelledby="security-heading-alerts" hidden>
+            <div class="section-head"><div><h2 id="security-heading-alerts" tabindex="-1">Alerts hub</h2><p>Summary from log alert-events. Manage rules on <a href="/logs">Logs</a> and channels on <a href="/health-checks">Health Checks</a>.</p></div></div>
+            <div class="cards"><div class="stat"><div class="stat-label">Open (24h)</div><div class="stat-value" id="security-alerts-open">—</div></div><div class="stat"><div class="stat-label">Stored events</div><div class="stat-value" id="security-alerts-total">—</div></div></div>
+            <div class="table-wrap"><table id="security-alerts-table"></table></div>
+          </div>
+
+          <div class="panel settings-section" id="security-audit" data-settings-panel aria-labelledby="security-heading-audit" hidden>
+            <div class="section-head"><div><h2 id="security-heading-audit" tabindex="-1">Audit trail</h2><p>Newest controller mutations from <code>GET /api/audit</code>.</p></div></div>
+            <div class="table-wrap"><table id="security-audit-table"></table></div>
+          </div>
+
+          <div class="panel settings-section" id="security-modes" data-settings-panel aria-labelledby="security-heading-modes" hidden>
+            <div class="section-head"><div><h2 id="security-heading-modes" tabindex="-1">Security Modes</h2><p>Policy templates separate from Protection Mode. Dry-run and apply only supported controls (protection, SSH block, delete protection). Firewall CIDR and WAF stay planned.</p></div></div>
+            <div class="row-actions" style="margin-bottom:12px"><button type="button" class="small-btn" id="security-modes-refresh">Refresh</button></div>
+            <div class="table-wrap"><table id="security-modes-table"></table></div>
+            <div class="message" id="security-modes-message" role="status" aria-live="polite"></div>
+            <div class="section-head" style="margin-top:18px"><div><h3>Apply mode</h3><p>Select a policy and one or more VPS IDs (comma-separated).</p></div></div>
+            <div class="form-grid">
+              <label>Policy ID<input id="security-mode-policy" placeholder="tpl-hardened"></label>
+              <label>VPS IDs<input id="security-mode-targets" placeholder="vps-abc123,vps-def456"></label>
+            </div>
+            <div class="row-actions"><button type="button" class="small-btn" id="security-mode-dryrun">Dry-run</button><button type="button" class="primary small-btn" id="security-mode-apply">Apply</button></div>
+            <pre class="code-block" id="security-mode-plan" hidden></pre>
+          </div>
+
+          <div class="panel settings-section" id="security-protection" data-settings-panel aria-labelledby="security-heading-protection" hidden>
+            <div class="section-head"><div><h2 id="security-heading-protection" tabindex="-1">Advanced Protection</h2><p>Feature catalog status (live / partial / planned). Protection Mode stays orthogonal to Security Modes. Use the tabs below for unlock, approvals, and posture tables.</p></div></div>
+            <div class="cards">
+              <div class="stat"><div class="stat-label">Live or RO-satisfied</div><div class="stat-value" id="security-prot-live">—</div></div>
+              <div class="stat"><div class="stat-label">Partial</div><div class="stat-value" id="security-prot-partial">—</div></div>
+              <div class="stat"><div class="stat-label">Planned</div><div class="stat-value" id="security-prot-planned">—</div></div>
+            </div>
+            <div class="section-tabs" data-section-tabs role="tablist" aria-label="Advanced Protection sections">
+              <button type="button" role="tab" data-section-tab="catalog" aria-selected="true" id="prot-tab-catalog" aria-controls="prot-panel-catalog">Catalog</button>
+              <button type="button" role="tab" data-section-tab="actions" aria-selected="false" id="prot-tab-actions" aria-controls="prot-panel-actions">Unlock &amp; quarantine</button>
+              <button type="button" role="tab" data-section-tab="approvals" aria-selected="false" id="prot-tab-approvals" aria-controls="prot-panel-approvals">Approvals</button>
+              <button type="button" role="tab" data-section-tab="filevps" aria-selected="false" id="prot-tab-filevps" aria-controls="prot-panel-filevps">FileVPS</button>
+              <button type="button" role="tab" data-section-tab="network" aria-selected="false" id="prot-tab-network" aria-controls="prot-panel-network">Network</button>
+              <button type="button" role="tab" data-section-tab="worker" aria-selected="false" id="prot-tab-worker" aria-controls="prot-panel-worker">Worker</button>
+              <button type="button" role="tab" data-section-tab="storage" aria-selected="false" id="prot-tab-storage" aria-controls="prot-panel-storage">Storage</button>
+            </div>
+            <div class="section-tab-panels">
+              <div class="section-tab-panel" data-section-panel="catalog" id="prot-panel-catalog" role="tabpanel" aria-labelledby="prot-tab-catalog">
+                <div class="table-wrap"><table id="security-protection-catalog"></table></div>
+              </div>
+              <div class="section-tab-panel" data-section-panel="actions" id="prot-panel-actions" role="tabpanel" aria-labelledby="prot-tab-actions" hidden>
+                <div class="section-head"><div><h3>Temporary unlock</h3><p>Time-boxed clear of Protection Mode or SSH Login Block. Quarantine applies tpl-quarantine and restricts inbound firewall.</p></div></div>
+                <div class="form-grid">
+                  <label>VPS ID<input id="security-unlock-vps" placeholder="vps-…"></label>
+                  <label>Control
+                    <select id="security-unlock-control"><option value="protection_mode">Protection Mode</option><option value="ssh_login_blocked">SSH Login Block</option></select>
+                  </label>
+                  <label>TTL seconds<input id="security-unlock-ttl" type="number" value="3600"></label>
+                </div>
+                <div class="row-actions"><button type="button" class="small-btn" id="security-unlock-btn">Unlock</button><button type="button" class="small-btn" id="security-scheduler-tick">Run scheduler tick</button><button type="button" class="danger small-btn" id="security-quarantine-btn">Quarantine VPS</button></div>
+                <div class="message" id="security-protection-message" role="status"></div>
+              </div>
+              <div class="section-tab-panel" data-section-panel="approvals" id="prot-panel-approvals" role="tabpanel" aria-labelledby="prot-tab-approvals" hidden>
+                <div class="section-head"><div><h3>Approvals</h3><p>Queue for protection-off, mode apply, quarantine, firewall deny, and destructive DB.</p></div></div>
+                <div class="table-wrap"><table id="security-approvals-table"></table></div>
+              </div>
+              <div class="section-tab-panel" data-section-panel="filevps" id="prot-panel-filevps" role="tabpanel" aria-labelledby="prot-tab-filevps" hidden>
+                <div class="section-head"><div><h3>FileVPS posture</h3></div></div>
+                <div class="table-wrap"><table id="security-filevps-posture"></table></div>
+              </div>
+              <div class="section-tab-panel" data-section-panel="network" id="prot-panel-network" role="tabpanel" aria-labelledby="prot-tab-network" hidden>
+                <div class="section-head"><div><h3>Network exposure</h3></div></div>
+                <div class="table-wrap"><table id="security-network-exposure"></table></div>
+              </div>
+              <div class="section-tab-panel" data-section-panel="worker" id="prot-panel-worker" role="tabpanel" aria-labelledby="prot-tab-worker" hidden>
+                <div class="section-head"><div><h3>Worker posture</h3></div></div>
+                <div class="table-wrap"><table id="security-worker-posture"></table></div>
+              </div>
+              <div class="section-tab-panel" data-section-panel="storage" id="prot-panel-storage" role="tabpanel" aria-labelledby="prot-tab-storage" hidden>
+                <div class="section-head"><div><h3>Storage protection</h3></div></div>
+                <div class="table-wrap"><table id="security-storage-protection"></table></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel settings-section" id="security-detections" data-settings-panel aria-labelledby="security-heading-detections" hidden>
+            <div class="section-head"><div><h2 id="security-heading-detections" tabindex="-1">Detection and FIM</h2><p>Signals from log alerts and worker status. FIM baselines store path hashes reported by workers.</p></div></div>
+            <div class="row-actions" style="margin-bottom:12px"><button type="button" class="small-btn" id="security-detections-refresh">Refresh detections</button></div>
+            <div class="table-wrap"><table id="security-detections-table"></table></div>
+            <div class="section-head" style="margin-top:18px"><div><h3>FIM baselines</h3></div></div>
+            <div class="table-wrap"><table id="security-fim-table"></table></div>
+          </div>
+
+          <div class="panel settings-section" id="security-vulns" data-settings-panel aria-labelledby="security-heading-vulns" hidden>
+            <div class="section-head"><div><h2 id="security-heading-vulns" tabindex="-1">Vulnerabilities, Databases, CKS</h2><p>Package CVE feeds are planned. Database and CKS scores use live inventory.</p></div></div>
+            <div class="cards">
+              <div class="stat"><div class="stat-label">Databases score</div><div class="stat-value" id="security-db-score">—</div><div class="stat-note">TLS CA, exposure, encrypted backups</div></div>
+              <div class="stat"><div class="stat-label">CKS score</div><div class="stat-value" id="security-cks-score">—</div><div class="stat-note" id="security-cks-note">CKS Readiness Status</div></div>
+              <div class="stat"><div class="stat-label">Package CVE</div><div class="stat-value" id="security-pkg-status">Planned</div><div class="stat-note">OSV/NVD</div></div>
+            </div>
+            <div class="table-wrap"><table id="security-vuln-findings"></table></div>
+          </div>
+
+          <div class="panel settings-section" id="security-autopilot" data-settings-panel aria-labelledby="security-heading-autopilot" hidden>
+            <div class="section-head"><div><h2 id="security-heading-autopilot" tabindex="-1">AutoPilot, incidents, compliance</h2><p>Monitor / Recommend / Approval / Auto Protect / Emergency Lockdown. Never auto-shutdown production on low-confidence detections.</p></div></div>
+            <div class="cards"><div class="stat"><div class="stat-label">AutoPilot mode</div><div class="stat-value" id="security-autopilot-mode">—</div><div class="stat-note" id="security-autopilot-note"></div></div></div>
+            <label>Mode
+              <select id="security-autopilot-select">
+                <option value="monitor">Monitor Only</option>
+                <option value="recommend">Recommend</option>
+                <option value="approval">Approval Required</option>
+                <option value="auto_protect">Auto Protect</option>
+                <option value="emergency">Emergency Lockdown</option>
+              </select>
+            </label>
+            <label>Emergency expires (ISO)<input id="security-autopilot-expires" placeholder="2026-12-01T00:00:00Z"></label>
+            <div class="row-actions"><button type="button" class="primary small-btn" id="security-autopilot-save">Save AutoPilot</button><a class="small-btn" href="/api/security/compliance?format=export" id="security-compliance-export">Export compliance JSON</a></div>
+            <div class="message" id="security-autopilot-message" role="status"></div>
+            <div class="section-head" style="margin-top:18px"><div><h3>Incidents</h3></div></div>
+            <div class="table-wrap"><table id="security-incidents-table"></table></div>
+            <div class="section-head" style="margin-top:18px"><div><h3>Compliance mapping</h3><p>CIS / ISO / SOC2 control mapping. Not a certification claim.</p></div></div>
+            <div class="table-wrap"><table id="security-compliance-table"></table></div>
+          </div>
+
           <div class="panel settings-section" id="security-vps" data-settings-panel aria-labelledby="security-heading-vps" hidden>
             <div class="section-head"><div><h2 id="security-heading-vps" tabindex="-1">Per-VPS security controls</h2><p>Manage a VPS to change its individual settings. SSH policy changes restart a running VPS.</p></div></div>
             <div class="table-wrap"><table id="security-instances"></table></div>
@@ -26,13 +172,24 @@
             <div class="table-wrap"><table id="security-ports"></table></div>
           </div>
           <div class="settings-section" id="security-guide" data-settings-panel aria-labelledby="security-heading-guide" hidden>
-            <h2 id="security-heading-guide" class="visually-hidden" tabindex="-1">Guide</h2>
+            <div class="section-head"><div><h2 id="security-heading-guide" tabindex="-1">Guide</h2><p>What each Security Center control does. Click a card to open that panel in the left list. Catalog statuses: <code>live</code>, <code>partial</code>, <code>planned</code>, <code>satisfied_by_ro</code>. Full list #1–72 + mgmt is under <a href="#security-protection" data-settings-link aria-controls="security-protection">Advanced Protection</a>.</p></div></div>
             <div class="security-feature-grid">
-              <article class="security-feature"><span class="security-feature-icon">◉</span><div><strong>Protection Mode</strong><p>Mounts the persistent guest root read-only. It does not block running processes or network traffic.</p></div></article>
-              <article class="security-feature"><span class="security-feature-icon">⌁</span><div><strong>SSH Login Block</strong><p>Blocks new SSH connections when enabled. Existing SSH sessions may remain until disconnected.</p></div></article>
-              <article class="security-feature"><span class="security-feature-icon">▣</span><div><strong>VPS Delete Protection</strong><p>Prevents deletion through CloFix APIs and worker operations. Host administrators with direct storage access can still remove data.</p></div></article>
-              <article class="security-feature"><span class="security-feature-icon">⬡</span><div><strong>OWASP CRS WAF</strong><p>Inspects HTTP/HTTPS requests served by this VPS through Nginx. Direct SSH, database ports, and traffic bypassing Nginx are outside its scope.</p></div></article>
-              <article class="security-feature"><span class="security-feature-icon">▣</span><div><strong>Worker and VPS firewall</strong><p>Packet filter for CloFix published ports and DNATed guest ports. Source CIDR allow and deny lives on the <a href="/firewall">Firewall</a> page. It does not replace the HTTP WAF.</p></div></article>
+              <a class="security-feature" href="#security-vps" data-settings-link aria-controls="security-vps"><span class="security-feature-icon">◉</span><div><strong>Protection Mode</strong><p>Mounts the persistent guest root read-only (#1). Satisfies several FileVPS write locks via <code>satisfied_by_ro</code>. Does not stop running processes or filter network. Orthogonal to Security Modes.</p><span class="security-feature-goto">Open VPS controls →</span></div></a>
+              <a class="security-feature" href="#security-vps" data-settings-link aria-controls="security-vps"><span class="security-feature-icon">⌁</span><div><strong>SSH Login Block</strong><p>Blocks new SSH connections (#16). Existing sessions may remain until disconnect. Temporary unlock can clear this for a TTL.</p><span class="security-feature-goto">Open VPS controls →</span></div></a>
+              <a class="security-feature" href="#security-protection/filevps" data-settings-link aria-controls="security-protection"><span class="security-feature-icon">◇</span><div><strong>SSH key-only</strong><p>Disables password authentication (#17). Prefer with an authorized key. Root SSH uses prohibit-password when key-only is on (#19 partial).</p><span class="security-feature-goto">Open FileVPS tab →</span></div></a>
+              <a class="security-feature" href="#security-protection/storage" data-settings-link aria-controls="security-protection"><span class="security-feature-icon">▣</span><div><strong>VPS / volume delete protection</strong><p>VPS flag blocks delete via CloFix APIs and workers. Volume delete protection (#66) blocks volume removal the same way. Host storage admins can still wipe disks.</p><span class="security-feature-goto">Open Storage tab →</span></div></a>
+              <a class="security-feature" href="#security-vps" data-settings-link aria-controls="security-vps"><span class="security-feature-icon">⬡</span><div><strong>OWASP CRS WAF</strong><p>ModSecurity CRS on guest Nginx (#36). SQLi / XSS / RCE / LFI (#37–40) are CRS categories, not separate engines. SSH, DB ports, and traffic that bypasses Nginx are out of scope.</p><span class="security-feature-goto">Open VPS controls →</span></div></a>
+              <a class="security-feature" href="#security-protection/network" data-settings-link aria-controls="security-protection"><span class="security-feature-icon">▤</span><div><strong>Firewall and exposure</strong><p>Inbound CIDR allow/deny on the Firewall page (#26, #20 SSH allowlist). Exposure scanner flags published / custom forwards (#28). Egress filter is planned (#27). Suggest-deny is approval-gated (#30).</p><span class="security-feature-goto">Open Network tab →</span></div></a>
+              <a class="security-feature" href="#security-protection/actions" data-settings-link aria-controls="security-protection"><span class="security-feature-icon">⊗</span><div><strong>Network quarantine</strong><p>Applies tpl-quarantine (Protection + SSH block + delete protection) and restricts inbound firewall (#34). Snapshot saved for rollback. AutoPilot approval mode may require a queue entry first.</p><span class="security-feature-goto">Open Unlock &amp; quarantine tab →</span></div></a>
+              <a class="security-feature" href="#security-modes" data-settings-link aria-controls="security-modes"><span class="security-feature-icon">☰</span><div><strong>Security Modes</strong><p>Policy templates (e.g. tpl-hardened) dry-run / apply supported controls (#100, #106, #110). Separate from Protection Mode. Bindings + scheduler tick re-apply on schedule (#102).</p><span class="security-feature-goto">Open Modes →</span></div></a>
+              <a class="security-feature" href="#security-protection/actions" data-settings-link aria-controls="security-protection"><span class="security-feature-icon">◷</span><div><strong>Temporary unlock</strong><p>Time-boxed clear of Protection Mode or SSH Login Block (#21, #103). Scheduler tick restores expired unlocks and applies due mode bindings.</p><span class="security-feature-goto">Open Unlock &amp; quarantine tab →</span></div></a>
+              <a class="security-feature" href="#security-protection/approvals" data-settings-link aria-controls="security-protection"><span class="security-feature-icon">✓</span><div><strong>Approvals and rollback</strong><p>Queue for protection-off, mode apply, quarantine, firewall deny, destructive DB (#25, #104). Rollback restores the last control snapshot for a VPS (#107).</p><span class="security-feature-goto">Open Approvals tab →</span></div></a>
+              <a class="security-feature" href="#security-score" data-settings-link aria-controls="security-score"><span class="security-feature-icon">◎</span><div><strong>Security score</strong><p>Starts at 100. Subtracts capped deltas for Protection Mode off, missing WAF, inactive workers, lab <code>user_ns=false</code>, and recent log alerts. Findings ledger lists each delta.</p><span class="security-feature-goto">Open Score →</span></div></a>
+              <a class="security-feature" href="#security-detections" data-settings-link aria-controls="security-detections"><span class="security-feature-icon">⌖</span><div><strong>Detection and FIM</strong><p>Log alerts and auth failures surface as detections (#18, #23 partial). FIM baselines store worker path hashes (#6, #15, #54). Refresh does not wipe existing baselines.</p><span class="security-feature-goto">Open Detection →</span></div></a>
+              <a class="security-feature" href="#security-protection/worker" data-settings-link aria-controls="security-protection"><span class="security-feature-icon">⚙</span><div><strong>Worker posture</strong><p>User NS, seccomp, caps, cgroups (#48–57). Drain sets maintenance lock and blocks new placement (#58). AppArmor/SELinux per guest remains planned (#51).</p><span class="security-feature-goto">Open Worker tab →</span></div></a>
+              <a class="security-feature" href="#security-vulns" data-settings-link aria-controls="security-vulns"><span class="security-feature-icon">◫</span><div><strong>Databases and CKS</strong><p>DB score from TLS CA, public exposure, encrypted backups (#60–64). Package CVE feeds planned. CKS score from readiness. Not a certification claim.</p><span class="security-feature-goto">Open Vulns / DB / CKS →</span></div></a>
+              <a class="security-feature" href="#security-autopilot" data-settings-link aria-controls="security-autopilot"><span class="security-feature-icon">▶</span><div><strong>AutoPilot</strong><p>Monitor / Recommend / Approval / Auto Protect / Emergency Lockdown. Never auto-shutdown production on low-confidence detections. Compliance export maps CIS/ISO/SOC2 controls (#111).</p><span class="security-feature-goto">Open AutoPilot →</span></div></a>
+              <a class="security-feature" href="#security-audit" data-settings-link aria-controls="security-audit"><span class="security-feature-icon">⎘</span><div><strong>Audit and alerts</strong><p>Controller mutations in Audit (#108). Open log alert-events feed Score and Alerts; manage rules on Logs and channels on Health Checks (#109).</p><span class="security-feature-goto">Open Audit →</span></div></a>
             </div>
           </div>
         </div>

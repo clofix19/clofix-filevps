@@ -6,6 +6,7 @@
       <a href="#dns-overview" data-settings-link aria-controls="dns-overview" aria-current="location"><strong>Overview</strong><span>Zone and automatic coverage</span></a>
       <a href="#dns-zone" data-settings-link aria-controls="dns-zone"><strong>Zone settings</strong><span>Domain, TTL and auto sources</span></a>
       <a href="#dns-records" data-settings-link aria-controls="dns-records"><strong>Records</strong><span>Automatic and manual names</span></a>
+      <a href="#dns-certificates" data-settings-link aria-controls="dns-certificates"><strong>Certificates</strong><span>ACME TLS for ALB and apps</span></a>
       <a href="#dns-zonefile" data-settings-link aria-controls="dns-zonefile"><strong>Zone file</strong><span>BIND-style export</span></a>
     </nav>
     <div class="settings-content">
@@ -36,25 +37,48 @@
       <div class="panel settings-section" id="dns-records" data-settings-panel aria-labelledby="dns-heading-records" hidden>
         <h2 id="dns-heading-records" tabindex="-1">Records</h2>
         <p>Select a FileVPS, load balancer, CKS cluster, database, app or worker to point a name at that service. CKS Service lists the cluster plus Kubernetes Services and Ingresses. Port lists every mapped HTTP, HTTPS, lab, NodePort and guest port. Port is stored and exported as an SRV record.</p>
-        <form id="dns-record-form">
-          <input id="dns-record-id" type="hidden">
-          <div class="form-grid">
-            <div class="form-field"><label for="dns-record-resource">Target</label><select id="dns-record-resource"><option value="manual">Manual address</option><option value="vps">FileVPS</option><option value="lb">Load balancer</option><option value="cks">CKS cluster</option><option value="db">Database</option><option value="app">Managed app</option><option value="worker">Worker</option></select></div>
-            <div class="form-field"><label for="dns-record-target">Service</label><select id="dns-record-target"></select></div>
-            <div class="form-field"><label for="dns-record-name">Name</label><input id="dns-record-name" maxlength="253" required placeholder="www or host.clofix.internal"></div>
-            <div class="form-field"><label id="dns-record-port-label" for="dns-record-port">Port</label><select id="dns-record-port-map" hidden></select><input id="dns-record-port" type="number" min="0" max="65535" value="0" placeholder="22, 80, 3306"></div>
-            <div class="form-field"><label for="dns-record-type">Type</label><select id="dns-record-type"><option value="A">A</option><option value="AAAA">AAAA</option><option value="CNAME">CNAME</option><option value="TXT">TXT</option></select></div>
-            <div class="form-field"><label for="dns-record-value">Value</label><input id="dns-record-value" maxlength="255"></div>
-            <div class="form-field"><label for="dns-record-ttl">TTL</label><input id="dns-record-ttl" type="number" min="30" max="86400" value="60"></div>
-            <div class="form-field form-span"><label for="dns-record-description">Description · optional</label><input id="dns-record-description" maxlength="160"></div>
-          </div>
-          <div class="row-actions">
-            <button class="primary" id="dns-record-save" type="submit">Add record</button>
-            <button class="secondary" id="dns-record-cancel" type="button" hidden>Cancel</button>
-          </div>
-        </form>
-        <p class="message" id="dns-record-message" role="status" aria-live="polite"></p>
+        <div class="form-block">
+          <form id="dns-record-form">
+            <input id="dns-record-id" type="hidden">
+            <div class="form-grid">
+              <div class="form-field"><label for="dns-record-resource">Target</label><select id="dns-record-resource"><option value="manual">Manual address</option><option value="vps">FileVPS</option><option value="lb">Load balancer</option><option value="cks">CKS cluster</option><option value="db">Database</option><option value="app">Managed app</option><option value="worker">Worker</option></select></div>
+              <div class="form-field"><label for="dns-record-target">Service</label><select id="dns-record-target"></select></div>
+              <div class="form-field"><label for="dns-record-name">Name</label><input id="dns-record-name" maxlength="253" required placeholder="www or host.clofix.internal"></div>
+              <div class="form-field"><label id="dns-record-port-label" for="dns-record-port">Port</label><select id="dns-record-port-map" hidden></select><input id="dns-record-port" type="number" min="0" max="65535" value="0" placeholder="22, 80, 3306"></div>
+              <div class="form-field"><label for="dns-record-type">Type</label><select id="dns-record-type"><option value="A">A</option><option value="AAAA">AAAA</option><option value="CNAME">CNAME</option><option value="TXT">TXT</option></select></div>
+              <div class="form-field"><label for="dns-record-value">Value</label><input id="dns-record-value" maxlength="255"></div>
+              <div class="form-field"><label for="dns-record-ttl">TTL</label><input id="dns-record-ttl" type="number" min="30" max="86400" value="60"></div>
+              <div class="form-field form-span"><label for="dns-record-description">Description · optional</label><input id="dns-record-description" maxlength="160"></div>
+            </div>
+            <div class="form-actions row-actions">
+              <button class="primary" id="dns-record-save" type="submit">Add record</button>
+              <button class="secondary" id="dns-record-cancel" type="button" hidden>Cancel</button>
+            </div>
+          </form>
+          <p class="message" id="dns-record-message" role="status" aria-live="polite"></p>
+        </div>
         <div class="table-wrap"><table id="dns-record-table"></table></div>
+      </div>
+      <div class="panel settings-section" id="dns-certificates" data-settings-panel aria-labelledby="dns-heading-certificates" hidden>
+        <h2 id="dns-heading-certificates" tabindex="-1">Certificates</h2>
+        <p id="dns-cert-note" class="muted">Point the domain A/AAAA at this controller, open TCP 80 for HTTP-01, choose an ALB or managed app, enter the hostname, then request a certificate. New domains are attached to the resource automatically. Set <code>CLOFIX_ACME_EMAIL</code> on the controller. TLS is served on <code>:443</code>.</p>
+        <p class="message" id="dns-cert-status" role="status"></p>
+        <div class="form-block">
+          <form id="dns-cert-form">
+            <div class="form-grid">
+              <div class="form-field"><label for="dns-cert-target">Target</label><select id="dns-cert-target"><option value="alb">ALB · HTTP/HTTPS</option><option value="managed-app">Managed app</option></select></div>
+              <div class="form-field"><label for="dns-cert-resource">Resource</label><select id="dns-cert-resource" required></select></div>
+              <div class="form-field form-span"><label for="dns-cert-domain">Domain</label><input id="dns-cert-domain" list="dns-cert-domain-list" required maxlength="253" placeholder="app.example.com" autocomplete="off"><datalist id="dns-cert-domain-list"></datalist><small class="muted">Pick an existing hostname or type a new one to attach.</small></div>
+            </div>
+            <div class="form-actions row-actions">
+              <button class="primary" id="dns-cert-save" type="submit">Request certificate</button>
+              <a class="secondary" href="/load-balancers">Open load balancers</a>
+              <a class="secondary" href="/services">Open managed apps</a>
+            </div>
+          </form>
+          <p class="message" id="dns-cert-message" role="status" aria-live="polite"></p>
+        </div>
+        <div class="table-wrap"><table id="dns-cert-table" data-inline-actions></table></div>
       </div>
       <div class="panel settings-section" id="dns-zonefile" data-settings-panel aria-labelledby="dns-heading-zonefile" hidden>
         <h2 id="dns-heading-zonefile" tabindex="-1">Zone file</h2>

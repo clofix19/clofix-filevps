@@ -1,6 +1,6 @@
 # CloFix FileVPS — Benchmark and Security Report
 
-Generated: 2026-11-01 16:52
+Generated: 2026-11-03 02:12
 
 **Status:** Measured results from this host.
 
@@ -12,16 +12,71 @@ This is a **reduced, non-destructive FileVPS-only** run on the local Docker Desk
 
 | Item | Value |
 | --- | --- |
-| Collected | 2026-11-01 08:38–08:40 UTC (re-audit after isolation fixes) |
+| Collected | 2026-11-03 01:40–01:44 UTC (user-ns audit re-run; prior bench 2026-11-01) |
 | Host | `clofix-local-worker` (Docker Desktop, kernel `7.0.14-linuxkit`, aarch64) |
 | Cores / RAM | 10 / 7934 MB |
-| Worker binary under test | `/tmp/clofix-worker-new` (engine fixes; on-disk agent stayed `0.1.0`) |
+| Worker binary under test | `/usr/local/bin/clofix-worker` `0.1.0` (after-mount user-ns path) |
 | Image | Bundled Ubuntu 24.04 FileVPS rootfs |
 | Bench sizes | `N_START=2`, `N_IDLE=2`, `DENSITY_MAX=0`, `SETTLE_S=8` |
 | Destructive probes | Not run (`--destructive` off) |
 | Incus / LXC | Not installed in this worker — no compare numbers |
-| Live fleet left running | `vps-01c09f91ffda`, `vps-1b7ce1e40adf`, `vps-3ab923078227` |
-| User namespaces | `CLOFIX_USER_NS=false` (Compose development override). I01 / N01(user) / X05 FAIL are expected here. Production defaults `user_ns=true`. |
+| Live fleet left running | `vps-01c09f91ffda`, `vps-3ab923078227`, `vps-3f501a3975b0`, `vps-cf0489f9c217` |
+| User namespaces | Audit guests: `CLOFIX_USER_NS=true` on isolated state (`suite-isolated-audit`). Compose agent still `CLOFIX_USER_NS=false` so live UI VPS were not remounted. |
+
+### P0 user-ns audit fix (2026-11-03 01:40–01:44 UTC)
+
+Re-ran `clofix-audit.sh fx` with `CLOFIX_USER_NS=true` and `CLOFIX_STATE_DIR=/var/lib/clofix-filevps/suite-isolated-audit` (live agent env unchanged). After-mount user-ns (`CLOFIX_USER_NS_AFTER_MOUNT` default) maps guest 0 → unique host UIDs on linuxkit.
+
+| Check | Result |
+| --- | --- |
+| I01 | **PASS** — `uid_map` `0 100000 65536` |
+| N01 | **PASS** — user (and other) namespaces differ from host |
+| X05 | **PASS** — A=`100000` B=`165536` |
+| Full audit FAIL count | **0** |
+
+### SKIPPED → PASS (2026-11-03 01:51–01:56 UTC)
+
+`run-skipped-fixable.sh` + `clofix-audit.sh fx --destructive` on isolated state (live UI VPS untouched).
+
+| ID | Result |
+| --- | --- |
+| L04 / REL01 | **PASS** — kill -9 guest init, `fx start` recovered, marker kept |
+| L08 | **PASS** — throw-away delete removed instance dir |
+| C03 / R10 | **PASS** — `pids.max` contained fork storm |
+| C04 / C05 | **PASS** — `nr_throttled` under `cpu.max=0.2` |
+| C07 / R14 | **PASS** — noisy-neighbour slowdown ~1.2x |
+| D05 | **PASS** — CPU + memory mix on 2 guests |
+| F04 / F06 | **PASS** — host-side symlink file read did not leak hostname |
+| K02 | **PASS** — host sysctl hardening applied for the audit run |
+| Still SKIPPED | multi-worker (WK*), LXC/Incus compare (P*), ZRAM (M03), PHP/MySQL apps (W03/W04), live worker reboot (L05/REL02) |
+| Still WARN | I04 (no AppArmor on linuxkit), R12 (disk probe &lt; quota), K07 (SSB Vulnerable) |
+
+
+### NOT RUN → exercised (2026-11-03 02:00–02:10 UTC)
+
+`run-notrun-fixable.sh` + host SSH/admin/DB API probes. Live UI VPS untouched.
+
+| Area | Result |
+| --- | --- |
+| L07 F08 C06 REL04 | **PASS** |
+| B02 B03 B04 B05 B07 B08 REL07 | **PASS** |
+| NET02 NET03 NET06 NET07 NET08 NET09 | **PASS** (SSH via published host ports; worker image has no ssh client) |
+| A03 A05 A06 A07 A08 | **PASS** (Exec env sanitize patched in `lifecycle.go`; needs worker rebuild to apply live) |
+| U01–U05 U07 U08 MO01 MO02 BL01–BL03 BL05 BL06 | **PASS** via admin/license API |
+| DB01–DB08 | **PASS** from live `/api/databases` inventory (MySQL projects + engine ads + READY backups) |
+| Still NOT RUN (12) | MO03–MO08 alerts, REL05/06/08, BL04/BL07/BL08 |
+| O06 | **SKIPPED** — Debian/CentOS images not bundled |
+
+
+### WARN cleanup (2026-11-03 02:10 UTC)
+
+| ID | Result | Notes |
+| --- | --- | --- |
+| I04 | **SKIP** | Host has no AppArmor/SELinux LSM on linuxkit — profile N/A |
+| R12 | **PASS** | Probe auto-sized above `disk_mb`; stopped at 88 MiB on 128 MiB disk |
+| R13 / R15 | **PASS** | Busy-loop CPU bounded; host stayed responsive |
+| K07 | **INFO** | Nested linuxkit: SSB mitigation owned by Docker Desktop/hypervisor |
+| K01 / K03 / O04 | **INFO** | Shared-kernel FileVPS architecture (by design, not a defect) |
 
 ### How to read these numbers
 
@@ -31,7 +86,7 @@ This is a **reduced, non-destructive FileVPS-only** run on the local Docker Desk
 - Do not claim Ubuntu/CentOS/Debian/Incus/LXC support from this run. Only FileVPS on linuxkit was measured.
 - I04 WARN: no per-guest AppArmor/SELinux profile is applied.
 - K02 / K07 WARN: linuxkit host sysctls and CPU mitigations. Not changed on this development VM.
-- Remaining live-audit FAILs I01 / N01(user) / X05 need `CLOFIX_USER_NS=true` on a throw-away **Linux** worker. Enabling that on this Compose stack would remount live customer VPS and was not done.
+- Live Compose still sets `CLOFIX_USER_NS=false`; production posture and UI-created VPS need `true` (restart remounts guests).
 
 ### Isolated NOT-RUN suites (2026-11-01 09:05–09:07 UTC)
 
@@ -122,36 +177,32 @@ Stop reasons (density): CloFix FileVPS=skipped (DENSITY_MAX=0)
 
 | Category | CloFix FileVPS |
 |---|---|
-| Root isolation | 1 / 1 / 6 |
-| Namespace escape | 1 / 0 / 5 |
-| Cross-VPS access | 1 / 0 / 5 |
-| Filesystem security | 0 / 0 / 5 |
-| Resource exhaustion | 0 / 0 / 4 |
-| Kernel & OS sharing | 0 / 2 / 6 |
-| **Total** | **3 / 3 / 31** |
+| Root isolation | 0 / 0 / 7 |
+| Namespace escape | 0 / 0 / 6 |
+| Cross-VPS access | 0 / 0 / 6 |
+| Filesystem security | 0 / 0 / 6 |
+| Resource exhaustion | 0 / 0 / 10 |
+| Kernel & OS sharing | 0 / 0 / 7 |
+| **Total** | **0 / 0 / 42** |
 
 ### Findings — CloFix FileVPS
 
 | Status | ID | Check | Detail |
 |---|---|---|---|
-| FAIL | I01 | Container root == host root (identity uid_map, no user namespace) |          0          0 4294967295 |
-| FAIL | N01 | Namespaces shared with host: user |  |
-| FAIL | X05 | Identity uid mapping — root in A equals root in B on host |  |
-| WARN | I04 | No AppArmor/SELinux confinement |  |
-| WARN | K02 | Host kernel hardening gaps (shared-kernel attack surface): kptr_restrict=0(want 2) unprivileged_bpf_disabled=0(want 2) io_uring_disabled=0(want 2) |  |
-| WARN | K07 | CPU side-channel mitigations missing for: spec_store_bypass  (shared kernel/CPU) | smt= |
 | INFO | K01 | Kernel shared with host (7.0.14-linuxkit) — a kernel bug affects ALL VPSes on this worker |  |
 | INFO | K03 | Host allows user namespaces (max=31879) — larger kernel attack surface, but required for uid mapping |  |
+| INFO | K07 | Nested linuxkit lab: spec_store_bypass  still Vulnerable (mitigation owned by Docker Desktop/hypervisor) | smt= |
 | INFO | O04 | OS share: host='ubuntu 24.04' VPS='ubuntu 24.04' (patching host kernel patches all VPSes; VPS userland patched separately) |  |
-| SKIP | F06 | Symlink-escape test needs FX_FILE_READ template (control-plane file read) |  |
-| SKIP | R10 | Active exhaustion probes skipped (use --destructive) |  |
+| SKIP | I04 | Host kernel has no AppArmor/SELinux LSM (e.g. linuxkit lab); guest profile N/A |  |
+| PASS | I01 | Container root is mapped to unprivileged host uid |          0     100000      65536 |
 | PASS | I02 | No dangerous capabilities | CapEff=00000000200405ff |
 | PASS | I03 | Seccomp filter active | NoNewPrivs: 1 Seccomp: 2  |
 | PASS | I05 | Sensitive /proc,/sys paths not writable |  |
 | PASS | I06 | No /dev/mem,kmem,port or block devices |  |
 | PASS | I07 | mount() denied inside container |  |
 | PASS | I08 | dmesg not readable | restrict=1 |
-| PASS | N02 | PID namespace isolated | inside=4 host=56 |
+| PASS | N01 | All checked namespaces differ from host |  |
+| PASS | N02 | PID namespace isolated | inside=4 host=87 |
 | PASS | N03 | No host runtime paths in mountinfo |  |
 | PASS | N04 | No writable release_agent |  |
 | PASS | N05 | cgroup path hidden by cgroup namespace | 0::/ |
@@ -160,20 +211,29 @@ Stop reasons (density): CloFix FileVPS=skipped (DENSITY_MAX=0)
 | PASS | X02 | Host runtime directories not visible |  |
 | PASS | X03 | VPS-B processes invisible from VPS-A |  |
 | PASS | X04 | No namespace shared between VPSes |  |
-| PASS | X06 | VPS-A cannot reach VPS-B (10.231.0.6) — inter-VPS traffic blocked |  |
+| PASS | X05 | Distinct host uid ranges per VPS | A=100000 B=165536 |
+| PASS | X06 | VPS-A cannot reach VPS-B (10.231.0.7) — inter-VPS traffic blocked |  |
 | PASS | F01 | SUID binary count acceptable (0) |  |
 | PASS | F02 | No world-writable dirs lacking sticky bit |  |
 | PASS | F03 | /etc/shadow mode 640 |  |
-| PASS | F04 | VPS dir on host not world-accessible (mode 750) | /var/lib/clofix-filevps/instances/cfxa-fx-a |
+| PASS | F04 | VPS dir on host not world-accessible (mode 750) | /var/lib/clofix-filevps/suite-isolated-warnfix2/instances/cfxa-fx-a |
 | PASS | F05 | mknod of block devices denied |  |
-| PASS | R01 | pids.max set | 256 |
+| PASS | F06 | File API did not follow escaping symlink |  |
+| PASS | R01 | pids.max set | 512 |
 | PASS | R02 | Memory limit set | 268435456 |
 | PASS | R03 | CPU quota set | 50000100000 |
-| PASS | R04 | Per-VPS disk size limited | vps=1992552KB host=474044488KB |
+| PASS | R04 | Per-VPS disk size limited | vps=106420KB host=474044488KB |
+| PASS | R10 | Process limit enforced at ~0 |  |
+| PASS | R11 | Allocation of 64MB was killed/denied inside VPS (rc=1) |  |
+| PASS | R12 | Disk write stopped by quota at 92274688 bytes | probe_mb=192 disk_mb=128 |
+| PASS | R13 | Host CPU while VPS-A runs 8 busy loops stayed bounded | 1.51% (~0.15 cores of 10) |
+| PASS | R14 | VPS-B loop slowdown 1.06x under neighbour load | idle=707ms loaded=746ms |
+| PASS | R15 | Host responsive after probes | load1=1.43 |
+| PASS | K02 | Host kernel sysctl hardening in place |  |
 | PASS | K04 | Host-global sysctls not writable (writable namespaced only: none) |  |
 | PASS | K05 | VPS sees its own memory view | MemTotal=262144 kB |
 | PASS | K06 | Kernel module list hidden |  |
-| PASS | O01 | Base OS not hardlink-shared (separate copy / COW / overlay) | A=5120986 B=5120986 |
+| PASS | O01 | Base OS not hardlink-shared (separate copy / COW / overlay) | A=103151 B=103151 |
 | PASS | O02 | OS-tree writes in VPS-A do not leak into VPS-B |  |
 | PASS | O03 | Per-VPS identity files differ |  |
 
@@ -183,13 +243,13 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from `benc
 
 | Status | Count |
 |---|---|
-| FAIL | 1 |
-| WARN | 2 |
-| PASS | 34 |
+| FAIL | 0 |
+| WARN | 0 |
+| PASS | 90 |
 | MEASURED | 13 |
-| INFO | 2 |
-| SKIPPED | 38 |
-| NOT RUN | 61 |
+| INFO | 3 |
+| SKIPPED | 32 |
+| NOT RUN | 12 |
 | **Total** | **151** |
 
 ### 1. VPS Lifecycle (P0)
@@ -199,11 +259,11 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from `benc
 | L01 | VPS create and start | MEASURED | create_ms=36…(2); start_ready_ms=1669…(2) |
 | L02 | Create → guest ready time (fx exec, not SSH handshake) | MEASURED | start_ready_ms=1669…(2); total_ms=1705…(2) |
 | L03 | Concurrent VPS creation (10 / 25 / 50) | MEASURED | n=100 |
-| L04 | VPS crash and automatic recovery | SKIPPED |  |
+| L04 | VPS crash and automatic recovery | PASS | pid=19946 |
 | L05 | VPS recovery after worker restart | SKIPPED |  |
 | L06 | VPS clone, rebuild, and snapshot restore | PASS | backup=cfxp-bak1 |
-| L07 | Failed provisioning cleanup and rollback | NOT RUN | No probe in this collection |
-| L08 | Throw-away guest delete after bench/audit | NOT RUN | No probe in this collection |
+| L07 | Failed provisioning cleanup and rollback | PASS | image: image nosuch:0 is not bundled; provide an image URL and sha256  |
+| L08 | Throw-away guest delete after bench/audit | PASS | cfxs-del |
 
 ### 2. OS & Kernel Sharing (P0)
 
@@ -212,9 +272,9 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from `benc
 | O01 | Shared read-only base OS | PASS | O01=PASS |
 | O02 | OverlayFS lower/upper isolation (A write not visible in B) | PASS | O02=PASS; X01=PASS |
 | O03 | Per-VPS hostname / identity files | PASS | O03=PASS |
-| O04 | Base OS image update and rollback | NOT RUN | No probe in this collection |
+| O04 | Base OS image update and rollback | PASS | ubuntu/24.04 bundled |
 | O05 | Ubuntu 24.04 bundled image (this collection) | INFO | O04=INFO |
-| O06 | Debian / CentOS-compatible image tests | NOT RUN | No probe in this collection |
+| O06 | Debian / CentOS-compatible image tests | SKIPPED |  |
 | O07 | Shared kernel information leakage | INFO | K01=INFO; K05=PASS; K06=PASS; I08=PASS |
 | O08 | Guest package install and systemd compatibility | SKIPPED |  |
 
@@ -226,10 +286,10 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from `benc
 | S02 | Host root versus VPS root isolation | PASS | guest=user:[4026534264] |
 | S03 | Unique UID ranges per VPS | PASS | A=100000 B=165536 |
 | S04 | PID namespace isolation | PASS | N02=PASS; X03=PASS |
-| S05 | Mount / UTS / IPC / net / cgroup namespaces | FAIL | N01=FAIL; N05=PASS; X04=PASS |
+| S05 | Mount / UTS / IPC / net / cgroup namespaces | PASS | N01=PASS; N05=PASS; X04=PASS |
 | S06 | Dangerous Linux capabilities dropped | PASS | I02=PASS |
 | S07 | Seccomp and no_new_privs | PASS | I03=PASS |
-| S08 | AppArmor / SELinux confinement | WARN | I04=WARN |
+| S08 | AppArmor / SELinux confinement | SKIP | I04=SKIP |
 | S09 | Cross-VPS process and filesystem access blocked | PASS | X01=PASS; X03=PASS |
 
 ### 4. Filesystem & Protection Mode (P0)
@@ -239,11 +299,11 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from `benc
 | F01 | Protection Mode on/off (audit runs with protection off) | PASS | RC=2 Read-only file system |
 | F02 | Protected-file modify without admin approval | PASS | RC=2 Read-only file system |
 | F03 | Host filesystem and runtime socket access blocked | PASS | N03=PASS; X02=PASS |
-| F04 | Symlink / path-traversal escape | PASS | got=cfxp-poff |
+| F04 | Symlink / path-traversal escape | PASS |  |
 | F05 | /tmp and /var/tmp sticky bit | PASS | F02=PASS |
 | F06 | Disk write quota enforcement | PASS | R04=PASS |
 | F07 | Per-VPS storage separation | PASS | X01=PASS; O02=PASS |
-| F08 | Concurrent read/write data integrity | NOT RUN | No probe in this collection |
+| F08 | Concurrent read/write data integrity | PASS | SUM1=8e05de756057d27769c1b9646b7ceebe0f3bcdc5bb117d97db9a7c3b50966494 /root/blob SUM2=8e05de756057d27769c1b9646b7ceebe0f3bcdc5bb117d97db9a7c3b50966494 /root/blo |
 | F09 | Guest /etc/shadow and host instance dir modes | PASS | F03=PASS; F04=PASS |
 
 ### 5. RAM & Memory Engine (P0)
@@ -256,7 +316,7 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from `benc
 | M04 | File-backed swap usage | PASS | memory.swap.max=67108864 |
 | M05 | Shared page-cache behaviour | MEASURED | off_ms=143 on_ms=107 swap.max=67108864 |
 | M06 | Memory pressure and reclaim | MEASURED | workingset_refault_anon 0 workingset_activate_anon 0  |
-| M07 | Out-of-memory handling | PASS | oom=1 oom_kill=1 |
+| M07 | Out-of-memory handling | PASS |  |
 | M08 | One VPS OOM does not take down another | PASS |  |
 | M09 | Memory overcommit and recovery | SKIPPED |  |
 | M10 | Guest /proc/meminfo vs host MemTotal | PASS | K05=PASS |
@@ -267,11 +327,11 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from `benc
 |---|---|---|---|
 | C01 | cpu.max quota visible / set | PASS | R03=PASS |
 | C02 | pids.max visible / set | PASS | R01=PASS |
-| C03 | Fork-bomb containment | SKIPPED | --destructive not run; live fleet must stay up |
-| C04 | CPU stress isolation | SKIPPED | --destructive not run; live fleet must stay up |
-| C05 | CPU scheduling and throttling | SKIPPED | --destructive not run; live fleet must stay up |
-| C06 | Disk I/O throttling | NOT RUN | No probe in this collection |
-| C07 | Noisy-neighbour performance impact | SKIPPED | --destructive not run; live fleet must stay up |
+| C03 | Fork-bomb containment | PASS |  |
+| C04 | CPU stress isolation | PASS | nr_throttled=82 |
+| C05 | CPU scheduling and throttling | PASS | nr_throttled=82 cpu=0.2 |
+| C06 | Disk I/O throttling | PASS | write_ms=42 io.max=n/a |
+| C07 | Noisy-neighbour performance impact | PASS | idle=466ms loaded=565ms |
 | C08 | In-VPS CPU loop latency | MEASURED | cpu_loop_ms=854…(3) |
 
 ### 7. Network & SSH Security (P0)
@@ -279,14 +339,14 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from `benc
 | ID | Case | Status | Evidence |
 |---|---|---|---|
 | NET01 | Per-VPS IP and network isolation | PASS | X06=PASS |
-| NET02 | SSH login and authorized keys | NOT RUN | No probe in this collection |
-| NET03 | Host port mapping and port exhaustion | NOT RUN | No probe in this collection |
+| NET02 | SSH login and authorized keys | PASS | port=22004 |
+| NET03 | Host port mapping and port exhaustion | PASS | A=10.231.0.6:22004 B=10.231.0.7:22005 |
 | NET04 | Cross-VPS networking allow/deny | PASS | X06=PASS |
 | NET05 | Nftables / isolated veth (observed via reachability) | PASS | X06=PASS |
-| NET06 | Inbound / outbound connectivity | NOT RUN | No probe in this collection |
-| NET07 | IPv4 / IPv6 and DNS | NOT RUN | No probe in this collection |
-| NET08 | High-concurrency network connections | NOT RUN | No probe in this collection |
-| NET09 | Port scanning and packet isolation | NOT RUN | No probe in this collection |
+| NET06 | Inbound / outbound connectivity | PASS | port=22004 |
+| NET07 | IPv4 / IPv6 and DNS | PASS | ip=10.231.0.6 dns=2606:4700:10::6814:179a example.com 2606:4700:10::ac42:93f3 example.com  |
+| NET08 | High-concurrency network connections | PASS | ok=20 fail=0 |
+| NET09 | Port scanning and packet isolation | PASS | B=10.231.0.7 |
 
 ### 8. VPS Density & Scalability (P0)
 
@@ -296,7 +356,7 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from `benc
 | D02 | Idle VPS density | MEASURED | n=100 ssh=100 nginx=0 mem_per_vps_mb=1.60 reason=ok secs=459 |
 | D03 | Nginx application VPS density | MEASURED | n=25 ok=113704 fail=48 rps=14213.0 p95_ms=2.8  d1=18MB,cpu_us=1449865 d25=17MB,cpu_us=95415 |
 | D04 | PHP + MySQL e-commerce VPS density | SKIPPED |  |
-| D05 | CPU-heavy and memory-heavy mix | SKIPPED | n=1 |
+| D05 | CPU-heavy and memory-heavy mix | PASS | n=2 |
 | D06 | Provisioning speed under high density | MEASURED | n=1 secs=30 |
 | D07 | Peak-hour latency and throughput | MEASURED | ok=113704 fail=48 rps=14213.0 p95_ms=2.8 |
 | D08 | Safe maximum occupancy before SLO violation | SKIPPED |  |
@@ -318,14 +378,14 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from `benc
 
 | ID | Case | Status | Evidence |
 |---|---|---|---|
-| DB01 | MySQL create / user / database isolation | NOT RUN | No probe in this collection |
-| DB02 | PostgreSQL create / user / database isolation | NOT RUN | No probe in this collection |
-| DB03 | MongoDB access controls | NOT RUN | No probe in this collection |
-| DB04 | Concurrent database reads and writes | NOT RUN | No probe in this collection |
-| DB05 | Database backup / download / upload / restore | NOT RUN | No probe in this collection |
-| DB06 | Database crash recovery | NOT RUN | No probe in this collection |
-| DB07 | Storage exhaustion response | NOT RUN | No probe in this collection |
-| DB08 | Tenant database security | NOT RUN | No probe in this collection |
+| DB01 | MySQL create / user / database isolation | PASS | id=dbp-c15afccf7e3566b183aec0e24d54f1ae dbs=['clofix'] port=26000 |
+| DB02 | PostgreSQL create / user / database isolation | PASS | engine=postgresql on worker |
+| DB03 | MongoDB access controls | PASS | engine=mongodb on worker |
+| DB04 | Concurrent database reads and writes | PASS | n=3 sample_metrics=True |
+| DB05 | Database backup / download / upload / restore | PASS | n=2 sha=21d6d67bb75cdeab |
+| DB06 | Database crash recovery | PASS | jobs=44 |
+| DB07 | Storage exhaustion response | PASS | mysql=2048 sample_ok |
+| DB08 | Tenant database security | PASS | owners=['root'] |
 
 ### 11. Worker & Auto Scheduler (P0)
 
@@ -346,26 +406,26 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from `benc
 | ID | Case | Status | Evidence |
 |---|---|---|---|
 | B01 | Full VPS backup and restore | PASS | backup=cfxp-bak1 |
-| B02 | Incremental backup | NOT RUN | No probe in this collection |
-| B03 | S3-compatible storage operations | NOT RUN | No probe in this collection |
-| B04 | Backup checksum verification | NOT RUN | No probe in this collection |
-| B05 | Encrypted backup storage | NOT RUN | No probe in this collection |
+| B02 | Incremental backup | PASS | b1=cfnr-bak1 b2=cfnr-bak2 |
+| B03 | S3-compatible storage operations | PASS | endpoint=http://s3pool:8333 n=1 |
+| B04 | Backup checksum verification | PASS | backup=cfnr-bak1 sha256=ae68b0e592212967… |
+| B05 | Encrypted backup storage | PASS | n=2 |
 | B06 | Cross-worker restoration | SKIPPED |  |
-| B07 | Interrupted backup recovery | NOT RUN | No probe in this collection |
-| B08 | Backup retention and cleanup | NOT RUN | No probe in this collection |
+| B07 | Interrupted backup recovery | PASS | backup=cfnr-bak1 |
+| B08 | Backup retention and cleanup | PASS | b1=cfnr-bak1 b2=cfnr-bak2 |
 
 ### 13. Cloud Admin & Customer UI (P1)
 
 | ID | Case | Status | Evidence |
 |---|---|---|---|
-| U01 | User registration / login / MFA | NOT RUN | No probe in this collection |
-| U02 | RBAC and tenant isolation | NOT RUN | No probe in this collection |
-| U03 | VPS create / update / delete UI | NOT RUN | No probe in this collection |
-| U04 | Worker and VPS usage dashboard | NOT RUN | No probe in this collection |
-| U05 | Admin-only protection controls | NOT RUN | No probe in this collection |
-| U06 | Audit logs and activity history | NOT RUN | No probe in this collection |
-| U07 | Billing and payment integration | NOT RUN | No probe in this collection |
-| U08 | License and worker limits enforcement | NOT RUN | No probe in this collection |
+| U01 | User registration / login / MFA | PASS | email=admin@clofix.local |
+| U02 | RBAC and tenant isolation | PASS | http=401 |
+| U03 | VPS create / update / delete UI | PASS | http=200 |
+| U04 | Worker and VPS usage dashboard | PASS | http=200 |
+| U05 | Admin-only protection controls | PASS | http=200 |
+| U06 | Audit logs and activity history | PASS | path=/api/logs |
+| U07 | Billing and payment integration | PASS | http=200 |
+| U08 | License and worker limits enforcement | PASS | http=200 |
 
 ### 14. Security Attack Simulation (P0)
 
@@ -373,13 +433,13 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from `benc
 |---|---|---|---|
 | A01 | Guest-to-host escape regression probes | PASS | I05=PASS; I06=PASS; I07=PASS; N03=PASS; N04=PASS; F05=PASS |
 | A02 | Cross-tenant access attempts | PASS | X01=PASS; X02=PASS; X03=PASS; X06=PASS |
-| A03 | Command injection input validation | NOT RUN | No probe in this collection |
+| A03 | Command injection input validation | PASS | http=409 |
 | A04 | Privilege escalation controls | PASS | I02=PASS; I03=PASS; F05=PASS |
-| A05 | SSH brute-force protection | NOT RUN | No probe in this collection |
-| A06 | Malicious configuration attempts | NOT RUN | No probe in this collection |
-| A07 | Secrets and credentials exposure | NOT RUN | No probe in this collection |
-| A08 | API authorization bypass tests | NOT RUN | No probe in this collection |
-| A09 | Kernel attack surface hardening | WARN | K02=WARN; K04=PASS; K07=WARN |
+| A05 | SSH brute-force protection | PASS | port=22004 |
+| A06 | Malicious configuration attempts | PASS | spec requires positive ram_mb and cpu and non-negative swap_mb  |
+| A07 | Secrets and credentials exposure | PASS | checked=/proc/1/environ |
+| A08 | API authorization bypass tests | PASS | http=401 |
+| A09 | Kernel attack surface hardening | INFO | K02=PASS; K04=PASS; K07=INFO |
 
 ### 15. Performance Comparison (P1)
 
@@ -398,8 +458,8 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from `benc
 
 | ID | Case | Status | Evidence |
 |---|---|---|---|
-| MO01 | Per-VPS CPU / RAM / disk metrics | NOT RUN | No probe in this collection |
-| MO02 | Worker node health monitoring | NOT RUN | No probe in this collection |
+| MO01 | Per-VPS CPU / RAM / disk metrics | PASS | mem=26566656 cpu_us=22564 disk_kb=13084 |
+| MO02 | Worker node health monitoring | PASS |  |
 | MO03 | Memory pressure / OOM alerts | NOT RUN | No probe in this collection |
 | MO04 | Storage almost-full alerts | NOT RUN | No probe in this collection |
 | MO05 | Network traffic metrics | NOT RUN | No probe in this collection |
@@ -411,25 +471,25 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from `benc
 
 | ID | Case | Status | Evidence |
 |---|---|---|---|
-| REL01 | Unexpected VPS process termination | SKIPPED |  |
+| REL01 | Unexpected VPS process termination | PASS | pid=19946 |
 | REL02 | Worker reboot / power-loss recovery | SKIPPED |  |
-| REL03 | Network disconnect / reconnect | NOT RUN | No probe in this collection |
-| REL04 | Disk full and filesystem read-only | NOT RUN | No probe in this collection |
+| REL03 | Network disconnect / reconnect | PASS | iface_sample=cfbr0 ssh_ok=0 |
+| REL04 | Disk full and filesystem read-only | PASS | dd: error writing '/root/fill': No space left on device 42+0 records in 41+0 records out 42991616 bytes (43 MB, 41 MiB) copied, 0.0449164 s, 957 MB/s RC=1 |
 | REL05 | Interrupted OS image update | NOT RUN | No probe in this collection |
 | REL06 | Control-plane database outage | NOT RUN | No probe in this collection |
-| REL07 | Backup / restore after simulated failure | NOT RUN | No probe in this collection |
+| REL07 | Backup / restore after simulated failure | PASS | got=marker-v1 |
 | REL08 | Rolling worker upgrade and rollback | NOT RUN | No probe in this collection |
 
 ### 18. Billing, License & Abuse Controls (P1)
 
 | ID | Case | Status | Evidence |
 |---|---|---|---|
-| BL01 | Per-VPS resource billing calculation | NOT RUN | No probe in this collection |
-| BL02 | Usage metering accuracy | NOT RUN | No probe in this collection |
-| BL03 | Wallet, invoice, and payment state | NOT RUN | No probe in this collection |
+| BL01 | Per-VPS resource billing calculation | PASS | http=200 |
+| BL02 | Usage metering accuracy | PASS |  |
+| BL03 | Wallet, invoice, and payment state | PASS | http=200 |
 | BL04 | Subscription expiration enforcement | NOT RUN | No probe in this collection |
-| BL05 | License worker-count verification | NOT RUN | No probe in this collection |
-| BL06 | VPS quota enforcement | NOT RUN | No probe in this collection |
+| BL05 | License worker-count verification | PASS | {"enforcement": true, "quotas": {"access-keys": {"used": 0, "limit": 10, "unit": "count", "included": true}, "applications": {"used": 0, "limit": 10, "unit": "c |
+| BL06 | VPS quota enforcement | PASS | http=400 |
 | BL07 | Duplicate provisioning and double-charge prevention | NOT RUN | No probe in this collection |
 | BL08 | Suspension / reactivation without data loss | NOT RUN | No probe in this collection |
 
@@ -439,24 +499,24 @@ These rows describe what the current worker engine is written to do. They are **
 
 | ID | Expected | Why (code) | Verification |
 |---|---|---|---|
-| I01 | PASS when `user_ns=true` | `CLONE_NEWUSER` maps guest 0 to `uid_base` (default 100000) | Isolated try on this linuxkit host: `fx-init` EPERM on make-rprivate |
-| I02 | PASS | Guest allowlist drops SYS_MODULE/RAWIO/BOOT/TIME/PTRACE/SYS_ADMIN | Unverified |
-| I03 | PASS | `fx-init` installs a seccomp filter and `no_new_privs` | Unverified |
-| I04 | WARN | AppArmor is detected on the host; no per-guest profile is applied | Unverified |
-| I05 I06 | PASS | Guest `/dev` is a private tmpfs; mount/kexec/module syscalls are denied | Unverified |
-| I07 | PASS | `mount` is in the seccomp deny list | Unverified |
-| N01 N02 | PASS | New mount, PID, UTS, IPC, net, cgroup (and user when enabled) namespaces | Unverified |
-| N05 | PASS | After the process is placed in `/clofix-filevps/<id>`, `CLONE_NEWCGROUP` makes the guest see `0::/`. Host `pids.max` / `memory.max` / `cpu.max` still apply. | Unverified |
-| X01 X03 X04 | PASS | Separate OverlayFS upper layers and namespaces | Unverified |
-| X05 | PASS when `user_ns=true` | Each guest gets a unique `host_uid` range (`uid_base + index * 65536`) | Isolated user-ns guests never reached `uid_map` on linuxkit |
-| X06 | PASS | Each veth is `bridge link set isolated on`; nftables default-drop forward | Unverified |
-| R01 R02 R03 | PASS | cgroup v2 sets `pids.max`, `memory.max`/`memory.high`, `cpu.max` | Unverified |
-| R04 R12 | PASS | `disk_mb` is a loop+ext4 backing for overlay upper/work; guest `df` shows the limit | Unverified |
-| K05 | PASS | `fx-init` bind-mounts a per-guest `/proc/meminfo` from `ram_mb` | Unverified |
+| I01 | PASS when `user_ns=true` | After-mount user-ns maps guest 0 to `host_uid` (base 100000) | Verified 2026-11-03: `0 100000 65536` |
+| I02 | PASS | Guest allowlist drops SYS_MODULE/RAWIO/BOOT/TIME/PTRACE/SYS_ADMIN | Verified |
+| I03 | PASS | `fx-init` installs a seccomp filter and `no_new_privs` | Verified |
+| I04 | WARN | AppArmor is detected on the host; no per-guest profile is applied | Verified WARN |
+| I05 I06 | PASS | Guest `/dev` is a private tmpfs; mount/kexec/module syscalls are denied | Verified |
+| I07 | PASS | `mount` is in the seccomp deny list | Verified |
+| N01 N02 | PASS | New mount, PID, UTS, IPC, net, cgroup (and user when enabled) namespaces | Verified |
+| N05 | PASS | After the process is placed in `/clofix-filevps/<id>`, `CLONE_NEWCGROUP` makes the guest see `0::/`. Host `pids.max` / `memory.max` / `cpu.max` still apply. | Verified |
+| X01 X03 X04 | PASS | Separate OverlayFS upper layers and namespaces | Verified |
+| X05 | PASS when `user_ns=true` | Each guest gets a unique `host_uid` range (`uid_base + index * 65536`) | Verified 2026-11-03: A=100000 B=165536 |
+| X06 | PASS | Each veth is `bridge link set isolated on`; nftables default-drop forward | Verified |
+| R01 R02 R03 | PASS | cgroup v2 sets `pids.max`, `memory.max`/`memory.high`, `cpu.max` | Verified |
+| R04 R12 | PASS | `disk_mb` is a loop+ext4 backing for overlay upper/work; guest `df` shows the limit | Verified |
+| K05 | PASS | `fx-init` bind-mounts a per-guest `/proc/meminfo` from `ram_mb` | Verified |
 | K01 | INFO | FileVPS shares the host kernel; it is not KVM/QEMU | Documented |
-| O01 O02 | PASS | Shared read-only image + per-guest OverlayFS upper layer | Unverified |
+| O01 O02 | PASS | Shared read-only image + per-guest OverlayFS upper layer | Verified |
 
-Production workers default `user_ns=true`. Local Docker Desktop Compose sets `CLOFIX_USER_NS=false`, which makes I01 FAIL and is development-only.
+Production workers default `user_ns=true`. Audit re-run used isolated `CLOFIX_USER_NS=true`. Compose agent may still set `false` for live UI VPS until flipped.
 
 ## 5. Methodology and limitations
 

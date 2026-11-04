@@ -85,7 +85,7 @@ func New(cfg config.Config, eng *lifecycle.Engine) (*Agent, error) {
 	agent := &Agent{Database: databases, databaseSlot: make(chan struct{}, 1), databaseEngines: engines, databaseProjects: projects, Kubernetes: kube, kubernetesSlot: make(chan struct{}, 1), Managed: manager,
 		Cfg: cfg, Engine: eng,
 		S3Pool: s3pool.New(cfg),
-		Col:    &capacity.Collector{StateDir: config.StateDir(), HostReserve: uint64(cfg.HostReserveMB) << 20},
+		Col:    &capacity.Collector{StateDir: config.StateDir(), HostReserve: uint64(cfg.HostReserveMB) << 20, UserNS: cfg.UserNS},
 		hc: &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{
 			Certificates: []tls.Certificate{pair}, RootCAs: pool, MinVersion: tls.VersionTLS13}}},
 		seen: map[string]bool{}, ops: make(chan proto.Operation, 64),
@@ -167,6 +167,9 @@ func (a *Agent) capacity() scheduler.Capacity {
 // image pull never blocks heartbeats. The controller being unreachable never stops running instances.
 func (a *Agent) Run(ctx context.Context) {
 	a.S3Pool.Start(ctx)
+	if a.Managed != nil {
+		a.Managed.PrepareMissingInBackground(ctx)
+	}
 	go a.databaseMonitor(ctx)
 	go a.executor(ctx)
 	t := time.NewTicker(time.Duration(a.Cfg.HeartbeatSeconds) * time.Second)

@@ -27,7 +27,7 @@ URLs:
   http://localhost:8080/load-balancers Load balancers (NLB / ALB)
   http://localhost:8080/dns            DNS Service (clofix.internal)
   http://localhost:8080/health-checks  Health checks
-  http://localhost:8080/security       Protection / WAF / ports
+  http://localhost:8080/security       Security Center + Advanced Protection catalog
   http://localhost:8080/firewall       Host + VPS firewall
   http://localhost:8080/workers        Workers
   http://localhost:8080/billing        Billing & Payments

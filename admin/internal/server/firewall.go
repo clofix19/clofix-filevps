@@ -247,11 +247,18 @@ func (s *Server) vpcCIDR(id string) string {
 func instancePortMaps(inst store.Instance) []map[string]any {
 	out := []map[string]any{}
 	if inst.Spec.SSHPort > 0 {
-		out = append(out,
-			map[string]any{"protocol": "tcp", "guest_port": 22, "host_port": inst.Spec.SSHPort, "managed": true},
-			map[string]any{"protocol": "tcp", "guest_port": 80, "host_port": proto.HostHTTPPort(inst.Spec.SSHPort), "managed": true},
-			map[string]any{"protocol": "tcp", "guest_port": 443, "host_port": proto.HostHTTPSPort(inst.Spec.SSHPort), "managed": true},
-		)
+		for _, item := range []struct {
+			guest, host int
+		}{
+			{22, inst.Spec.SSHPort},
+			{80, proto.HostHTTPPort(inst.Spec.SSHPort)},
+			{443, proto.HostHTTPSPort(inst.Spec.SSHPort)},
+		} {
+			if !proto.ManagedPublished(inst.Spec, item.guest) {
+				continue
+			}
+			out = append(out, map[string]any{"protocol": "tcp", "guest_port": item.guest, "host_port": item.host, "managed": true})
+		}
 	}
 	for _, m := range inst.Spec.PortMappings {
 		out = append(out, map[string]any{"protocol": m.Protocol, "guest_port": m.GuestPort, "host_port": m.HostPort, "managed": false})

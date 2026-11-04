@@ -62,6 +62,7 @@ type Server struct {
 	logs              *logStore
 	firewall          *firewallStore
 	efs               *efsStore
+	securityCenter    *securityCenterStore
 
 	placeMu         sync.Mutex
 	failMu          sync.Mutex
@@ -91,7 +92,7 @@ func New(s store.Store, ca *pki.CA, adminToken, uiDir string) *Server {
 	if dataDir == "" {
 		dataDir = "/var/lib/clofix-controller"
 	}
-	server := &Server{license: loadControllerLicense(dataDir), monitoring: loadMonitoring(dataDir), balancers: loadBalancers(dataDir), applications: loadServerless(dataDir), billing: loadBilling(dataDir), dns: loadDNS(dataDir), vpcs: loadVPCs(dataDir), sshKeys: loadSSHKeys(dataDir), logs: loadLogs(dataDir), firewall: loadFirewall(dataDir), efs: loadEFS(dataDir), Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), S3MasterAddress: os.Getenv("CLOFIX_S3_MASTER_ADDRESS"), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}, backups: map[string]proto.BackupInfo{}, certificates: loadCertificates(dataDir), platform: loadPlatform(dataDir), images: loadImageCatalog(dataDir), s3Pool: loadS3PoolSettings(dataDir)}
+	server := &Server{license: loadControllerLicense(dataDir), monitoring: loadMonitoring(dataDir), balancers: loadBalancers(dataDir), applications: loadServerless(dataDir), billing: loadBilling(dataDir), dns: loadDNS(dataDir), vpcs: loadVPCs(dataDir), sshKeys: loadSSHKeys(dataDir), logs: loadLogs(dataDir), firewall: loadFirewall(dataDir), efs: loadEFS(dataDir), securityCenter: loadSecurityCenter(dataDir), Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), S3MasterAddress: os.Getenv("CLOFIX_S3_MASTER_ADDRESS"), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}, backups: map[string]proto.BackupInfo{}, certificates: loadCertificates(dataDir), platform: loadPlatform(dataDir), images: loadImageCatalog(dataDir), s3Pool: loadS3PoolSettings(dataDir)}
 	server.initDatabases(dataDir)
 	server.initKubernetes(dataDir)
 	return server
@@ -127,6 +128,7 @@ func (s *Server) AdminHandler() http.Handler {
 	s.monitoringRoutes(mux)
 	s.logRoutes(mux)
 	s.firewallRoutes(mux)
+	s.securityRoutes(mux)
 	s.efsRoutes(mux)
 	s.loadBalancerRoutes(mux)
 	s.applicationRoutes(mux)
@@ -210,11 +212,15 @@ func (s *Server) AdminHandler() http.Handler {
 	mux.HandleFunc("POST /api/instances/{id}/s3-mount", s.auth(s.mountS3))
 	mux.HandleFunc("DELETE /api/instances/{id}/s3-mount", s.auth(s.unmountS3))
 	mux.HandleFunc("POST /api/instances/{id}/ports", s.auth(s.addPortMapping))
+	mux.HandleFunc("PUT /api/instances/{id}/ports/{hostPort}", s.auth(s.updatePortMapping))
+	mux.HandleFunc("PUT /api/instances/{id}/ports/managed/{guestPort}", s.auth(s.setManagedPortPublish))
+	mux.HandleFunc("DELETE /api/instances/{id}/ports/managed/{guestPort}", s.auth(s.deleteManagedPortPublish))
 	mux.HandleFunc("POST /api/instances/{id}/protection", s.auth(s.setProtectionMode))
 	mux.HandleFunc("POST /api/instances/{id}/ssh-login", s.auth(s.setSSHLoginBlocked))
 	mux.HandleFunc("POST /api/instances/{id}/password", s.auth(s.setInstancePassword))
 	mux.HandleFunc("POST /api/instances/{id}/delete-protection", s.auth(s.setDeleteProtection))
 	mux.HandleFunc("POST /api/instances/{id}/waf", s.auth(s.setWAFCategory))
+	mux.HandleFunc("PUT /api/instances/{id}/waf/error-pages", s.auth(s.setWAFErrorPages))
 	mux.HandleFunc("DELETE /api/instances/{id}/ports/{hostPort}", s.auth(s.deletePortMapping))
 	mux.HandleFunc("GET /api/instances/{id}/logs", s.auth(s.instanceLogs))
 	mux.HandleFunc("GET /api/instances/{id}/waf/logs", s.auth(s.wafErrorLogs))
@@ -241,7 +247,12 @@ var wafCategories = map[string]string{
 	"method": "id:911000-911999", "iprep": "id:910000-910999",
 	"dos": "id:912000-912999", "scanner": "id:913000-913999",
 	"protocol_enforcement": "id:920000-920999", "multipart": "id:922000-922999",
+	"nodejs": "id:934000-934999", "java": "id:944000-944999",
+	"shell": "language-shell", "powershell": "language-powershell",
+	"javascript": "language-javascript", "aspnet": "language-aspnet",
 	"disclosure": "attack-disclosure",
+	"leakage_sql": "id:951000-951999", "leakage_java": "id:952000-952999",
+	"leakage_php": "id:953000-953999", "leakage_iis": "id:954000-954999",
 }
 
 func (s *Server) setWAFCategory(w http.ResponseWriter, r *http.Request) {
@@ -308,6 +319,101 @@ func (s *Server) setWAFCategory(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Store.Audit("admin", "instance.waf."+in.Category, id, fmt.Sprintf("enabled=%t", *in.Enabled))
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "category": in.Category, "enabled": *in.Enabled, "queued": true})
+}
+
+var wafErrorPageStatuses = map[string]bool{"403": true, "404": true, "406": true, "429": true, "500": true}
+
+const maxWAFErrorPageBytes = 65536
+
+func (s *Server) setWAFErrorPages(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !apiInstanceID.MatchString(id) {
+		fail(w, http.StatusBadRequest, "invalid instance id")
+		return
+	}
+	var in struct {
+		Status string `json:"status"`
+		HTML   string `json:"html"`
+		Pages  map[string]string `json:"pages"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxWAFErrorPageBytes+4096)).Decode(&in); err != nil {
+		fail(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	pages := map[string]string{}
+	if len(in.Pages) > 0 {
+		pages = in.Pages
+	} else if in.Status != "" {
+		pages[in.Status] = in.HTML
+	} else {
+		fail(w, http.StatusBadRequest, "status+html or pages map is required")
+		return
+	}
+	for status, html := range pages {
+		if !wafErrorPageStatuses[status] {
+			fail(w, http.StatusBadRequest, "supported statuses: 403, 404, 406, 429, 500")
+			return
+		}
+		if strings.ContainsRune(html, 0) {
+			fail(w, http.StatusBadRequest, "error page HTML cannot contain null bytes")
+			return
+		}
+		if len(html) > maxWAFErrorPageBytes {
+			fail(w, http.StatusBadRequest, "error page HTML must be 64 KB or smaller")
+			return
+		}
+	}
+	s.placeMu.Lock()
+	defer s.placeMu.Unlock()
+	inst, err := s.Store.GetInstance(id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "VPS not found")
+		return
+	}
+	if inst.State != proto.StateRunning {
+		fail(w, http.StatusConflict, "VPS must be running to update WAF error pages")
+		return
+	}
+	if inst.Spec.ProtectionMode == nil || *inst.Spec.ProtectionMode {
+		fail(w, http.StatusConflict, "disable Protection Mode before updating WAF error pages")
+		return
+	}
+	s.usageMu.RLock()
+	wafInstalled := s.serviceInstalls[id]["owasp-waf"] == "INSTALLED"
+	s.usageMu.RUnlock()
+	if !wafInstalled {
+		fail(w, http.StatusConflict, "install OWASP CRS WAF before setting custom error pages")
+		return
+	}
+	if !s.requireLiveWorker(w, inst.WorkerID) {
+		return
+	}
+	previous := inst
+	merged := make(map[string]string, len(inst.Spec.WAFErrorPages)+len(pages))
+	for key, value := range inst.Spec.WAFErrorPages {
+		merged[key] = value
+	}
+	for status, html := range pages {
+		html = strings.TrimSpace(html)
+		if html == "" {
+			delete(merged, status)
+		} else {
+			merged[status] = html
+		}
+	}
+	inst.Spec.WAFErrorPages = merged
+	if err := s.Store.SaveInstance(inst); err != nil {
+		fail(w, http.StatusInternalServerError, "could not save WAF error pages")
+		return
+	}
+	op := proto.Operation{ID: id + "/" + proto.ActionUpdateWAFErrorPages + "/" + randHex(4), Action: proto.ActionUpdateWAFErrorPages, InstanceID: id, Spec: &inst.Spec}
+	if err := s.Store.QueueOp(inst.WorkerID, op); err != nil {
+		_ = s.Store.SaveInstance(previous)
+		fail(w, http.StatusInternalServerError, "could not queue WAF error page update")
+		return
+	}
+	s.Store.Audit("admin", "instance.waf.error_pages", id, "queued")
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "pages": merged, "queued": true})
 }
 
 // uiHandler renders each UI route as a separate HTML document while sharing the
@@ -385,7 +491,7 @@ func uiPage(route string) (page, title, instanceID string, ok bool) {
 	case "/services":
 		return "services", "CloFix Library", "", true
 	case "/security":
-		return "security", "CloFix Security", "", true
+		return "security", "CloFix Security Center", "", true
 	case "/storage/s3":
 		return "storage", "Object Storage", "", true
 	case "/volumes":
@@ -426,6 +532,15 @@ func uiPage(route string) (page, title, instanceID string, ok bool) {
 	return "", "", "", false
 }
 
+func (s *Server) requireLiveWorker(w http.ResponseWriter, workerID string) bool {
+	wk, err := s.Store.GetWorker(workerID)
+	if err != nil || wk.Status != "active" || time.Since(wk.LastHeartbeat) > time.Minute {
+		fail(w, http.StatusServiceUnavailable, "worker is offline or not heartbeating; try again after the worker reconnects to the controller")
+		return false
+	}
+	return true
+}
+
 func (s *Server) setProtectionMode(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !apiInstanceID.MatchString(id) {
@@ -448,6 +563,9 @@ func (s *Server) setProtectionMode(w http.ResponseWriter, r *http.Request) {
 	}
 	if inst.State == proto.StateDeleting {
 		fail(w, http.StatusConflict, "cannot change protection while VPS is deleting")
+		return
+	}
+	if !s.requireLiveWorker(w, inst.WorkerID) {
 		return
 	}
 	wasEnabled := inst.Spec.ProtectionMode == nil || *inst.Spec.ProtectionMode
@@ -535,6 +653,9 @@ func (s *Server) setSSHLoginBlocked(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusConflict, "cannot change SSH login policy while VPS is deleting")
 		return
 	}
+	if !s.requireLiveWorker(w, inst.WorkerID) {
+		return
+	}
 	wasBlocked := inst.Spec.SSHLoginBlocked != nil && *inst.Spec.SSHLoginBlocked
 	if wasBlocked == *in.Enabled {
 		writeJSON(w, http.StatusOK, map[string]any{"id": id, "ssh_login_blocked": wasBlocked, "unchanged": true})
@@ -578,6 +699,9 @@ func (s *Server) setDeleteProtection(w http.ResponseWriter, r *http.Request) {
 	}
 	if inst.State == proto.StateDeleting {
 		fail(w, http.StatusConflict, "cannot change delete protection while VPS is deleting")
+		return
+	}
+	if !s.requireLiveWorker(w, inst.WorkerID) {
 		return
 	}
 	if inst.Spec.DeleteProtection == *in.Enabled {
@@ -821,6 +945,10 @@ func (s *Server) deleteVolume(w http.ResponseWriter, r *http.Request) {
 	v, err := s.Store.GetVolume(id)
 	if err != nil {
 		fail(w, http.StatusNotFound, "volume not found")
+		return
+	}
+	if v.DeleteProtection {
+		fail(w, http.StatusConflict, "volume delete protection is enabled; disable it before deleting")
 		return
 	}
 	if v.InstanceID != "" || v.State == "ATTACHED" || v.State == "ATTACHING" || v.State == "DETACHING" {
@@ -2176,6 +2304,125 @@ func (s *Server) addPortMapping(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "mapping": mapping, "address": fmt.Sprintf("localhost:%d", hostPort)})
 }
 
+func (s *Server) setManagedPortPublish(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&in); err != nil || in.Enabled == nil {
+		fail(w, http.StatusBadRequest, "enabled boolean is required")
+		return
+	}
+	s.writeManagedPortPublish(w, r, *in.Enabled)
+}
+
+func (s *Server) deleteManagedPortPublish(w http.ResponseWriter, r *http.Request) {
+	s.writeManagedPortPublish(w, r, false)
+}
+
+func (s *Server) writeManagedPortPublish(w http.ResponseWriter, r *http.Request, enabled bool) {
+	id := r.PathValue("id")
+	guestPort, err := strconv.Atoi(r.PathValue("guestPort"))
+	if !apiInstanceID.MatchString(id) || err != nil || (guestPort != 22 && guestPort != 80 && guestPort != 443) {
+		fail(w, http.StatusBadRequest, "guestPort must be 22, 80, or 443")
+		return
+	}
+	s.placeMu.Lock()
+	defer s.placeMu.Unlock()
+	inst, err := s.Store.GetInstance(id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "instance not found")
+		return
+	}
+	if inst.Spec.SSHPort <= 0 {
+		fail(w, http.StatusConflict, "instance has no managed host ports assigned")
+		return
+	}
+	if !proto.SetManagedPublished(&inst.Spec, guestPort, enabled) {
+		fail(w, http.StatusBadRequest, "guestPort must be 22, 80, or 443")
+		return
+	}
+	if err := s.savePortMappings(inst, id); err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	action := "instance.port.managed.publish"
+	if !enabled {
+		action = "instance.port.managed.unpublish"
+	}
+	s.Store.Audit("admin", action, id, strconv.Itoa(guestPort))
+	hostPort := inst.Spec.SSHPort
+	switch guestPort {
+	case 80:
+		hostPort = proto.HostHTTPPort(inst.Spec.SSHPort)
+	case 443:
+		hostPort = proto.HostHTTPSPort(inst.Spec.SSHPort)
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"id": id, "guest_port": guestPort, "host_port": hostPort, "published": enabled,
+	})
+}
+
+func (s *Server) updatePortMapping(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		GuestPort int    `json:"guest_port"`
+		Protocol  string `json:"protocol"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&in); err != nil {
+		fail(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	in.Protocol = strings.ToLower(strings.TrimSpace(in.Protocol))
+	id := r.PathValue("id")
+	hostPort, err := strconv.Atoi(r.PathValue("hostPort"))
+	if !apiInstanceID.MatchString(id) || err != nil || hostPort < customHostPortBase || hostPort >= customHostPortBase+customHostPortCount {
+		fail(w, http.StatusBadRequest, "invalid instance or host port")
+		return
+	}
+	if in.GuestPort < 1 || in.GuestPort > 65535 || (in.Protocol != "tcp" && in.Protocol != "udp") {
+		fail(w, http.StatusBadRequest, "protocol must be tcp or udp and guest_port must be between 1 and 65535")
+		return
+	}
+	if in.Protocol == "tcp" && (in.GuestPort == 22 || in.GuestPort == 80 || in.GuestPort == 443) {
+		fail(w, http.StatusConflict, "guest ports 22, 80, and 443 already have standard mappings")
+		return
+	}
+	s.placeMu.Lock()
+	defer s.placeMu.Unlock()
+	inst, err := s.Store.GetInstance(id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "instance not found")
+		return
+	}
+	found := false
+	for i, mapping := range inst.Spec.PortMappings {
+		if mapping.HostPort != hostPort {
+			continue
+		}
+		found = true
+		for j, other := range inst.Spec.PortMappings {
+			if i == j {
+				continue
+			}
+			if other.GuestPort == in.GuestPort && other.Protocol == in.Protocol {
+				fail(w, http.StatusConflict, "this guest port is already mapped")
+				return
+			}
+		}
+		inst.Spec.PortMappings[i] = proto.PortMapping{Protocol: in.Protocol, GuestPort: in.GuestPort, HostPort: hostPort}
+		break
+	}
+	if !found {
+		fail(w, http.StatusNotFound, "port mapping not found")
+		return
+	}
+	if err := s.savePortMappings(inst, id); err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.Store.Audit("admin", "instance.port.update", id, fmt.Sprintf("%s %d:%d", in.Protocol, hostPort, in.GuestPort))
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "mapping": proto.PortMapping{Protocol: in.Protocol, GuestPort: in.GuestPort, HostPort: hostPort}, "address": fmt.Sprintf("localhost:%d", hostPort)})
+}
+
 func (s *Server) deletePortMapping(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	hostPort, err := strconv.Atoi(r.PathValue("hostPort"))
@@ -2812,6 +3059,11 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 				inst.Error = ""
 				_ = s.Store.SaveInstance(inst)
 			}
+		case res.OK && parts[1] == proto.ActionUpdateWAFErrorPages:
+			if strings.HasPrefix(inst.Error, "WAF error page update failed:") {
+				inst.Error = ""
+				_ = s.Store.SaveInstance(inst)
+			}
 		case !res.OK:
 			if parts[1] == proto.ActionServiceControl {
 				inst.Error = "service action failed: " + res.Error
@@ -2823,6 +3075,8 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 				inst.Error = "port mapping update failed: " + res.Error
 			} else if parts[1] == proto.ActionUpdateFirewall {
 				inst.Error = "firewall update failed: " + res.Error
+			} else if parts[1] == proto.ActionUpdateWAFErrorPages {
+				inst.Error = "WAF error page update failed: " + res.Error
 			} else if strings.HasPrefix(parts[1], proto.ActionUpdateWAF+"-") {
 				// The operation ID carries the requested category/value so a failed
 				// guest config reload can restore the last controller-known setting.

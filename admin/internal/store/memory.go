@@ -434,3 +434,34 @@ func (m *MemoryStore) Audit(actor, action, target, result string) error {
 	m.audit = append(m.audit, AuditRec{time.Now(), actor, action, target, result})
 	return nil
 }
+
+func (m *MemoryStore) ListAudit(limit int) ([]AuditEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	n := len(m.audit)
+	if n == 0 {
+		return []AuditEntry{}, nil
+	}
+	if limit > n {
+		limit = n
+	}
+	out := make([]AuditEntry, 0, limit)
+	for i := n - 1; i >= n-limit; i-- {
+		rec := m.audit[i]
+		out = append(out, AuditEntry{
+			ID:     int64(i + 1),
+			At:     rec.TS,
+			Actor:  rec.Actor,
+			Action: rec.Action,
+			Target: rec.Target,
+			Result: rec.Result,
+		})
+	}
+	return out, nil
+}

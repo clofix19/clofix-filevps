@@ -23,7 +23,7 @@
           <article class="stat-card"><span>Ready workers</span><strong id="cks-worker-count">—</strong><small id="cks-worker-note">Checking Kubernetes capability…</small></article>
           <article class="stat-card"><span>Active jobs</span><strong id="cks-job-count">—</strong><small id="cks-job-note">Checking activity…</small></article>
         </div>
-        <div class="panel"><div class="section-head"><h3>Clusters</h3><button class="secondary" id="cks-refresh" type="button">Refresh</button></div><div class="table-wrap"><table id="cks-clusters-table"></table></div></div>
+        <div class="panel"><div class="section-head"><div><h3>Clusters</h3><p class="muted" id="cks-compat-note">Loading compatibility…</p></div><button class="secondary" id="cks-refresh" type="button">Refresh</button></div><div class="table-wrap"><table id="cks-clusters-table"></table></div></div>
         <div class="panel" id="cks-cluster-panel" hidden>
           <div class="section-head"><div><h3 id="cks-cluster-title">Cluster details</h3><p id="cks-cluster-meta" class="muted"></p></div>
             <button class="secondary" id="cks-edit" type="button">Edit cluster</button>
@@ -57,6 +57,7 @@
           <button type="button" role="tab" data-cks-tab="pods" aria-controls="cks-tab-pods" aria-selected="false">Pods</button>
           <button type="button" role="tab" data-cks-tab="deploy" aria-controls="cks-tab-deploy" aria-selected="false">Deployments</button>
           <button type="button" role="tab" data-cks-tab="sts" aria-controls="cks-tab-sts" aria-selected="false">StatefulSets</button>
+          <button type="button" role="tab" data-cks-tab="rs" aria-controls="cks-tab-rs" aria-selected="false">ReplicaSets</button>
           <button type="button" role="tab" data-cks-tab="ds" aria-controls="cks-tab-ds" aria-selected="false">DaemonSets</button>
           <button type="button" role="tab" data-cks-tab="svc" aria-controls="cks-tab-svc" aria-selected="false">Services</button>
           <button type="button" role="tab" data-cks-tab="ing" aria-controls="cks-tab-ing" aria-selected="false">Ingress</button>
@@ -75,6 +76,7 @@
           <div class="cks-resource-panel" id="cks-tab-pods" role="tabpanel" data-cks-panel="pods" hidden><div class="table-wrap"><table id="cks-pods-table"></table></div></div>
           <div class="cks-resource-panel" id="cks-tab-deploy" role="tabpanel" data-cks-panel="deploy" hidden><div class="table-wrap"><table id="cks-deploy-table"></table></div></div>
           <div class="cks-resource-panel" id="cks-tab-sts" role="tabpanel" data-cks-panel="sts" hidden><div class="table-wrap"><table id="cks-sts-table"></table></div></div>
+          <div class="cks-resource-panel" id="cks-tab-rs" role="tabpanel" data-cks-panel="rs" hidden><div class="table-wrap"><table id="cks-rs-table"></table></div></div>
           <div class="cks-resource-panel" id="cks-tab-ds" role="tabpanel" data-cks-panel="ds" hidden><div class="table-wrap"><table id="cks-ds-table"></table></div></div>
           <div class="cks-resource-panel" id="cks-tab-svc" role="tabpanel" data-cks-panel="svc" hidden><div class="table-wrap"><table id="cks-svc-table"></table></div></div>
           <div class="cks-resource-panel" id="cks-tab-ing" role="tabpanel" data-cks-panel="ing" hidden><div class="table-wrap"><table id="cks-ing-table"></table></div></div>
@@ -162,6 +164,9 @@
       <div class="form-field"><label>RAM per VPS (MB)<input id="cks-pool-ram" type="number" min="1024" value="2048" required></label></div>
       <div class="form-field"><label>Disk per VPS (MB)<input id="cks-pool-disk" type="number" min="5120" value="10240" required></label></div>
       <div class="form-field"><label>Worker<select id="cks-pool-worker"></select></label></div>
+      <label class="form-span"><input id="cks-pool-autoscaling" type="checkbox"> Enable pool autoscaling</label>
+      <div class="form-field"><label>Min nodes<input id="cks-pool-min" type="number" min="0" max="64" value="1"></label></div>
+      <div class="form-field"><label>Max nodes<input id="cks-pool-max" type="number" min="1" max="64" value="3"></label></div>
     </div>
     <p class="muted" id="cks-pool-hint">Each VPS in the group is a CKS node. Pods and Services schedule onto these nodes.</p>
     <button class="primary" id="cks-pool-save" type="submit">Create VPS group</button>

@@ -91,7 +91,9 @@ func ensureBridge() error {
 }
 
 // Setup attaches a veth pair, assigns the private address and installs service port mappings.
-func (m *Manager) Setup(id string, pid int, address string, sshPort int, mappings []proto.PortMapping) error {
+func (m *Manager) Setup(id string, pid int, spec proto.InstanceSpec) error {
+	address := spec.IPAddress
+	sshPort := spec.SSHPort
 	parsed := net.ParseIP(address).To4()
 	_, network, _ := net.ParseCIDR(subnet)
 	if parsed == nil || !network.Contains(parsed) || parsed[3] < 2 || !proto.ValidHostSSHPort(sshPort) || pid <= 0 {
@@ -131,14 +133,15 @@ func (m *Manager) Setup(id string, pid int, address string, sshPort int, mapping
 			return err
 		}
 	}
-	if err := m.SyncPorts(id, address, sshPort, mappings); err != nil {
+	if err := m.SyncPorts(id, address, sshPort, spec); err != nil {
 		return err
 	}
 	cleanupLink = false
 	return nil
 }
 
-func (m *Manager) SyncPorts(id, address string, sshPort int, mappings []proto.PortMapping) error {
+func (m *Manager) SyncPorts(id, address string, sshPort int, spec proto.InstanceSpec) error {
+	mappings := spec.PortMappings
 	for _, mapping := range mappings {
 		protocol := strings.ToLower(mapping.Protocol)
 		if (protocol != "tcp" && protocol != "udp") || !proto.ValidHostCustomPort(mapping.HostPort) || mapping.GuestPort < 1 || mapping.GuestPort > 65535 {
@@ -159,6 +162,9 @@ func (m *Manager) SyncPorts(id, address string, sshPort int, mappings []proto.Po
 		{"tcp", proto.HostHTTPPort(sshPort), 80},
 		{"tcp", proto.HostHTTPSPort(sshPort), 443},
 	} {
+		if !proto.ManagedPublished(spec, mapping.guest) {
+			continue
+		}
 		if err := add(mapping.protocol, mapping.host, mapping.guest); err != nil {
 			return err
 		}

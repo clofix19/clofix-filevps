@@ -651,10 +651,17 @@ func (s *Server) pricingView() map[string]any {
 	}
 }
 func (g billingGateway) public() map[string]any {
+	providers := []map[string]any{}
+	for _, id := range []string{"bkash", "nagad", "sslcommerz", "stripe"} {
+		label := map[string]string{"bkash": "bKash", "nagad": "Nagad", "sslcommerz": "SSLCOMMERZ", "stripe": "Stripe"}[id]
+		providers = append(providers, map[string]any{
+			"id": id, "label": label, "selected": g.Provider == id, "active": g.Enabled && g.Provider == id,
+		})
+	}
 	return map[string]any{
 		"provider": g.Provider, "publishable_key": g.PublishableKey, "secret_configured": g.Secret != "",
-		"enabled": g.Enabled, "charges_processed": false,
-		"note": "Gateway credentials are stored on the controller. Card charges are not processed in this version.",
+		"enabled": g.Enabled, "charges_processed": false, "providers": providers,
+		"note": "Gateway credentials are stored on the controller. Enable one provider under Settings → Payment Gateway, then checkout from Billing → Payments.",
 	}
 }
 

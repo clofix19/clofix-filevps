@@ -49,12 +49,14 @@ prepare_prometheus_archive() {
   CLOFIX_PROMETHEUS_VERSION=$version
 }
 prepare_loki_archive() {
+  if [ -n "${CLOFIX_LOKI_ARCHIVE:-}" ] && [ -f "$CLOFIX_LOKI_ARCHIVE" ]; then return 0; fi
   version=${CLOFIX_LOKI_VERSION:-3.2.1}
   archive=$(mktemp)
   fetch "$archive" "https://github.com/grafana/loki/releases/download/v${version}/loki-linux-${BINARCH}.zip" || { rm -f "$archive"; return 1; }
   CLOFIX_LOKI_ARCHIVE=$archive
 }
 prepare_jaeger_archive() {
+  if [ -n "${CLOFIX_JAEGER_ARCHIVE:-}" ] && [ -f "$CLOFIX_JAEGER_ARCHIVE" ]; then return 0; fi
   version=${CLOFIX_JAEGER_VERSION:-1.62.0}
   archive=$(mktemp)
   base="jaeger-${version}-linux-${BINARCH}"
@@ -63,6 +65,7 @@ prepare_jaeger_archive() {
   CLOFIX_JAEGER_VERSION=$version
 }
 prepare_otel_archive() {
+  if [ -n "${CLOFIX_OTEL_ARCHIVE:-}" ] && [ -f "$CLOFIX_OTEL_ARCHIVE" ]; then return 0; fi
   version=${CLOFIX_OTELCOL_VERSION:-0.114.0}
   archive=$(mktemp)
   base="otelcol-contrib_${version}_linux_${OTELARCH}"
@@ -293,10 +296,17 @@ START
       ;;
     loki)
       test -f "$CLOFIX_LOKI_ARCHIVE"
-      python3 - "$CLOFIX_LOKI_ARCHIVE" "$staging/app" <<'PY'
+      if command -v unzip >/dev/null 2>&1; then
+        unzip -qo "$CLOFIX_LOKI_ARCHIVE" -d "$staging/app"
+      elif command -v python3 >/dev/null 2>&1; then
+        python3 - "$CLOFIX_LOKI_ARCHIVE" "$staging/app" <<'PY'
 import sys, zipfile
 zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])
 PY
+      else
+        echo 'Install unzip or python3 to extract the Loki archive.' >&2
+        exit 1
+      fi
       rm -f "$CLOFIX_LOKI_ARCHIVE"
       if [ -f "$staging/app/loki-linux-${BINARCH}" ]; then mv "$staging/app/loki-linux-${BINARCH}" "$staging/app/loki"; fi
       chmod 0755 "$staging/app/loki"

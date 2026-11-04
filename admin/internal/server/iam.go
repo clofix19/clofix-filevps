@@ -100,7 +100,7 @@ func permissionResource(path string) string {
 		return "license"
 	case strings.HasPrefix(path, "/api/logs"):
 		return "logs"
-	case strings.HasPrefix(path, "/api/firewall"):
+	case strings.HasPrefix(path, "/api/firewall"), strings.HasPrefix(path, "/api/security"), path == "/api/audit":
 		return "security"
 	case strings.HasPrefix(path, "/api/monitoring"):
 		return "health-checks"

@@ -3,18 +3,23 @@
   <div class="section-head">
     <div><p class="eyebrow">Accounts</p><h2>Users</h2><p id="users-lead">Create and review the accounts this login can manage.</p></div>
   </div>
-  <div class="cards" id="users-stats">
-    <div class="stat"><div class="stat-label">Accounts</div><div class="stat-value" id="users-count">—</div><div class="stat-note" id="users-count-note">Visible to this login</div></div>
+  <div class="cards database-stats" id="users-stats">
+    <article class="stat-card"><span>Partners</span><strong id="users-partner-count">—</strong><small id="users-partner-note">Partner accounts</small></article>
+    <article class="stat-card"><span>Clients</span><strong id="users-client-count">—</strong><small id="users-client-note">Root client accounts</small></article>
+    <article class="stat-card"><span>Admins</span><strong id="users-admin-count">—</strong><small id="users-admin-note">Platform admin accounts</small></article>
+    <article class="stat-card"><span>Total</span><strong id="users-count">—</strong><small id="users-count-note">Visible to this login</small></article>
   </div>
   <div class="panel" id="users-create-panel">
     <div class="section-head"><div><h2 id="users-create-title">Create account</h2><p id="users-create-help">Admin creates partners. Admin or partner creates root clients.</p></div></div>
-    <div class="form-grid">
-      <div class="form-field"><label for="users-kind">Type</label><select id="users-kind"><option value="partner">Partner</option><option value="client">Root client</option></select></div>
-      <div class="form-field"><label for="users-name">Account name</label><input id="users-name" maxlength="80" placeholder="Northwind"></div>
-      <div class="form-field"><label for="users-email">Email</label><input id="users-email" type="email" autocomplete="off"></div>
-      <div class="form-field"><label for="users-password">Password</label><input id="users-password" type="password" minlength="12" autocomplete="new-password"></div>
+    <div class="form-block" style="border-bottom:0;padding-bottom:0;margin-bottom:0">
+      <div class="form-grid">
+        <div class="form-field"><label for="users-kind">Type</label><select id="users-kind"><option value="partner">Partner</option><option value="client">Root client</option></select></div>
+        <div class="form-field"><label for="users-name">Account name</label><input id="users-name" maxlength="80" placeholder="Northwind"></div>
+        <div class="form-field"><label for="users-email">Email</label><input id="users-email" type="email" autocomplete="off"></div>
+        <div class="form-field"><label for="users-password">Password</label><input id="users-password" type="password" minlength="12" autocomplete="new-password"></div>
+      </div>
+      <div class="form-actions inline-fields"><button class="primary" id="users-create" type="button">Create</button><span class="message" id="users-create-message" role="status"></span></div>
     </div>
-    <div class="inline-fields"><button class="primary" id="users-create" type="button">Create</button><span class="message" id="users-create-message" role="status"></span></div>
   </div>
   <div class="panel">
     <div class="section-head"><div><h2>Directory</h2><p>Partners, clients, and the signed-in platform account.</p></div><button class="secondary" id="users-refresh" type="button">Refresh</button></div>

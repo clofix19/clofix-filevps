@@ -75,7 +75,7 @@ func Enroll(controllerURL, caFile, token string, cfg config.Config) (config.Conf
 	if err != nil {
 		return cfg, err
 	}
-	col := &capacity.Collector{StateDir: config.StateDir(), HostReserve: uint64(cfg.HostReserveMB) << 20}
+	col := &capacity.Collector{StateDir: config.StateDir(), HostReserve: uint64(cfg.HostReserveMB) << 20, UserNS: cfg.UserNS}
 	body, _ := json.Marshal(proto.EnrollRequest{
 		Token: token, Hostname: host, Version: Version,
 		CSRPEM:   string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER})),

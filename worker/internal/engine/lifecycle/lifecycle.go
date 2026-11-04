@@ -4,6 +4,7 @@ package lifecycle
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,7 +38,12 @@ var wafTagByCategory = map[string]string{
 	"method": "id:911000-911999", "iprep": "id:910000-910999",
 	"dos": "id:912000-912999", "scanner": "id:913000-913999",
 	"protocol_enforcement": "id:920000-920999", "multipart": "id:922000-922999",
+	"nodejs": "id:934000-934999", "java": "id:944000-944999",
+	"shell": "language-shell", "powershell": "language-powershell",
+	"javascript": "language-javascript", "aspnet": "language-aspnet",
 	"disclosure": "attack-disclosure",
+	"leakage_sql": "id:951000-951999", "leakage_java": "id:952000-952999",
+	"leakage_php": "id:953000-953999", "leakage_iis": "id:954000-954999",
 }
 
 type Meta struct {
@@ -872,7 +878,7 @@ func (e *Engine) Start(id string) error {
 			return fail(fmt.Errorf("init exited before network setup (%v); see %s", werr, filepath.Join(e.LogDir, "instances", id+".log")))
 		case <-time.After(100 * time.Millisecond):
 		}
-		if err := e.Network.Setup(id, cmd.Process.Pid, m.Spec.IPAddress, m.Spec.SSHPort, m.Spec.PortMappings); err != nil {
+		if err := e.Network.Setup(id, cmd.Process.Pid, m.Spec); err != nil {
 			e.CG.Kill(id)
 			<-done
 			e.CG.Remove(id)
@@ -1002,6 +1008,11 @@ func (e *Engine) Apply(op proto.Operation) error {
 			}
 		}
 		return e.setRootPassword(op.InstanceID, op.RootPassword)
+	case proto.ActionUpdatePasswordAuth:
+		if op.Spec == nil {
+			return errors.New("password auth update requires instance spec")
+		}
+		return e.updatePasswordAuth(op.InstanceID, op.Spec.PasswordAuth)
 	case proto.ActionStart:
 		return e.Start(op.InstanceID)
 	case proto.ActionStop:
@@ -1020,7 +1031,7 @@ func (e *Engine) Apply(op proto.Operation) error {
 		if op.Spec == nil {
 			return errors.New("port update requires instance spec")
 		}
-		return e.UpdatePorts(op.InstanceID, op.Spec.PortMappings)
+		return e.UpdatePorts(op.InstanceID, *op.Spec)
 	case proto.ActionUpdateFirewall:
 		if op.Firewall == nil {
 			return errors.New("firewall update requires spec")
@@ -1066,6 +1077,11 @@ func (e *Engine) Apply(op proto.Operation) error {
 		return e.UpdateDeleteProtection(op.InstanceID, op.Spec.DeleteProtection)
 	case proto.ActionUpdateWAF:
 		return e.UpdateWAFCategory(op.InstanceID, op.WAFCategory, op.WAFEnabled)
+	case proto.ActionUpdateWAFErrorPages:
+		if op.Spec == nil {
+			return errors.New("WAF error page update requires instance spec")
+		}
+		return e.UpdateWAFErrorPages(op.InstanceID, op.Spec.WAFErrorPages)
 	case proto.ActionUpdateS3Mount:
 		if op.UnmountS3 {
 			return e.UpdateS3Mount(op.InstanceID, nil)
@@ -1620,7 +1636,7 @@ func (e *Engine) InstallService(id, serviceID string) error {
 		}
 	}
 	if serviceID == "owasp-waf" {
-		if err = e.configureNginxWAF(id, m.Pid, m.Spec.OWASPProtection); err != nil {
+		if err = e.configureNginxWAFWithPages(id, m.Pid, m.Spec.OWASPProtection, m.Spec.WAFErrorPages); err != nil {
 			e.mu.Lock()
 			setInstallState(m, serviceID, "FAILED")
 			e.mu.Unlock()
@@ -1782,7 +1798,9 @@ func (e *Engine) UninstallWAF(id, serviceID string) error {
 	e.mu.Unlock()
 	defer func() { e.mu.Lock(); _ = e.save(m); e.mu.Unlock() }()
 	script := "set -eu; " +
-		"rm -f /etc/nginx/conf.d/clofix-modsecurity.conf /etc/nginx/modsecurity_includes.conf /etc/nginx/clofix-modsecurity-overrides.conf; " +
+		"rm -f /etc/nginx/conf.d/clofix-modsecurity.conf /etc/nginx/modsecurity_includes.conf /etc/nginx/clofix-modsecurity-overrides.conf /etc/nginx/conf.d/clofix-waf-error-pages.conf /etc/nginx/snippets/clofix-waf-error-pages.conf; " +
+		"rm -f /var/www/html/clofix-waf-*.html; " +
+		"for f in /etc/nginx/sites-enabled/*; do [ -f \"$f\" ] || continue; sed -i '/snippets\\/clofix-waf-error-pages.conf/d' \"$f\"; done; " +
 		"apt-get -y purge modsecurity-crs libnginx-mod-http-modsecurity; " +
 		"if [ -f /etc/modsecurity/modsecurity.conf ]; then " +
 		"sed -i 's/^[[:space:]]*SecRuleEngine.*/SecRuleEngine DetectionOnly/' /etc/modsecurity/modsecurity.conf; " +
@@ -1821,7 +1839,92 @@ func wafOverrides(policy map[string]bool) string {
 
 func guestSingleQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 
+var wafErrorPageStatuses = []string{"403", "404", "406", "429", "500"}
+
+func defaultWAFErrorPage(status string) string {
+	titles := map[string]string{
+		"403": "Request blocked",
+		"404": "Page not found",
+		"406": "Not acceptable",
+		"429": "Too many requests",
+		"500": "Server error",
+	}
+	messages := map[string]string{
+		"403": "This request was blocked by the web application firewall protecting this site.",
+		"404": "The page you requested could not be found.",
+		"406": "The server cannot produce a response matching the request.",
+		"429": "Too many requests were sent in a short time. Please try again later.",
+		"500": "The server encountered an error while handling this request.",
+	}
+	title := titles[status]
+	if title == "" {
+		title = "Error " + status
+	}
+	msg := messages[status]
+	if msg == "" {
+		msg = "An error occurred while processing this request."
+	}
+	return "<!DOCTYPE html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
+		"<title>" + status + " · " + title + "</title><style>" +
+		":root{color-scheme:light dark}body{margin:0;min-height:100vh;display:grid;place-items:center;" +
+		"font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;background:#0b1218;color:#e8eef4}" +
+		"main{max-width:34rem;padding:2rem 1.5rem;text-align:center}code{font-size:.85em;color:#87dcd1}" +
+		"h1{margin:.35rem 0 .65rem;font-size:1.45rem;letter-spacing:-.02em}p{margin:0;color:#9aabbd;line-height:1.55}" +
+		"</style></head><body><main><p><code>" + status + "</code></p><h1>" + title + "</h1><p>" + msg + "</p></main></body></html>\n"
+}
+
+func resolveWAFErrorPages(pages map[string]string) map[string]string {
+	out := make(map[string]string, len(wafErrorPageStatuses))
+	for _, status := range wafErrorPageStatuses {
+		html := strings.TrimSpace(pages[status])
+		if html == "" {
+			html = defaultWAFErrorPage(status)
+		}
+		out[status] = html
+	}
+	return out
+}
+
+func wafErrorPagesNginxConf(pages map[string]string) string {
+	_ = resolveWAFErrorPages(pages)
+	var out strings.Builder
+	out.WriteString("# Managed by CloFix · custom WAF / Nginx error pages (server context)\n")
+	for _, status := range wafErrorPageStatuses {
+		fmt.Fprintf(&out, "error_page %s /clofix-waf-%s.html;\n", status, status)
+	}
+	for _, status := range wafErrorPageStatuses {
+		fmt.Fprintf(&out, "location = /clofix-waf-%s.html {\n  root /var/www/html;\n  internal;\n  default_type text/html;\n  charset utf-8;\n  access_log off;\n}\n", status)
+	}
+	return out.String()
+}
+
+func wafErrorPagesInstallScript(pages map[string]string) string {
+	resolved := resolveWAFErrorPages(pages)
+	var b strings.Builder
+	// conf.d is included in the http{} context on Debian/Ubuntu Nginx, where
+	// location is invalid. Keep the snippet under /etc/nginx/snippets and
+	// include it from each sites-enabled server block.
+	b.WriteString("mkdir -p /var/www/html /etc/nginx/snippets; ")
+	b.WriteString("rm -f /etc/nginx/conf.d/clofix-waf-error-pages.conf; ")
+	for _, status := range wafErrorPageStatuses {
+		encoded := base64.StdEncoding.EncodeToString([]byte(resolved[status]))
+		fmt.Fprintf(&b, "printf %%s %s | base64 -d > /var/www/html/clofix-waf-%s.html; ", guestSingleQuote(encoded), status)
+	}
+	fmt.Fprintf(&b, "printf %%s %s > /etc/nginx/snippets/clofix-waf-error-pages.conf; ", guestSingleQuote(wafErrorPagesNginxConf(pages)))
+	b.WriteString(`for f in /etc/nginx/sites-enabled/*; do ` +
+		`[ -f "$f" ] || continue; ` +
+		`if ! grep -q 'snippets/clofix-waf-error-pages.conf' "$f"; then ` +
+		`sed -i '0,/server[[:space:]]*{/s||&\n\tinclude /etc/nginx/snippets/clofix-waf-error-pages.conf;|' "$f"; ` +
+		`fi; ` +
+		`done; `)
+	return b.String()
+}
+
 func (e *Engine) configureNginxWAF(id string, pid int, policy map[string]bool) error {
+	return e.configureNginxWAFWithPages(id, pid, policy, nil)
+}
+
+func (e *Engine) configureNginxWAFWithPages(id string, pid int, policy map[string]bool, pages map[string]string) error {
 	includes := "include modsecurity.conf\n" +
 		"include /etc/modsecurity/crs/crs-setup.conf\n" +
 		"include /etc/modsecurity/crs/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf\n" +
@@ -1839,6 +1942,7 @@ func (e *Engine) configureNginxWAF(id string, pid int, policy map[string]bool) e
 		"printf %s " + guestSingleQuote(includes) + " > /etc/nginx/modsecurity_includes.conf; " +
 		"printf %s " + guestSingleQuote(wafOverrides(policy)) + " > /etc/nginx/clofix-modsecurity-overrides.conf; " +
 		"printf %s " + guestSingleQuote("modsecurity on;\nmodsecurity_rules_file /etc/nginx/modsecurity_includes.conf;\n") + " > /etc/nginx/conf.d/clofix-modsecurity.conf; " +
+		wafErrorPagesInstallScript(pages) +
 		"nginx -t && (service nginx reload || service nginx restart)"
 	return e.guestShell(id, pid, script)
 }
@@ -1870,15 +1974,53 @@ func (e *Engine) UpdateWAFCategory(id, category string, enabled bool) error {
 		policy[key] = value
 	}
 	policy[category] = enabled
-	if err := e.configureNginxWAF(id, m.Pid, policy); err != nil {
-		_ = e.configureNginxWAF(id, m.Pid, previous)
+	if err := e.configureNginxWAFWithPages(id, m.Pid, policy, m.Spec.WAFErrorPages); err != nil {
+		_ = e.configureNginxWAFWithPages(id, m.Pid, previous, m.Spec.WAFErrorPages)
 		return err
 	}
 	m.Spec.OWASPProtection = policy
 	if err := e.save(m); err != nil {
 		m.Spec.OWASPProtection = previous
-		_ = e.configureNginxWAF(id, m.Pid, previous)
+		_ = e.configureNginxWAFWithPages(id, m.Pid, previous, m.Spec.WAFErrorPages)
 		return fmt.Errorf("save WAF category policy: %w", err)
+	}
+	return nil
+}
+
+func (e *Engine) UpdateWAFErrorPages(id string, pages map[string]string) error {
+	m, err := e.get(id)
+	if err != nil {
+		return err
+	}
+	if m.ServiceInstalls["owasp-waf"] != "INSTALLED" {
+		return errors.New("install OWASP CRS WAF before setting custom error pages")
+	}
+	if protectionEnabled(m.Spec) {
+		return errors.New("disable Protection Mode before updating WAF error pages")
+	}
+	if !e.CG.Alive(id) || m.Pid <= 0 {
+		return errors.New("VPS must be running to update WAF error pages")
+	}
+	previous := make(map[string]string, len(m.Spec.WAFErrorPages))
+	for key, value := range m.Spec.WAFErrorPages {
+		previous[key] = value
+	}
+	cleaned := make(map[string]string, len(wafErrorPageStatuses))
+	for _, status := range wafErrorPageStatuses {
+		if html := strings.TrimSpace(pages[status]); html != "" {
+			cleaned[status] = html
+		}
+	}
+	script := "set -eu; " + wafErrorPagesInstallScript(cleaned) + "nginx -t && (service nginx reload || service nginx restart)"
+	if err := e.guestShell(id, m.Pid, script); err != nil {
+		_ = e.guestShell(id, m.Pid, "set -eu; "+wafErrorPagesInstallScript(previous)+"nginx -t && (service nginx reload || service nginx restart)")
+		return err
+	}
+	m.Spec.WAFErrorPages = cleaned
+	if err := e.save(m); err != nil {
+		m.Spec.WAFErrorPages = previous
+		_ = e.guestShell(id, m.Pid, "set -eu; "+wafErrorPagesInstallScript(previous)+"nginx -t && (service nginx reload || service nginx restart)")
+		return fmt.Errorf("save WAF error pages: %w", err)
 	}
 	return nil
 }
@@ -1948,6 +2090,13 @@ func (e *Engine) execInGuest(id string, pid int, program string, commandArgs []s
 	cmd := exec.CommandContext(ctx, "nsenter", args...)
 	cmd.ExtraFiles = []*os.File{self}
 	cmd.SysProcAttr = &syscall.SysProcAttr{CgroupFD: int(cgf.Fd()), UseCgroupFD: true, Setsid: true}
+	// Do not inherit worker env (CLOFIX_*, secrets) into the guest command.
+	cmd.Env = []string{
+		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"HOME=/root",
+		"LANG=C.UTF-8",
+		"DEBIAN_FRONTEND=noninteractive",
+	}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
@@ -2563,23 +2712,26 @@ func (e *Engine) UpdateFirewall(spec proto.FirewallSpec) error {
 	return e.Network.SyncVPSFirewall(spec.InstanceID, guestIP, spec.Restrict, spec.Rules)
 }
 
-func (e *Engine) UpdatePorts(id string, mappings []proto.PortMapping) error {
+func (e *Engine) UpdatePorts(id string, spec proto.InstanceSpec) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	m, ok := e.meta[id]
 	if !ok {
 		return fmt.Errorf("instance %s not found", id)
 	}
-	previous := m.Spec.PortMappings
-	m.Spec.PortMappings = append([]proto.PortMapping(nil), mappings...)
+	previous := m.Spec
+	m.Spec.PortMappings = append([]proto.PortMapping(nil), spec.PortMappings...)
+	m.Spec.PublishSSH = spec.PublishSSH
+	m.Spec.PublishHTTP = spec.PublishHTTP
+	m.Spec.PublishHTTPS = spec.PublishHTTPS
 	if m.State == proto.StateRunning && m.Spec.IPAddress != "" {
-		if err := e.Network.SyncPorts(id, m.Spec.IPAddress, m.Spec.SSHPort, m.Spec.PortMappings); err != nil {
-			m.Spec.PortMappings = previous
+		if err := e.Network.SyncPorts(id, m.Spec.IPAddress, m.Spec.SSHPort, m.Spec); err != nil {
+			m.Spec = previous
 			return err
 		}
 	}
 	if err := e.save(m); err != nil {
-		m.Spec.PortMappings = previous
+		m.Spec = previous
 		if m.State == proto.StateRunning && m.Spec.IPAddress != "" {
 			_ = e.Network.SyncPorts(id, m.Spec.IPAddress, m.Spec.SSHPort, previous)
 		}

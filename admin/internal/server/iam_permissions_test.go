@@ -26,6 +26,7 @@ func TestIAMPermissionCatalogCoversResources(t *testing.T) {
 		"/api/vpcs": "vpc", "/api/vpcs/vpc-default": "vpc",
 		"/api/logs": "logs", "/api/logs/sources": "logs", "/api/logs/vps-1/tail": "logs",
 		"/api/firewall": "security", "/api/firewall/workers/w-1": "security",
+		"/api/security/overview": "security", "/api/security/modes": "security", "/api/audit": "security",
 		"/api/v1/kubernetes": "kubernetes", "/api/v1/kubernetes/clusters/cks-1": "kubernetes",
 	}
 	for path, want := range routes {

@@ -162,15 +162,16 @@ func (s *Server) requestCertificate(w http.ResponseWriter, r *http.Request) {
 	}
 	d := s.certificates
 	d.Lock()
-	rec := certificateRecord{Domain: domain, Target: target, ResourceID: in.ResourceID, State: "pending", Updated: time.Now().UTC()}
-	d.Items[domain] = rec
-	_ = d.save()
 	email := d.email
-	d.Unlock()
 	if email == "" {
+		d.Unlock()
 		fail(w, 409, "set CLOFIX_ACME_EMAIL on the controller before issuing certificates")
 		return
 	}
+	rec := certificateRecord{Domain: domain, Target: target, ResourceID: in.ResourceID, State: "pending", Updated: time.Now().UTC()}
+	d.Items[domain] = rec
+	_ = d.save()
+	d.Unlock()
 	go s.issueCertificate(domain)
 	writeJSON(w, 202, map[string]any{"certificate": rec, "queued": true})
 }

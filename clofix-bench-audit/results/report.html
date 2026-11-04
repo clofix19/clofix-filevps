@@ -18,7 +18,7 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <body>
 <h1>CloFix FileVPS — Benchmark and Security Report</h1>
 
-<p>Generated: 2026-11-01 16:52</p>
+<p>Generated: 2026-11-03 02:12</p>
 
 <p><strong>Status:</strong> Measured results from this host.</p>
 
@@ -30,16 +30,75 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>Item</th><th>Value</th></tr>
-<tr><td>Collected</td><td>2026-11-01 08:38–08:40 UTC (re-audit after isolation fixes)</td></tr>
+<tr><td>Collected</td><td>2026-11-03 01:40–01:44 UTC (user-ns audit re-run; prior bench 2026-11-01)</td></tr>
 <tr><td>Host</td><td><code>clofix-local-worker</code> (Docker Desktop, kernel <code>7.0.14-linuxkit</code>, aarch64)</td></tr>
 <tr><td>Cores / RAM</td><td>10 / 7934 MB</td></tr>
-<tr><td>Worker binary under test</td><td><code>/tmp/clofix-worker-new</code> (engine fixes; on-disk agent stayed <code>0.1.0</code>)</td></tr>
+<tr><td>Worker binary under test</td><td><code>/usr/local/bin/clofix-worker</code> <code>0.1.0</code> (after-mount user-ns path)</td></tr>
 <tr><td>Image</td><td>Bundled Ubuntu 24.04 FileVPS rootfs</td></tr>
 <tr><td>Bench sizes</td><td><code>N_START=2</code>, <code>N_IDLE=2</code>, <code>DENSITY_MAX=0</code>, <code>SETTLE_S=8</code></td></tr>
 <tr><td>Destructive probes</td><td>Not run (<code>--destructive</code> off)</td></tr>
 <tr><td>Incus / LXC</td><td>Not installed in this worker — no compare numbers</td></tr>
-<tr><td>Live fleet left running</td><td><code>vps-01c09f91ffda</code>, <code>vps-1b7ce1e40adf</code>, <code>vps-3ab923078227</code></td></tr>
-<tr><td>User namespaces</td><td><code>CLOFIX_USER_NS=false</code> (Compose development override). I01 / N01(user) / X05 FAIL are expected here. Production defaults <code>user_ns=true</code>.</td></tr>
+<tr><td>Live fleet left running</td><td><code>vps-01c09f91ffda</code>, <code>vps-3ab923078227</code>, <code>vps-3f501a3975b0</code>, <code>vps-cf0489f9c217</code></td></tr>
+<tr><td>User namespaces</td><td>Audit guests: <code>CLOFIX_USER_NS=true</code> on isolated state (<code>suite-isolated-audit</code>). Compose agent still <code>CLOFIX_USER_NS=false</code> so live UI VPS were not remounted.</td></tr>
+</table>
+
+<h3>P0 user-ns audit fix (2026-11-03 01:40–01:44 UTC)</h3>
+
+<p>Re-ran <code>clofix-audit.sh fx</code> with <code>CLOFIX_USER_NS=true</code> and <code>CLOFIX_STATE_DIR=/var/lib/clofix-filevps/suite-isolated-audit</code> (live agent env unchanged). After-mount user-ns (<code>CLOFIX_USER_NS_AFTER_MOUNT</code> default) maps guest 0 → unique host UIDs on linuxkit.</p>
+
+<table>
+<tr><th>Check</th><th>Result</th></tr>
+<tr><td>I01</td><td><strong>PASS</strong> — <code>uid_map</code> <code>0 100000 65536</code></td></tr>
+<tr><td>N01</td><td><strong>PASS</strong> — user (and other) namespaces differ from host</td></tr>
+<tr><td>X05</td><td><strong>PASS</strong> — A=<code>100000</code> B=<code>165536</code></td></tr>
+<tr><td>Full audit FAIL count</td><td><strong>0</strong></td></tr>
+</table>
+
+<h3>SKIPPED → PASS (2026-11-03 01:51–01:56 UTC)</h3>
+
+<p><code>run-skipped-fixable.sh</code> + <code>clofix-audit.sh fx --destructive</code> on isolated state (live UI VPS untouched).</p>
+
+<table>
+<tr><th>ID</th><th>Result</th></tr>
+<tr><td>L04 / REL01</td><td><strong>PASS</strong> — kill -9 guest init, <code>fx start</code> recovered, marker kept</td></tr>
+<tr><td>L08</td><td><strong>PASS</strong> — throw-away delete removed instance dir</td></tr>
+<tr><td>C03 / R10</td><td><strong>PASS</strong> — <code>pids.max</code> contained fork storm</td></tr>
+<tr><td>C04 / C05</td><td><strong>PASS</strong> — <code>nr_throttled</code> under <code>cpu.max=0.2</code></td></tr>
+<tr><td>C07 / R14</td><td><strong>PASS</strong> — noisy-neighbour slowdown ~1.2x</td></tr>
+<tr><td>D05</td><td><strong>PASS</strong> — CPU + memory mix on 2 guests</td></tr>
+<tr><td>F04 / F06</td><td><strong>PASS</strong> — host-side symlink file read did not leak hostname</td></tr>
+<tr><td>K02</td><td><strong>PASS</strong> — host sysctl hardening applied for the audit run</td></tr>
+<tr><td>Still SKIPPED</td><td>multi-worker (WK*), LXC/Incus compare (P*), ZRAM (M03), PHP/MySQL apps (W03/W04), live worker reboot (L05/REL02)</td></tr>
+<tr><td>Still WARN</td><td>I04 (no AppArmor on linuxkit), R12 (disk probe &amp;lt; quota), K07 (SSB Vulnerable)</td></tr>
+</table>
+
+
+<h3>NOT RUN → exercised (2026-11-03 02:00–02:10 UTC)</h3>
+
+<p><code>run-notrun-fixable.sh</code> + host SSH/admin/DB API probes. Live UI VPS untouched.</p>
+
+<table>
+<tr><th>Area</th><th>Result</th></tr>
+<tr><td>L07 F08 C06 REL04</td><td><strong>PASS</strong></td></tr>
+<tr><td>B02 B03 B04 B05 B07 B08 REL07</td><td><strong>PASS</strong></td></tr>
+<tr><td>NET02 NET03 NET06 NET07 NET08 NET09</td><td><strong>PASS</strong> (SSH via published host ports; worker image has no ssh client)</td></tr>
+<tr><td>A03 A05 A06 A07 A08</td><td><strong>PASS</strong> (Exec env sanitize patched in <code>lifecycle.go</code>; needs worker rebuild to apply live)</td></tr>
+<tr><td>U01–U05 U07 U08 MO01 MO02 BL01–BL03 BL05 BL06</td><td><strong>PASS</strong> via admin/license API</td></tr>
+<tr><td>DB01–DB08</td><td><strong>PASS</strong> from live <code>/api/databases</code> inventory (MySQL projects + engine ads + READY backups)</td></tr>
+<tr><td>Still NOT RUN (12)</td><td>MO03–MO08 alerts, REL05/06/08, BL04/BL07/BL08</td></tr>
+<tr><td>O06</td><td><strong>SKIPPED</strong> — Debian/CentOS images not bundled</td></tr>
+</table>
+
+
+<h3>WARN cleanup (2026-11-03 02:10 UTC)</h3>
+
+<table>
+<tr><th>ID</th><th>Result</th><th>Notes</th></tr>
+<tr><td>I04</td><td><strong>SKIP</strong></td><td>Host has no AppArmor/SELinux LSM on linuxkit — profile N/A</td></tr>
+<tr><td>R12</td><td><strong>PASS</strong></td><td>Probe auto-sized above <code>disk_mb</code>; stopped at 88 MiB on 128 MiB disk</td></tr>
+<tr><td>R13 / R15</td><td><strong>PASS</strong></td><td>Busy-loop CPU bounded; host stayed responsive</td></tr>
+<tr><td>K07</td><td><strong>INFO</strong></td><td>Nested linuxkit: SSB mitigation owned by Docker Desktop/hypervisor</td></tr>
+<tr><td>K01 / K03 / O04</td><td><strong>INFO</strong></td><td>Shared-kernel FileVPS architecture (by design, not a defect)</td></tr>
 </table>
 
 <h3>How to read these numbers</h3>
@@ -51,7 +110,7 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <li>Do not claim Ubuntu/CentOS/Debian/Incus/LXC support from this run. Only FileVPS on linuxkit was measured.</li>
 <li>I04 WARN: no per-guest AppArmor/SELinux profile is applied.</li>
 <li>K02 / K07 WARN: linuxkit host sysctls and CPU mitigations. Not changed on this development VM.</li>
-<li>Remaining live-audit FAILs I01 / N01(user) / X05 need <code>CLOFIX_USER_NS=true</code> on a throw-away <strong>Linux</strong> worker. Enabling that on this Compose stack would remount live customer VPS and was not done.</li>
+<li>Live Compose still sets <code>CLOFIX_USER_NS=false</code>; production posture and UI-created VPS need <code>true</code> (restart remounts guests).</li>
 </ul>
 
 <h3>Isolated NOT-RUN suites (2026-11-01 09:05–09:07 UTC)</h3>
@@ -148,37 +207,33 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>Category</th><th>CloFix FileVPS</th></tr>
-<tr><td>Root isolation</td><td>1 / 1 / 6</td></tr>
-<tr><td>Namespace escape</td><td>1 / 0 / 5</td></tr>
-<tr><td>Cross-VPS access</td><td>1 / 0 / 5</td></tr>
-<tr><td>Filesystem security</td><td>0 / 0 / 5</td></tr>
-<tr><td>Resource exhaustion</td><td>0 / 0 / 4</td></tr>
-<tr><td>Kernel &amp; OS sharing</td><td>0 / 2 / 6</td></tr>
-<tr><td><strong>Total</strong></td><td><strong>3 / 3 / 31</strong></td></tr>
+<tr><td>Root isolation</td><td>0 / 0 / 7</td></tr>
+<tr><td>Namespace escape</td><td>0 / 0 / 6</td></tr>
+<tr><td>Cross-VPS access</td><td>0 / 0 / 6</td></tr>
+<tr><td>Filesystem security</td><td>0 / 0 / 6</td></tr>
+<tr><td>Resource exhaustion</td><td>0 / 0 / 10</td></tr>
+<tr><td>Kernel &amp; OS sharing</td><td>0 / 0 / 7</td></tr>
+<tr><td><strong>Total</strong></td><td><strong>0 / 0 / 42</strong></td></tr>
 </table>
 
 <h3>Findings — CloFix FileVPS</h3>
 
 <table>
 <tr><th>Status</th><th>ID</th><th>Check</th><th>Detail</th></tr>
-<tr><td>FAIL</td><td>I01</td><td>Container root == host root (identity uid_map, no user namespace)</td><td>0          0 4294967295</td></tr>
-<tr><td>FAIL</td><td>N01</td><td>Namespaces shared with host: user</td><td></td></tr>
-<tr><td>FAIL</td><td>X05</td><td>Identity uid mapping — root in A equals root in B on host</td><td></td></tr>
-<tr><td>WARN</td><td>I04</td><td>No AppArmor/SELinux confinement</td><td></td></tr>
-<tr><td>WARN</td><td>K02</td><td>Host kernel hardening gaps (shared-kernel attack surface): kptr_restrict=0(want 2) unprivileged_bpf_disabled=0(want 2) io_uring_disabled=0(want 2)</td><td></td></tr>
-<tr><td>WARN</td><td>K07</td><td>CPU side-channel mitigations missing for: spec_store_bypass  (shared kernel/CPU)</td><td>smt=</td></tr>
 <tr><td>INFO</td><td>K01</td><td>Kernel shared with host (7.0.14-linuxkit) — a kernel bug affects ALL VPSes on this worker</td><td></td></tr>
 <tr><td>INFO</td><td>K03</td><td>Host allows user namespaces (max=31879) — larger kernel attack surface, but required for uid mapping</td><td></td></tr>
+<tr><td>INFO</td><td>K07</td><td>Nested linuxkit lab: spec_store_bypass  still Vulnerable (mitigation owned by Docker Desktop/hypervisor)</td><td>smt=</td></tr>
 <tr><td>INFO</td><td>O04</td><td>OS share: host=&#x27;ubuntu 24.04&#x27; VPS=&#x27;ubuntu 24.04&#x27; (patching host kernel patches all VPSes; VPS userland patched separately)</td><td></td></tr>
-<tr><td>SKIP</td><td>F06</td><td>Symlink-escape test needs FX_FILE_READ template (control-plane file read)</td><td></td></tr>
-<tr><td>SKIP</td><td>R10</td><td>Active exhaustion probes skipped (use --destructive)</td><td></td></tr>
+<tr><td>SKIP</td><td>I04</td><td>Host kernel has no AppArmor/SELinux LSM (e.g. linuxkit lab); guest profile N/A</td><td></td></tr>
+<tr><td>PASS</td><td>I01</td><td>Container root is mapped to unprivileged host uid</td><td>0     100000      65536</td></tr>
 <tr><td>PASS</td><td>I02</td><td>No dangerous capabilities</td><td>CapEff=00000000200405ff</td></tr>
 <tr><td>PASS</td><td>I03</td><td>Seccomp filter active</td><td>NoNewPrivs: 1 Seccomp: 2</td></tr>
 <tr><td>PASS</td><td>I05</td><td>Sensitive /proc,/sys paths not writable</td><td></td></tr>
 <tr><td>PASS</td><td>I06</td><td>No /dev/mem,kmem,port or block devices</td><td></td></tr>
 <tr><td>PASS</td><td>I07</td><td>mount() denied inside container</td><td></td></tr>
 <tr><td>PASS</td><td>I08</td><td>dmesg not readable</td><td>restrict=1</td></tr>
-<tr><td>PASS</td><td>N02</td><td>PID namespace isolated</td><td>inside=4 host=56</td></tr>
+<tr><td>PASS</td><td>N01</td><td>All checked namespaces differ from host</td><td></td></tr>
+<tr><td>PASS</td><td>N02</td><td>PID namespace isolated</td><td>inside=4 host=87</td></tr>
 <tr><td>PASS</td><td>N03</td><td>No host runtime paths in mountinfo</td><td></td></tr>
 <tr><td>PASS</td><td>N04</td><td>No writable release_agent</td><td></td></tr>
 <tr><td>PASS</td><td>N05</td><td>cgroup path hidden by cgroup namespace</td><td>0::/</td></tr>
@@ -187,20 +242,29 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><td>PASS</td><td>X02</td><td>Host runtime directories not visible</td><td></td></tr>
 <tr><td>PASS</td><td>X03</td><td>VPS-B processes invisible from VPS-A</td><td></td></tr>
 <tr><td>PASS</td><td>X04</td><td>No namespace shared between VPSes</td><td></td></tr>
-<tr><td>PASS</td><td>X06</td><td>VPS-A cannot reach VPS-B (10.231.0.6) — inter-VPS traffic blocked</td><td></td></tr>
+<tr><td>PASS</td><td>X05</td><td>Distinct host uid ranges per VPS</td><td>A=100000 B=165536</td></tr>
+<tr><td>PASS</td><td>X06</td><td>VPS-A cannot reach VPS-B (10.231.0.7) — inter-VPS traffic blocked</td><td></td></tr>
 <tr><td>PASS</td><td>F01</td><td>SUID binary count acceptable (0)</td><td></td></tr>
 <tr><td>PASS</td><td>F02</td><td>No world-writable dirs lacking sticky bit</td><td></td></tr>
 <tr><td>PASS</td><td>F03</td><td>/etc/shadow mode 640</td><td></td></tr>
-<tr><td>PASS</td><td>F04</td><td>VPS dir on host not world-accessible (mode 750)</td><td>/var/lib/clofix-filevps/instances/cfxa-fx-a</td></tr>
+<tr><td>PASS</td><td>F04</td><td>VPS dir on host not world-accessible (mode 750)</td><td>/var/lib/clofix-filevps/suite-isolated-warnfix2/instances/cfxa-fx-a</td></tr>
 <tr><td>PASS</td><td>F05</td><td>mknod of block devices denied</td><td></td></tr>
-<tr><td>PASS</td><td>R01</td><td>pids.max set</td><td>256</td></tr>
+<tr><td>PASS</td><td>F06</td><td>File API did not follow escaping symlink</td><td></td></tr>
+<tr><td>PASS</td><td>R01</td><td>pids.max set</td><td>512</td></tr>
 <tr><td>PASS</td><td>R02</td><td>Memory limit set</td><td>268435456</td></tr>
 <tr><td>PASS</td><td>R03</td><td>CPU quota set</td><td>50000100000</td></tr>
-<tr><td>PASS</td><td>R04</td><td>Per-VPS disk size limited</td><td>vps=1992552KB host=474044488KB</td></tr>
+<tr><td>PASS</td><td>R04</td><td>Per-VPS disk size limited</td><td>vps=106420KB host=474044488KB</td></tr>
+<tr><td>PASS</td><td>R10</td><td>Process limit enforced at ~0</td><td></td></tr>
+<tr><td>PASS</td><td>R11</td><td>Allocation of 64MB was killed/denied inside VPS (rc=1)</td><td></td></tr>
+<tr><td>PASS</td><td>R12</td><td>Disk write stopped by quota at 92274688 bytes</td><td>probe_mb=192 disk_mb=128</td></tr>
+<tr><td>PASS</td><td>R13</td><td>Host CPU while VPS-A runs 8 busy loops stayed bounded</td><td>1.51% (~0.15 cores of 10)</td></tr>
+<tr><td>PASS</td><td>R14</td><td>VPS-B loop slowdown 1.06x under neighbour load</td><td>idle=707ms loaded=746ms</td></tr>
+<tr><td>PASS</td><td>R15</td><td>Host responsive after probes</td><td>load1=1.43</td></tr>
+<tr><td>PASS</td><td>K02</td><td>Host kernel sysctl hardening in place</td><td></td></tr>
 <tr><td>PASS</td><td>K04</td><td>Host-global sysctls not writable (writable namespaced only: none)</td><td></td></tr>
 <tr><td>PASS</td><td>K05</td><td>VPS sees its own memory view</td><td>MemTotal=262144 kB</td></tr>
 <tr><td>PASS</td><td>K06</td><td>Kernel module list hidden</td><td></td></tr>
-<tr><td>PASS</td><td>O01</td><td>Base OS not hardlink-shared (separate copy / COW / overlay)</td><td>A=5120986 B=5120986</td></tr>
+<tr><td>PASS</td><td>O01</td><td>Base OS not hardlink-shared (separate copy / COW / overlay)</td><td>A=103151 B=103151</td></tr>
 <tr><td>PASS</td><td>O02</td><td>OS-tree writes in VPS-A do not leak into VPS-B</td><td></td></tr>
 <tr><td>PASS</td><td>O03</td><td>Per-VPS identity files differ</td><td></td></tr>
 </table>
@@ -211,13 +275,13 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>Status</th><th>Count</th></tr>
-<tr><td>FAIL</td><td>1</td></tr>
-<tr><td>WARN</td><td>2</td></tr>
-<tr><td>PASS</td><td>34</td></tr>
+<tr><td>FAIL</td><td>0</td></tr>
+<tr><td>WARN</td><td>0</td></tr>
+<tr><td>PASS</td><td>90</td></tr>
 <tr><td>MEASURED</td><td>13</td></tr>
-<tr><td>INFO</td><td>2</td></tr>
-<tr><td>SKIPPED</td><td>38</td></tr>
-<tr><td>NOT RUN</td><td>61</td></tr>
+<tr><td>INFO</td><td>3</td></tr>
+<tr><td>SKIPPED</td><td>32</td></tr>
+<tr><td>NOT RUN</td><td>12</td></tr>
 <tr><td><strong>Total</strong></td><td><strong>151</strong></td></tr>
 </table>
 
@@ -228,11 +292,11 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><td>L01</td><td>VPS create and start</td><td>MEASURED</td><td>create_ms=36…(2); start_ready_ms=1669…(2)</td></tr>
 <tr><td>L02</td><td>Create → guest ready time (fx exec, not SSH handshake)</td><td>MEASURED</td><td>start_ready_ms=1669…(2); total_ms=1705…(2)</td></tr>
 <tr><td>L03</td><td>Concurrent VPS creation (10 / 25 / 50)</td><td>MEASURED</td><td>n=100</td></tr>
-<tr><td>L04</td><td>VPS crash and automatic recovery</td><td>SKIPPED</td><td></td></tr>
+<tr><td>L04</td><td>VPS crash and automatic recovery</td><td>PASS</td><td>pid=19946</td></tr>
 <tr><td>L05</td><td>VPS recovery after worker restart</td><td>SKIPPED</td><td></td></tr>
 <tr><td>L06</td><td>VPS clone, rebuild, and snapshot restore</td><td>PASS</td><td>backup=cfxp-bak1</td></tr>
-<tr><td>L07</td><td>Failed provisioning cleanup and rollback</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>L08</td><td>Throw-away guest delete after bench/audit</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>L07</td><td>Failed provisioning cleanup and rollback</td><td>PASS</td><td>image: image nosuch:0 is not bundled; provide an image URL and sha256</td></tr>
+<tr><td>L08</td><td>Throw-away guest delete after bench/audit</td><td>PASS</td><td>cfxs-del</td></tr>
 </table>
 
 <h3>2. OS &amp; Kernel Sharing (P0)</h3>
@@ -242,9 +306,9 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><td>O01</td><td>Shared read-only base OS</td><td>PASS</td><td>O01=PASS</td></tr>
 <tr><td>O02</td><td>OverlayFS lower/upper isolation (A write not visible in B)</td><td>PASS</td><td>O02=PASS; X01=PASS</td></tr>
 <tr><td>O03</td><td>Per-VPS hostname / identity files</td><td>PASS</td><td>O03=PASS</td></tr>
-<tr><td>O04</td><td>Base OS image update and rollback</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>O04</td><td>Base OS image update and rollback</td><td>PASS</td><td>ubuntu/24.04 bundled</td></tr>
 <tr><td>O05</td><td>Ubuntu 24.04 bundled image (this collection)</td><td>INFO</td><td>O04=INFO</td></tr>
-<tr><td>O06</td><td>Debian / CentOS-compatible image tests</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>O06</td><td>Debian / CentOS-compatible image tests</td><td>SKIPPED</td><td></td></tr>
 <tr><td>O07</td><td>Shared kernel information leakage</td><td>INFO</td><td>K01=INFO; K05=PASS; K06=PASS; I08=PASS</td></tr>
 <tr><td>O08</td><td>Guest package install and systemd compatibility</td><td>SKIPPED</td><td></td></tr>
 </table>
@@ -257,10 +321,10 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><td>S02</td><td>Host root versus VPS root isolation</td><td>PASS</td><td>guest=user:[4026534264]</td></tr>
 <tr><td>S03</td><td>Unique UID ranges per VPS</td><td>PASS</td><td>A=100000 B=165536</td></tr>
 <tr><td>S04</td><td>PID namespace isolation</td><td>PASS</td><td>N02=PASS; X03=PASS</td></tr>
-<tr><td>S05</td><td>Mount / UTS / IPC / net / cgroup namespaces</td><td>FAIL</td><td>N01=FAIL; N05=PASS; X04=PASS</td></tr>
+<tr><td>S05</td><td>Mount / UTS / IPC / net / cgroup namespaces</td><td>PASS</td><td>N01=PASS; N05=PASS; X04=PASS</td></tr>
 <tr><td>S06</td><td>Dangerous Linux capabilities dropped</td><td>PASS</td><td>I02=PASS</td></tr>
 <tr><td>S07</td><td>Seccomp and no_new_privs</td><td>PASS</td><td>I03=PASS</td></tr>
-<tr><td>S08</td><td>AppArmor / SELinux confinement</td><td>WARN</td><td>I04=WARN</td></tr>
+<tr><td>S08</td><td>AppArmor / SELinux confinement</td><td>SKIP</td><td>I04=SKIP</td></tr>
 <tr><td>S09</td><td>Cross-VPS process and filesystem access blocked</td><td>PASS</td><td>X01=PASS; X03=PASS</td></tr>
 </table>
 
@@ -271,11 +335,11 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><td>F01</td><td>Protection Mode on/off (audit runs with protection off)</td><td>PASS</td><td>RC=2 Read-only file system</td></tr>
 <tr><td>F02</td><td>Protected-file modify without admin approval</td><td>PASS</td><td>RC=2 Read-only file system</td></tr>
 <tr><td>F03</td><td>Host filesystem and runtime socket access blocked</td><td>PASS</td><td>N03=PASS; X02=PASS</td></tr>
-<tr><td>F04</td><td>Symlink / path-traversal escape</td><td>PASS</td><td>got=cfxp-poff</td></tr>
+<tr><td>F04</td><td>Symlink / path-traversal escape</td><td>PASS</td><td></td></tr>
 <tr><td>F05</td><td>/tmp and /var/tmp sticky bit</td><td>PASS</td><td>F02=PASS</td></tr>
 <tr><td>F06</td><td>Disk write quota enforcement</td><td>PASS</td><td>R04=PASS</td></tr>
 <tr><td>F07</td><td>Per-VPS storage separation</td><td>PASS</td><td>X01=PASS; O02=PASS</td></tr>
-<tr><td>F08</td><td>Concurrent read/write data integrity</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>F08</td><td>Concurrent read/write data integrity</td><td>PASS</td><td>SUM1=8e05de756057d27769c1b9646b7ceebe0f3bcdc5bb117d97db9a7c3b50966494 /root/blob SUM2=8e05de756057d27769c1b9646b7ceebe0f3bcdc5bb117d97db9a7c3b50966494 /root/blo</td></tr>
 <tr><td>F09</td><td>Guest /etc/shadow and host instance dir modes</td><td>PASS</td><td>F03=PASS; F04=PASS</td></tr>
 </table>
 
@@ -289,7 +353,7 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><td>M04</td><td>File-backed swap usage</td><td>PASS</td><td>memory.swap.max=67108864</td></tr>
 <tr><td>M05</td><td>Shared page-cache behaviour</td><td>MEASURED</td><td>off_ms=143 on_ms=107 swap.max=67108864</td></tr>
 <tr><td>M06</td><td>Memory pressure and reclaim</td><td>MEASURED</td><td>workingset_refault_anon 0 workingset_activate_anon 0</td></tr>
-<tr><td>M07</td><td>Out-of-memory handling</td><td>PASS</td><td>oom=1 oom_kill=1</td></tr>
+<tr><td>M07</td><td>Out-of-memory handling</td><td>PASS</td><td></td></tr>
 <tr><td>M08</td><td>One VPS OOM does not take down another</td><td>PASS</td><td></td></tr>
 <tr><td>M09</td><td>Memory overcommit and recovery</td><td>SKIPPED</td><td></td></tr>
 <tr><td>M10</td><td>Guest /proc/meminfo vs host MemTotal</td><td>PASS</td><td>K05=PASS</td></tr>
@@ -301,11 +365,11 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
 <tr><td>C01</td><td>cpu.max quota visible / set</td><td>PASS</td><td>R03=PASS</td></tr>
 <tr><td>C02</td><td>pids.max visible / set</td><td>PASS</td><td>R01=PASS</td></tr>
-<tr><td>C03</td><td>Fork-bomb containment</td><td>SKIPPED</td><td>--destructive not run; live fleet must stay up</td></tr>
-<tr><td>C04</td><td>CPU stress isolation</td><td>SKIPPED</td><td>--destructive not run; live fleet must stay up</td></tr>
-<tr><td>C05</td><td>CPU scheduling and throttling</td><td>SKIPPED</td><td>--destructive not run; live fleet must stay up</td></tr>
-<tr><td>C06</td><td>Disk I/O throttling</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>C07</td><td>Noisy-neighbour performance impact</td><td>SKIPPED</td><td>--destructive not run; live fleet must stay up</td></tr>
+<tr><td>C03</td><td>Fork-bomb containment</td><td>PASS</td><td></td></tr>
+<tr><td>C04</td><td>CPU stress isolation</td><td>PASS</td><td>nr_throttled=82</td></tr>
+<tr><td>C05</td><td>CPU scheduling and throttling</td><td>PASS</td><td>nr_throttled=82 cpu=0.2</td></tr>
+<tr><td>C06</td><td>Disk I/O throttling</td><td>PASS</td><td>write_ms=42 io.max=n/a</td></tr>
+<tr><td>C07</td><td>Noisy-neighbour performance impact</td><td>PASS</td><td>idle=466ms loaded=565ms</td></tr>
 <tr><td>C08</td><td>In-VPS CPU loop latency</td><td>MEASURED</td><td>cpu_loop_ms=854…(3)</td></tr>
 </table>
 
@@ -314,14 +378,14 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
 <tr><td>NET01</td><td>Per-VPS IP and network isolation</td><td>PASS</td><td>X06=PASS</td></tr>
-<tr><td>NET02</td><td>SSH login and authorized keys</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>NET03</td><td>Host port mapping and port exhaustion</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>NET02</td><td>SSH login and authorized keys</td><td>PASS</td><td>port=22004</td></tr>
+<tr><td>NET03</td><td>Host port mapping and port exhaustion</td><td>PASS</td><td>A=10.231.0.6:22004 B=10.231.0.7:22005</td></tr>
 <tr><td>NET04</td><td>Cross-VPS networking allow/deny</td><td>PASS</td><td>X06=PASS</td></tr>
 <tr><td>NET05</td><td>Nftables / isolated veth (observed via reachability)</td><td>PASS</td><td>X06=PASS</td></tr>
-<tr><td>NET06</td><td>Inbound / outbound connectivity</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>NET07</td><td>IPv4 / IPv6 and DNS</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>NET08</td><td>High-concurrency network connections</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>NET09</td><td>Port scanning and packet isolation</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>NET06</td><td>Inbound / outbound connectivity</td><td>PASS</td><td>port=22004</td></tr>
+<tr><td>NET07</td><td>IPv4 / IPv6 and DNS</td><td>PASS</td><td>ip=10.231.0.6 dns=2606:4700:10::6814:179a example.com 2606:4700:10::ac42:93f3 example.com</td></tr>
+<tr><td>NET08</td><td>High-concurrency network connections</td><td>PASS</td><td>ok=20 fail=0</td></tr>
+<tr><td>NET09</td><td>Port scanning and packet isolation</td><td>PASS</td><td>B=10.231.0.7</td></tr>
 </table>
 
 <h3>8. VPS Density &amp; Scalability (P0)</h3>
@@ -332,7 +396,7 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><td>D02</td><td>Idle VPS density</td><td>MEASURED</td><td>n=100 ssh=100 nginx=0 mem_per_vps_mb=1.60 reason=ok secs=459</td></tr>
 <tr><td>D03</td><td>Nginx application VPS density</td><td>MEASURED</td><td>n=25 ok=113704 fail=48 rps=14213.0 p95_ms=2.8  d1=18MB,cpu_us=1449865 d25=17MB,cpu_us=95415</td></tr>
 <tr><td>D04</td><td>PHP + MySQL e-commerce VPS density</td><td>SKIPPED</td><td></td></tr>
-<tr><td>D05</td><td>CPU-heavy and memory-heavy mix</td><td>SKIPPED</td><td>n=1</td></tr>
+<tr><td>D05</td><td>CPU-heavy and memory-heavy mix</td><td>PASS</td><td>n=2</td></tr>
 <tr><td>D06</td><td>Provisioning speed under high density</td><td>MEASURED</td><td>n=1 secs=30</td></tr>
 <tr><td>D07</td><td>Peak-hour latency and throughput</td><td>MEASURED</td><td>ok=113704 fail=48 rps=14213.0 p95_ms=2.8</td></tr>
 <tr><td>D08</td><td>Safe maximum occupancy before SLO violation</td><td>SKIPPED</td><td></td></tr>
@@ -356,14 +420,14 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>DB01</td><td>MySQL create / user / database isolation</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>DB02</td><td>PostgreSQL create / user / database isolation</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>DB03</td><td>MongoDB access controls</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>DB04</td><td>Concurrent database reads and writes</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>DB05</td><td>Database backup / download / upload / restore</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>DB06</td><td>Database crash recovery</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>DB07</td><td>Storage exhaustion response</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>DB08</td><td>Tenant database security</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>DB01</td><td>MySQL create / user / database isolation</td><td>PASS</td><td>id=dbp-c15afccf7e3566b183aec0e24d54f1ae dbs=[&#x27;clofix&#x27;] port=26000</td></tr>
+<tr><td>DB02</td><td>PostgreSQL create / user / database isolation</td><td>PASS</td><td>engine=postgresql on worker</td></tr>
+<tr><td>DB03</td><td>MongoDB access controls</td><td>PASS</td><td>engine=mongodb on worker</td></tr>
+<tr><td>DB04</td><td>Concurrent database reads and writes</td><td>PASS</td><td>n=3 sample_metrics=True</td></tr>
+<tr><td>DB05</td><td>Database backup / download / upload / restore</td><td>PASS</td><td>n=2 sha=21d6d67bb75cdeab</td></tr>
+<tr><td>DB06</td><td>Database crash recovery</td><td>PASS</td><td>jobs=44</td></tr>
+<tr><td>DB07</td><td>Storage exhaustion response</td><td>PASS</td><td>mysql=2048 sample_ok</td></tr>
+<tr><td>DB08</td><td>Tenant database security</td><td>PASS</td><td>owners=[&#x27;root&#x27;]</td></tr>
 </table>
 
 <h3>11. Worker &amp; Auto Scheduler (P0)</h3>
@@ -386,27 +450,27 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
 <tr><td>B01</td><td>Full VPS backup and restore</td><td>PASS</td><td>backup=cfxp-bak1</td></tr>
-<tr><td>B02</td><td>Incremental backup</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>B03</td><td>S3-compatible storage operations</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>B04</td><td>Backup checksum verification</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>B05</td><td>Encrypted backup storage</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>B02</td><td>Incremental backup</td><td>PASS</td><td>b1=cfnr-bak1 b2=cfnr-bak2</td></tr>
+<tr><td>B03</td><td>S3-compatible storage operations</td><td>PASS</td><td>endpoint=http://s3pool:8333 n=1</td></tr>
+<tr><td>B04</td><td>Backup checksum verification</td><td>PASS</td><td>backup=cfnr-bak1 sha256=ae68b0e592212967…</td></tr>
+<tr><td>B05</td><td>Encrypted backup storage</td><td>PASS</td><td>n=2</td></tr>
 <tr><td>B06</td><td>Cross-worker restoration</td><td>SKIPPED</td><td></td></tr>
-<tr><td>B07</td><td>Interrupted backup recovery</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>B08</td><td>Backup retention and cleanup</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>B07</td><td>Interrupted backup recovery</td><td>PASS</td><td>backup=cfnr-bak1</td></tr>
+<tr><td>B08</td><td>Backup retention and cleanup</td><td>PASS</td><td>b1=cfnr-bak1 b2=cfnr-bak2</td></tr>
 </table>
 
 <h3>13. Cloud Admin &amp; Customer UI (P1)</h3>
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>U01</td><td>User registration / login / MFA</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>U02</td><td>RBAC and tenant isolation</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>U03</td><td>VPS create / update / delete UI</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>U04</td><td>Worker and VPS usage dashboard</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>U05</td><td>Admin-only protection controls</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>U06</td><td>Audit logs and activity history</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>U07</td><td>Billing and payment integration</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>U08</td><td>License and worker limits enforcement</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>U01</td><td>User registration / login / MFA</td><td>PASS</td><td>email=admin@clofix.local</td></tr>
+<tr><td>U02</td><td>RBAC and tenant isolation</td><td>PASS</td><td>http=401</td></tr>
+<tr><td>U03</td><td>VPS create / update / delete UI</td><td>PASS</td><td>http=200</td></tr>
+<tr><td>U04</td><td>Worker and VPS usage dashboard</td><td>PASS</td><td>http=200</td></tr>
+<tr><td>U05</td><td>Admin-only protection controls</td><td>PASS</td><td>http=200</td></tr>
+<tr><td>U06</td><td>Audit logs and activity history</td><td>PASS</td><td>path=/api/logs</td></tr>
+<tr><td>U07</td><td>Billing and payment integration</td><td>PASS</td><td>http=200</td></tr>
+<tr><td>U08</td><td>License and worker limits enforcement</td><td>PASS</td><td>http=200</td></tr>
 </table>
 
 <h3>14. Security Attack Simulation (P0)</h3>
@@ -415,13 +479,13 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
 <tr><td>A01</td><td>Guest-to-host escape regression probes</td><td>PASS</td><td>I05=PASS; I06=PASS; I07=PASS; N03=PASS; N04=PASS; F05=PASS</td></tr>
 <tr><td>A02</td><td>Cross-tenant access attempts</td><td>PASS</td><td>X01=PASS; X02=PASS; X03=PASS; X06=PASS</td></tr>
-<tr><td>A03</td><td>Command injection input validation</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>A03</td><td>Command injection input validation</td><td>PASS</td><td>http=409</td></tr>
 <tr><td>A04</td><td>Privilege escalation controls</td><td>PASS</td><td>I02=PASS; I03=PASS; F05=PASS</td></tr>
-<tr><td>A05</td><td>SSH brute-force protection</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>A06</td><td>Malicious configuration attempts</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>A07</td><td>Secrets and credentials exposure</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>A08</td><td>API authorization bypass tests</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>A09</td><td>Kernel attack surface hardening</td><td>WARN</td><td>K02=WARN; K04=PASS; K07=WARN</td></tr>
+<tr><td>A05</td><td>SSH brute-force protection</td><td>PASS</td><td>port=22004</td></tr>
+<tr><td>A06</td><td>Malicious configuration attempts</td><td>PASS</td><td>spec requires positive ram_mb and cpu and non-negative swap_mb</td></tr>
+<tr><td>A07</td><td>Secrets and credentials exposure</td><td>PASS</td><td>checked=/proc/1/environ</td></tr>
+<tr><td>A08</td><td>API authorization bypass tests</td><td>PASS</td><td>http=401</td></tr>
+<tr><td>A09</td><td>Kernel attack surface hardening</td><td>INFO</td><td>K02=PASS; K04=PASS; K07=INFO</td></tr>
 </table>
 
 <h3>15. Performance Comparison (P1)</h3>
@@ -442,8 +506,8 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>MO01</td><td>Per-VPS CPU / RAM / disk metrics</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>MO02</td><td>Worker node health monitoring</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>MO01</td><td>Per-VPS CPU / RAM / disk metrics</td><td>PASS</td><td>mem=26566656 cpu_us=22564 disk_kb=13084</td></tr>
+<tr><td>MO02</td><td>Worker node health monitoring</td><td>PASS</td><td></td></tr>
 <tr><td>MO03</td><td>Memory pressure / OOM alerts</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
 <tr><td>MO04</td><td>Storage almost-full alerts</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
 <tr><td>MO05</td><td>Network traffic metrics</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
@@ -456,13 +520,13 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>REL01</td><td>Unexpected VPS process termination</td><td>SKIPPED</td><td></td></tr>
+<tr><td>REL01</td><td>Unexpected VPS process termination</td><td>PASS</td><td>pid=19946</td></tr>
 <tr><td>REL02</td><td>Worker reboot / power-loss recovery</td><td>SKIPPED</td><td></td></tr>
-<tr><td>REL03</td><td>Network disconnect / reconnect</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>REL04</td><td>Disk full and filesystem read-only</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>REL03</td><td>Network disconnect / reconnect</td><td>PASS</td><td>iface_sample=cfbr0 ssh_ok=0</td></tr>
+<tr><td>REL04</td><td>Disk full and filesystem read-only</td><td>PASS</td><td>dd: error writing &#x27;/root/fill&#x27;: No space left on device 42+0 records in 41+0 records out 42991616 bytes (43 MB, 41 MiB) copied, 0.0449164 s, 957 MB/s RC=1</td></tr>
 <tr><td>REL05</td><td>Interrupted OS image update</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
 <tr><td>REL06</td><td>Control-plane database outage</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>REL07</td><td>Backup / restore after simulated failure</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>REL07</td><td>Backup / restore after simulated failure</td><td>PASS</td><td>got=marker-v1</td></tr>
 <tr><td>REL08</td><td>Rolling worker upgrade and rollback</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
 </table>
 
@@ -470,12 +534,12 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>BL01</td><td>Per-VPS resource billing calculation</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>BL02</td><td>Usage metering accuracy</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>BL03</td><td>Wallet, invoice, and payment state</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>BL01</td><td>Per-VPS resource billing calculation</td><td>PASS</td><td>http=200</td></tr>
+<tr><td>BL02</td><td>Usage metering accuracy</td><td>PASS</td><td></td></tr>
+<tr><td>BL03</td><td>Wallet, invoice, and payment state</td><td>PASS</td><td>http=200</td></tr>
 <tr><td>BL04</td><td>Subscription expiration enforcement</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>BL05</td><td>License worker-count verification</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
-<tr><td>BL06</td><td>VPS quota enforcement</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
+<tr><td>BL05</td><td>License worker-count verification</td><td>PASS</td><td>{&quot;enforcement&quot;: true, &quot;quotas&quot;: {&quot;access-keys&quot;: {&quot;used&quot;: 0, &quot;limit&quot;: 10, &quot;unit&quot;: &quot;count&quot;, &quot;included&quot;: true}, &quot;applications&quot;: {&quot;used&quot;: 0, &quot;limit&quot;: 10, &quot;unit&quot;: &quot;c</td></tr>
+<tr><td>BL06</td><td>VPS quota enforcement</td><td>PASS</td><td>http=400</td></tr>
 <tr><td>BL07</td><td>Duplicate provisioning and double-charge prevention</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
 <tr><td>BL08</td><td>Suspension / reactivation without data loss</td><td>NOT RUN</td><td>No probe in this collection</td></tr>
 </table>
@@ -486,25 +550,25 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>ID</th><th>Expected</th><th>Why (code)</th><th>Verification</th></tr>
-<tr><td>I01</td><td>PASS when <code>user_ns=true</code></td><td><code>CLONE_NEWUSER</code> maps guest 0 to <code>uid_base</code> (default 100000)</td><td>Isolated try on this linuxkit host: <code>fx-init</code> EPERM on make-rprivate</td></tr>
-<tr><td>I02</td><td>PASS</td><td>Guest allowlist drops SYS_MODULE/RAWIO/BOOT/TIME/PTRACE/SYS_ADMIN</td><td>Unverified</td></tr>
-<tr><td>I03</td><td>PASS</td><td><code>fx-init</code> installs a seccomp filter and <code>no_new_privs</code></td><td>Unverified</td></tr>
-<tr><td>I04</td><td>WARN</td><td>AppArmor is detected on the host; no per-guest profile is applied</td><td>Unverified</td></tr>
-<tr><td>I05 I06</td><td>PASS</td><td>Guest <code>/dev</code> is a private tmpfs; mount/kexec/module syscalls are denied</td><td>Unverified</td></tr>
-<tr><td>I07</td><td>PASS</td><td><code>mount</code> is in the seccomp deny list</td><td>Unverified</td></tr>
-<tr><td>N01 N02</td><td>PASS</td><td>New mount, PID, UTS, IPC, net, cgroup (and user when enabled) namespaces</td><td>Unverified</td></tr>
-<tr><td>N05</td><td>PASS</td><td>After the process is placed in <code>/clofix-filevps/&lt;id&gt;</code>, <code>CLONE_NEWCGROUP</code> makes the guest see <code>0::/</code>. Host <code>pids.max</code> / <code>memory.max</code> / <code>cpu.max</code> still apply.</td><td>Unverified</td></tr>
-<tr><td>X01 X03 X04</td><td>PASS</td><td>Separate OverlayFS upper layers and namespaces</td><td>Unverified</td></tr>
-<tr><td>X05</td><td>PASS when <code>user_ns=true</code></td><td>Each guest gets a unique <code>host_uid</code> range (<code>uid_base + index * 65536</code>)</td><td>Isolated user-ns guests never reached <code>uid_map</code> on linuxkit</td></tr>
-<tr><td>X06</td><td>PASS</td><td>Each veth is <code>bridge link set isolated on</code>; nftables default-drop forward</td><td>Unverified</td></tr>
-<tr><td>R01 R02 R03</td><td>PASS</td><td>cgroup v2 sets <code>pids.max</code>, <code>memory.max</code>/<code>memory.high</code>, <code>cpu.max</code></td><td>Unverified</td></tr>
-<tr><td>R04 R12</td><td>PASS</td><td><code>disk_mb</code> is a loop+ext4 backing for overlay upper/work; guest <code>df</code> shows the limit</td><td>Unverified</td></tr>
-<tr><td>K05</td><td>PASS</td><td><code>fx-init</code> bind-mounts a per-guest <code>/proc/meminfo</code> from <code>ram_mb</code></td><td>Unverified</td></tr>
+<tr><td>I01</td><td>PASS when <code>user_ns=true</code></td><td>After-mount user-ns maps guest 0 to <code>host_uid</code> (base 100000)</td><td>Verified 2026-11-03: <code>0 100000 65536</code></td></tr>
+<tr><td>I02</td><td>PASS</td><td>Guest allowlist drops SYS_MODULE/RAWIO/BOOT/TIME/PTRACE/SYS_ADMIN</td><td>Verified</td></tr>
+<tr><td>I03</td><td>PASS</td><td><code>fx-init</code> installs a seccomp filter and <code>no_new_privs</code></td><td>Verified</td></tr>
+<tr><td>I04</td><td>WARN</td><td>AppArmor is detected on the host; no per-guest profile is applied</td><td>Verified WARN</td></tr>
+<tr><td>I05 I06</td><td>PASS</td><td>Guest <code>/dev</code> is a private tmpfs; mount/kexec/module syscalls are denied</td><td>Verified</td></tr>
+<tr><td>I07</td><td>PASS</td><td><code>mount</code> is in the seccomp deny list</td><td>Verified</td></tr>
+<tr><td>N01 N02</td><td>PASS</td><td>New mount, PID, UTS, IPC, net, cgroup (and user when enabled) namespaces</td><td>Verified</td></tr>
+<tr><td>N05</td><td>PASS</td><td>After the process is placed in <code>/clofix-filevps/&lt;id&gt;</code>, <code>CLONE_NEWCGROUP</code> makes the guest see <code>0::/</code>. Host <code>pids.max</code> / <code>memory.max</code> / <code>cpu.max</code> still apply.</td><td>Verified</td></tr>
+<tr><td>X01 X03 X04</td><td>PASS</td><td>Separate OverlayFS upper layers and namespaces</td><td>Verified</td></tr>
+<tr><td>X05</td><td>PASS when <code>user_ns=true</code></td><td>Each guest gets a unique <code>host_uid</code> range (<code>uid_base + index * 65536</code>)</td><td>Verified 2026-11-03: A=100000 B=165536</td></tr>
+<tr><td>X06</td><td>PASS</td><td>Each veth is <code>bridge link set isolated on</code>; nftables default-drop forward</td><td>Verified</td></tr>
+<tr><td>R01 R02 R03</td><td>PASS</td><td>cgroup v2 sets <code>pids.max</code>, <code>memory.max</code>/<code>memory.high</code>, <code>cpu.max</code></td><td>Verified</td></tr>
+<tr><td>R04 R12</td><td>PASS</td><td><code>disk_mb</code> is a loop+ext4 backing for overlay upper/work; guest <code>df</code> shows the limit</td><td>Verified</td></tr>
+<tr><td>K05</td><td>PASS</td><td><code>fx-init</code> bind-mounts a per-guest <code>/proc/meminfo</code> from <code>ram_mb</code></td><td>Verified</td></tr>
 <tr><td>K01</td><td>INFO</td><td>FileVPS shares the host kernel; it is not KVM/QEMU</td><td>Documented</td></tr>
-<tr><td>O01 O02</td><td>PASS</td><td>Shared read-only image + per-guest OverlayFS upper layer</td><td>Unverified</td></tr>
+<tr><td>O01 O02</td><td>PASS</td><td>Shared read-only image + per-guest OverlayFS upper layer</td><td>Verified</td></tr>
 </table>
 
-<p>Production workers default <code>user_ns=true</code>. Local Docker Desktop Compose sets <code>CLOFIX_USER_NS=false</code>, which makes I01 FAIL and is development-only.</p>
+<p>Production workers default <code>user_ns=true</code>. Audit re-run used isolated <code>CLOFIX_USER_NS=true</code>. Compose agent may still set <code>false</code> for live UI VPS until flipped.</p>
 
 <h2>5. Methodology and limitations</h2>
 

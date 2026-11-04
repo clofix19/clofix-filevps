@@ -53,6 +53,9 @@ type Capacity struct {
 	NetTxBytes     uint64  `json:"net_tx_bytes,omitempty"`
 	NetRxBps       uint64  `json:"net_rx_bps,omitempty"`
 	NetTxBps       uint64  `json:"net_tx_bps,omitempty"`
+	// UserNS reports whether this worker creates guests with user namespaces.
+	// False is a lab/dev posture (Compose) and lowers the Security Center score.
+	UserNS bool `json:"user_ns"`
 }
 
 // GPUDevice is inventory only. Placement and guest assignment are not implemented.

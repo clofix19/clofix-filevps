@@ -19,6 +19,7 @@ import (
 type Collector struct {
 	StateDir    string
 	HostReserve uint64
+	UserNS      bool
 
 	mu              sync.Mutex
 	prevBusy, prevT uint64
@@ -115,6 +116,7 @@ func (c *Collector) Collect(committedRAM uint64, allocCPU float64, committedDisk
 		PSIMemSome10:  parsePSI(read("/proc/pressure/memory")),
 		PSICPUSome10:  parsePSI(read("/proc/pressure/cpu")),
 		PSIIOSome10:   parsePSI(read("/proc/pressure/io")),
+		UserNS:        c.UserNS,
 	}
 	if b, err := os.ReadFile("/sys/block/zram0/disksize"); err == nil {
 		cp.ZRAMLogical, _ = strconv.ParseUint(strings.TrimSpace(string(b)), 10, 64)

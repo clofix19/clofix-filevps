@@ -29,6 +29,36 @@ func HostDatabaseEnd() int { return HostDatabaseBase + HostDatabaseCount - 1 }
 func HostHTTPPort(sshPort int) int  { return sshPort + HostHTTPOffset }
 func HostHTTPSPort(sshPort int) int { return sshPort + HostHTTPSOffset }
 
+// ManagedPublished reports whether a managed guest port (22/80/443) should have host DNAT.
+// Missing flags default to published for backward compatibility.
+func ManagedPublished(spec InstanceSpec, guestPort int) bool {
+	switch guestPort {
+	case 22:
+		return spec.PublishSSH == nil || *spec.PublishSSH
+	case 80:
+		return spec.PublishHTTP == nil || *spec.PublishHTTP
+	case 443:
+		return spec.PublishHTTPS == nil || *spec.PublishHTTPS
+	default:
+		return false
+	}
+}
+
+func SetManagedPublished(spec *InstanceSpec, guestPort int, enabled bool) bool {
+	flag := enabled
+	switch guestPort {
+	case 22:
+		spec.PublishSSH = &flag
+	case 80:
+		spec.PublishHTTP = &flag
+	case 443:
+		spec.PublishHTTPS = &flag
+	default:
+		return false
+	}
+	return true
+}
+
 func ValidHostSSHPort(port int) bool {
 	return port >= HostSSHBase && port <= HostSSHEnd()
 }

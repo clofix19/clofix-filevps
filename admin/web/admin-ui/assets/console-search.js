@@ -22,46 +22,67 @@
   logs:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="16" rx="1"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>',
   settings:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1 1.4 1.1-1.4 2.4-1.7-.6a8 8 0 0 1-1.8 1l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.8-1l-1.7.6-1.4-2.4 1.4-1.1a1.7 1.7 0 0 0 .3-1.8 7 7 0 0 1 0-2 1.7 1.7 0 0 0-.3-1.8l-1.4-1.1 1.4-2.4 1.7.6a8 8 0 0 1 1.8-1l.3-1.8h2.8l.3 1.8a8 8 0 0 1 1.8 1l1.7-.6 1.4 2.4-1.4 1.1a1.7 1.7 0 0 0-.3 1.8 7 7 0 0 1 0 2z"/></svg>'
  };
+ // CloFix platform services only — no third-party app names (Jenkins, Grafana, …).
  const catalog=[
-  {name:'Dashboard',href:'/',group:'Overview',keys:'home dashboard overview',icon:icon.dashboard},
-  {name:'FileVPS',href:'/instances',group:'Compute',keys:'vps instance compute linux',icon:icon.vps},
-  {name:'Library',href:'/services',group:'Compute',keys:'apps catalog software managed',icon:icon.library},
-  {name:'Jenkins',href:'/services#library-apps',group:'Compute',keys:'jenkins ci cd pipeline automation',icon:icon.jobs},
-  {name:'Grafana',href:'/services#library-apps',group:'Compute',keys:'grafana dashboard metrics observability',icon:icon.jobs},
-  {name:'Prometheus',href:'/services#library-apps',group:'Compute',keys:'prometheus metrics monitoring scrape',icon:icon.jobs},
-  {name:'Loki',href:'/services#library-apps',group:'Compute',keys:'loki logs aggregation grafana',icon:icon.logs},
-  {name:'Jaeger',href:'/services#library-apps',group:'Compute',keys:'jaeger tracing distributed otlp',icon:icon.jobs},
-  {name:'OpenTelemetry Collector',href:'/services#library-apps',group:'Compute',keys:'otel opentelemetry collector otlp telemetry',icon:icon.jobs},
-  {name:'Certificates',href:'/settings',group:'Networking',keys:'acme tls certificate lets encrypt https domain',icon:icon.security},
-  {name:'Floating IPs',href:'/settings#settings-nlb',group:'Networking',keys:'floating ip nlb pool attach',icon:icon.lb},
-  {name:'Marketplace',href:'/services#library-apps',group:'Compute',keys:'marketplace sku bdt wordpress one click',icon:icon.library},
-  {name:'Jobs & Functions',href:'/applications',group:'Compute',keys:'jobs functions scripts',icon:icon.jobs},
-  {name:'CKS',href:'/kubernetes',group:'Compute',keys:'cks k8s eks cluster kubernetes kubeadm helm ingress backup node pool namespace pod deployment service secret configmap pvc volume efs s3 lb',icon:icon.vps},
-  {name:'Volumes',href:'/volumes',group:'Storage',keys:'volume disk persistent',icon:icon.volumes},
-  {name:'EFS',href:'/efs',group:'Storage',keys:'efs share nfs web root load balancer files',icon:icon.storage},
-  {name:'Object Storage',href:'/storage/s3',group:'Storage',keys:'s3 bucket object storage',icon:icon.storage},
-  {name:'Backups',href:'/backups',group:'Storage',keys:'backup snapshot restore',icon:icon.backups},
-  {name:'Databases',href:'/databases',group:'Storage',keys:'mysql postgres mongodb redis',icon:icon.databases},
-  {name:'Load Balancers',href:'/load-balancers',group:'Networking',keys:'nlb alb load balancer',icon:icon.lb},
-  {name:'VPC',href:'/vpc',group:'Networking',keys:'vpc cidr subnet ip block network',icon:icon.vpc},
-  {name:'DNS Service',href:'/dns',group:'Networking',keys:'dns zone record hostname cks lb load balancer eks',icon:icon.dns},
-  {name:'Health Checks',href:'/health-checks',group:'Networking',keys:'health ping monitor',icon:icon.health},
-  {name:'Firewall',href:'/firewall',group:'Networking',keys:'firewall security group cidr nftables inbound worker vps',icon:icon.firewall},
-  {name:'Security',href:'/security',group:'Security',keys:'protection waf ssh',icon:icon.security},
-  {name:'IAM',href:'/iam',group:'Security',keys:'iam users keys policies',icon:icon.iam,kinds:['admin','root','iam']},
-  {name:'Users',href:'/users',group:'Security',keys:'users partner client accounts',icon:icon.iam,kinds:['admin','partner']},
-  {name:'My Profile',href:'/profile',group:'Account',keys:'profile mfa google authenticator allow ip deny ip password email',icon:icon.iam},
-  {name:'Log Service',href:'/logs',group:'Platform',keys:'logs tail alert analysis download nginx syslog',icon:icon.logs},
-  {name:'Workers',href:'/workers',group:'Platform',keys:'worker host capacity enroll',icon:icon.workers,kinds:['admin']},
-  {name:'Billing & Payments',href:'/billing',group:'Platform',keys:'invoice payment wallet cks eks kubernetes load balancer',icon:icon.billing},
-  {name:'Settings',href:'/settings',group:'Platform',keys:'defaults license pricing cks eks kubernetes load balancer',icon:icon.settings}
+  {name:'Dashboard',href:'/',group:'Overview',hint:'Fleet overview',keys:'home dashboard overview clofix cloud',icon:icon.dashboard,core:true},
+  {name:'FileVPS',href:'/instances',group:'Compute',hint:'Linux VPS instances',keys:'vps instance compute linux filevps server vm ssh',icon:icon.vps,core:true},
+  {name:'Create FileVPS',href:'/instances?create=1',group:'Compute',hint:'Launch a new VPS',keys:'create new launch provision',icon:icon.vps},
+  {name:'CloFix Library',href:'/services',group:'Compute',hint:'Managed apps & VPS packages',keys:'library catalog software package install',icon:icon.library,core:true},
+  {name:'Quick Apps',href:'/services#library-apps',group:'Compute',hint:'CloFix managed deploys',keys:'quick apps managed deploy sandbox zip',icon:icon.library},
+  {name:'VPS software',href:'/services#library-software',group:'Compute',hint:'Install into a FileVPS',keys:'vps software packages nginx apache php mysql',icon:icon.library},
+  {name:'Jobs & Functions',href:'/applications',group:'Compute',hint:'Scripts and jobs',keys:'jobs functions scripts serverless',icon:icon.jobs,core:true},
+  {name:'CKS',href:'/kubernetes',group:'Compute',hint:'CloFix Kubernetes',keys:'cks k8s kubernetes cluster kubernetes kubeadm helm ingress node pool namespace pod',icon:icon.vps,core:true},
+  {name:'Volumes',href:'/volumes',group:'Storage',hint:'Persistent disks',keys:'volume disk persistent block',icon:icon.volumes,core:true},
+  {name:'EFS',href:'/efs',group:'Storage',hint:'Shared NFS files',keys:'efs share nfs web root files',icon:icon.storage,core:true},
+  {name:'Object Storage',href:'/storage/s3',group:'Storage',hint:'S3-compatible buckets',keys:'s3 bucket object storage',icon:icon.storage,core:true},
+  {name:'Backups',href:'/backups',group:'Storage',hint:'Snapshots & restore',keys:'backup snapshot restore',icon:icon.backups,core:true},
+  {name:'Databases',href:'/databases',group:'Storage',hint:'Managed databases',keys:'database mysql postgres mongodb redis',icon:icon.databases,core:true},
+  {name:'Load Balancers',href:'/load-balancers',group:'Networking',hint:'NLB / ALB',keys:'nlb alb load balancer traffic',icon:icon.lb,core:true},
+  {name:'Floating IPs',href:'/settings#settings-nlb',group:'Networking',hint:'Public IPv4 pool',keys:'floating ip nlb pool attach public ipv4',icon:icon.lb},
+  {name:'VPC',href:'/vpc',group:'Networking',hint:'Private networks',keys:'vpc cidr subnet ip block network',icon:icon.vpc,core:true},
+  {name:'DNS Service',href:'/dns',group:'Networking',hint:'Zones & records',keys:'dns zone record hostname',icon:icon.dns,core:true},
+  {name:'Certificates',href:'/dns#dns-certificates',group:'Networking',hint:'TLS / ACME',keys:'acme tls certificate lets encrypt https domain',icon:icon.security},
+  {name:'Health Checks',href:'/health-checks',group:'Networking',hint:'Endpoint monitors',keys:'health ping monitor uptime',icon:icon.health,core:true},
+  {name:'Firewall',href:'/firewall',group:'Networking',hint:'Security groups',keys:'firewall security group cidr nftables inbound',icon:icon.firewall,core:true},
+  {name:'Security Center',href:'/security',group:'Security',hint:'Posture & controls',keys:'security protection waf ssh score audit findings autopilot fim cve compliance',icon:icon.security,core:true},
+  {name:'Security score',href:'/security#security-score',group:'Security',hint:'Live posture score',keys:'score posture findings delta',icon:icon.security},
+  {name:'Findings',href:'/security#security-findings',group:'Security',hint:'Score ledger',keys:'findings ledger delta inventory',icon:icon.security},
+  {name:'Advanced Protection',href:'/security#security-protection',group:'Security',hint:'Catalog & unlock',keys:'advanced protection unlock quarantine approval filevps network worker storage',icon:icon.security},
+  {name:'Security Modes',href:'/security#security-modes',group:'Security',hint:'Policy templates',keys:'modes policy harden dry-run apply',icon:icon.security},
+  {name:'Security Guide',href:'/security#security-guide',group:'Security',hint:'Control map',keys:'guide catalog control map deeplink',icon:icon.security},
+  {name:'Security audit',href:'/security#security-audit',group:'Security',hint:'Mutation trail',keys:'audit trail activity',icon:icon.security},
+  {name:'IAM',href:'/iam',group:'Security',hint:'Keys & policies',keys:'iam users keys policies access',icon:icon.iam,kinds:['admin','root','iam'],core:true},
+  {name:'Users',href:'/users',group:'Security',hint:'Accounts',keys:'users partner client accounts',icon:icon.iam,kinds:['admin','partner'],core:true},
+  {name:'My Profile',href:'/profile',group:'Account',hint:'MFA & allowlist',keys:'profile mfa authenticator allow ip password',icon:icon.iam,core:true},
+  {name:'Log Service',href:'/logs',group:'Platform',hint:'Tail & alerts',keys:'logs tail alert analysis download nginx syslog',icon:icon.logs,core:true},
+  {name:'Workers',href:'/workers',group:'Platform',hint:'Host capacity',keys:'worker host capacity enroll lab',icon:icon.workers,kinds:['admin'],core:true},
+  {name:'Billing & Payments',href:'/billing',group:'Platform',hint:'Plans & invoices',keys:'invoice payment wallet billing plan',icon:icon.billing,core:true},
+  {name:'Settings',href:'/settings',group:'Platform',hint:'Defaults & license',keys:'defaults license pricing settings',icon:icon.settings,core:true}
  ];
  const recentKey='cf_recent_services';
+ const aliases={
+  home:'dashboard',cloud:'dashboard',overview:'dashboard',
+  vps:'filevps',vm:'filevps',instance:'filevps',server:'filevps',linux:'filevps',
+  k8s:'cks',kubernetes:'cks',eks:'cks',kube:'cks',
+  s3:'object storage',bucket:'object storage',
+  nfs:'efs',share:'efs',
+  db:'databases',sql:'databases',postgres:'databases',mysql:'databases',redis:'databases',mongo:'databases',
+  nlb:'load balancers',alb:'load balancers',lb:'load balancers',
+  waf:'security center',ssh:'security center',fim:'advanced protection',cve:'security center',
+  protect:'advanced protection',protection:'advanced protection',
+  package:'vps software',packages:'vps software',install:'vps software',
+  deploy:'quick apps',managed:'quick apps',
+  snapshot:'backups',restore:'backups',
+  invoice:'billing & payments',wallet:'billing & payments',
+  host:'workers',node:'workers'
+ };
  function service(s){return catalog.find(c=>c.href===s.href)||s;}
- function recent(){try{return JSON.parse(localStorage.getItem(recentKey)||'[]').map(service);}catch(e){return[];}}
+ function recent(){try{return JSON.parse(localStorage.getItem(recentKey)||'[]').map(service).filter(s=>catalog.some(c=>c.href===s.href));}catch(e){return[];}}
  function remember(){
   const path=location.pathname.replace(/\/$/,'')||'/';
-  const match=catalog.find(s=>s.href==='/'?path==='/':path===s.href||path.startsWith(s.href+'/'));
+  const hash=location.hash||'';
+  const withHash=catalog.find(s=>s.href.includes('#')&&s.href===path+hash);
+  const match=withHash||catalog.find(s=>s.core&&(s.href==='/'?path==='/':path===s.href||path.startsWith(s.href+'/')));
   if(!match)return;
   try{localStorage.setItem(recentKey,JSON.stringify([{name:match.name,href:match.href,group:match.group},...recent().filter(x=>x.href!==match.href)].slice(0,6)));}catch(e){}
  }
@@ -69,27 +90,52 @@
   const kind=window.cfMe?.kind||document.body.dataset.kind||'';
   return catalog.filter(s=>!s.kinds||!kind||s.kinds.includes(kind));
  }
+ function tokens(q){
+  return q.toLowerCase().split(/[\s,/|+.]+/).map(t=>t.trim()).filter(Boolean);
+ }
+ function expand(tok){
+  const a=aliases[tok];
+  return a?[tok,...tokens(a)]:[tok];
+ }
+ function scoreService(s,queryTokens){
+  const name=s.name.toLowerCase(),group=(s.group||'').toLowerCase(),keys=(s.keys||'').toLowerCase(),hint=(s.hint||'').toLowerCase(),href=s.href.toLowerCase();
+  let score=0,hits=0;
+  for(const raw of queryTokens){
+   const variants=expand(raw);
+   let best=0;
+   for(const t of variants){
+    if(!t)continue;
+    if(name===t)best=Math.max(best,120);
+    else if(name.startsWith(t))best=Math.max(best,95);
+    else if(name.split(/\s+/).some(w=>w.startsWith(t)))best=Math.max(best,80);
+    else if(name.includes(t))best=Math.max(best,55);
+    if(keys.split(/\s+/).includes(t))best=Math.max(best,70);
+    else if(keys.includes(t))best=Math.max(best,40);
+    if(hint.includes(t))best=Math.max(best,35);
+    if(group.startsWith(t)||group.includes(t))best=Math.max(best,25);
+    if(href.includes(t))best=Math.max(best,15);
+   }
+   if(best){score+=best;hits++;}
+   else return 0;
+  }
+  if(s.core)score+=4;
+  if(hits===queryTokens.length)score+=10;
+  return score;
+ }
  function matchQuery(q){
   const list=visibleCatalog();
-  if(!q)return list;
-  return list.filter(s=>[s.name,s.group,s.keys,s.href].join(' ').toLowerCase().includes(q));
- }
- function groups(list){
-  return list.reduce((acc,s)=>{
-   const last=acc[acc.length-1];
-   if(last&&last.name===s.group)last.items.push(s);
-   else acc.push({name:s.group,items:[s]});
-   return acc;
-  },[]);
+  const toks=tokens(q);
+  if(!toks.length)return list.filter(s=>s.core);
+  return list.map(s=>({s,score:scoreService(s,toks)})).filter(x=>x.score>0).sort((a,b)=>b.score-a.score||a.s.name.localeCompare(b.s.name)).map(x=>x.s);
  }
  function item(s,active){
   const a=document.createElement('a');
   a.className='console-result'+(active?' is-active':'');
   a.href=s.href;a.role='option';a.setAttribute('aria-selected',active?'true':'false');
+  a.title=s.hint?`${s.name} · ${s.hint}`:s.name;
   a.innerHTML=`<span class="console-result-icon">${s.icon||icon.dashboard}</span><strong>${s.name}</strong>`;
   return a;
  }
- function heading(text){const h=document.createElement('div');h.className='console-result-label';h.textContent=text;return h;}
  function grid(list,activeFirst){
   const wrap=document.createElement('div');
   wrap.className='console-result-grid';
@@ -97,16 +143,17 @@
   return wrap;
  }
  function render(q){
-  const query=q.trim().toLowerCase(),list=matchQuery(query);
+  const query=q.trim().toLowerCase(),visible=visibleCatalog(),list=matchQuery(query);
   results.replaceChildren();
   if(!query){
-   const rec=recent();
-   if(rec.length){results.append(heading('Recently visited'),grid(rec,true));}
-   groups(rec.length?catalog.filter(s=>!rec.some(r=>r.href===s.href)):catalog).forEach((g,i)=>{
-    results.append(heading(g.name),grid(g.items,!rec.length&&i===0));
-   });
+   const rec=recent().filter(s=>visible.some(v=>v.href===s.href));
+   const browse=visible.filter(s=>s.core&&!rec.some(r=>r.href===s.href));
+   const flat=[...rec,...browse];
+   if(!flat.length){
+    const empty=document.createElement('p');empty.className='console-result-empty';empty.textContent='No CloFix services available.';results.append(empty);
+   }else results.append(grid(flat,true));
   }else if(!list.length){
-   const empty=document.createElement('p');empty.className='console-result-empty';empty.textContent='No matching CloFix service.';results.append(empty);
+   const empty=document.createElement('p');empty.className='console-result-empty';empty.textContent='No matching CloFix service. Try FileVPS, Security, Storage, or Networking.';results.append(empty);
   }else results.append(grid(list,true));
   if(clear)clear.hidden=!query;
  }
@@ -115,19 +162,18 @@
   if(!panel)return;
   panel.replaceChildren();
   const path=(location.pathname.replace(/\/$/,'')||'/');
-  groups(visibleCatalog()).forEach(g=>{
-   const label=document.createElement('p');
-   label.textContent=g.name;
-   panel.append(label);
-   g.items.forEach(s=>{
-    const a=document.createElement('a');
-    a.href=s.href;
-    a.setAttribute('role','menuitem');
-    a.innerHTML=`<span class="console-result-icon">${s.icon||icon.dashboard}</span><strong>${s.name}</strong>`;
-    if(s.href==='/'?path==='/':path===s.href||path.startsWith(s.href+'/'))a.setAttribute('aria-current','page');
-    panel.append(a);
-   });
+  const wrap=document.createElement('div');
+  wrap.className='console-menu-grid';
+  visibleCatalog().filter(s=>s.core).forEach(s=>{
+   const a=document.createElement('a');
+   a.href=s.href;
+   a.setAttribute('role','menuitem');
+   a.title=s.hint||s.name;
+   a.innerHTML=`<span class="console-result-icon">${s.icon||icon.dashboard}</span><strong>${s.name}</strong>`;
+   if(s.href==='/'?path==='/':path===s.href||path.startsWith(s.href+'/'))a.setAttribute('aria-current','page');
+   wrap.append(a);
   });
+  panel.append(wrap);
  }
  function closeMenu(){$('console-menu')?.removeAttribute('open');}
  function closeTheme(){$('console-theme')?.removeAttribute('open');}

@@ -7,8 +7,8 @@
   <title>CloFix · {{.Title}}</title>
   <link rel="icon" type="image/svg+xml" href="/clofix-mark.svg">
   <script>(function(){try{var ok={dark:1,light:1,midnight:1,slate:1,contrast:1,warm:1};var saved=localStorage.getItem('cf_theme');document.documentElement.dataset.theme=ok[saved]?saved:(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark')}catch(e){document.documentElement.dataset.theme='dark'}})();</script>
-  <link rel="stylesheet" href="/assets/app.css?v=20261102-themes">
-  <link rel="stylesheet" href="/assets/refresh.css?v=20261103-cks-tabs">
+  <link rel="stylesheet" href="/assets/app.css?v=20261104-mode-summaries">
+  <link rel="stylesheet" href="/assets/refresh.css?v=20261104-fw-layout">
 </head>
 <body data-page="{{.Page}}" data-instance-id="{{.InstanceID}}">
   <header class="console-bar" role="banner">
@@ -56,6 +56,7 @@
     <main class="main">
       <header class="topbar">
         <div class="topbar-title">
+          <button type="button" class="detail-back topbar-back" id="topbar-back" data-cf-back="1" hidden>← Back</button>
           <nav class="cloud-crumb" aria-label="Breadcrumb">
             <a href="/">CloFix Cloud</a>
             {{if or (eq .Page "instances") (eq .Page "details") (eq .Page "services") (eq .Page "applications") (eq .Page "kubernetes")}}<span aria-hidden="true">/</span><span>Compute</span>{{end}}
@@ -68,7 +69,24 @@
           </nav>
           <h1 id="page-title">{{.Title}}</h1>
         </div>
-        <div class="top-actions"><span id="msg" class="top-status" role="status" aria-live="polite"></span></div>
+        <div class="top-actions">
+          <div class="topbar-tools" id="topbar-aside" aria-label="Page tools">
+            <svg class="topbar-pulse" id="topbar-pulse" viewBox="0 0 64 20" width="64" height="20" aria-hidden="true" hidden></svg>
+            <div class="topbar-facts" id="topbar-aside-facts" role="status"></div>
+            <label class="topbar-jump"><span class="visually-hidden">Jump in section</span>
+              <select id="topbar-jump" aria-label="Jump to related page"></select>
+            </label>
+            <span class="topbar-sync" title="Last sync"><span class="live-dot" aria-hidden="true"></span><span id="topbar-aside-sync">—</span></span>
+            <button type="button" class="icon-button topbar-tool-btn" id="topbar-copy" title="Copy page link" aria-label="Copy page link">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+            <button type="button" class="icon-button topbar-tool-btn topbar-refresh" id="topbar-refresh" title="Refresh (R)" aria-label="Refresh this page">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.2-5.5"/><path d="M20 4v5h-5"/></svg>
+            </button>
+            <a class="topbar-link" id="topbar-aside-link" hidden href="/">Related</a>
+          </div>
+          <span id="msg" class="top-status" role="status" aria-live="polite"></span>
+        </div>
       </header>
       <div class="auth-banner" id="auth-banner" hidden></div>
       <div class="sync-warning" id="stale-warning" role="status" aria-live="polite" hidden></div>
@@ -91,29 +109,30 @@
   <dialog class="terminal-dialog" id="service-log-dialog"><div class="section-head"><div><p class="eyebrow">Live service log</p><h2 id="service-log-title">Service logs</h2></div><button type="button" class="secondary" id="service-log-close">Close</button></div><p class="muted">Log tail refreshed from the VPS worker heartbeat.</p><pre id="service-log-output" class="log-view"></pre></dialog>
   <dialog class="terminal-dialog" id="service-error-dialog"><div class="section-head"><div><p class="eyebrow">Application services</p><h2 id="service-error-title">Service error log</h2></div><button type="button" class="secondary" id="service-error-close">Close</button></div><p class="muted">Filtered <code>error.log</code> tail refreshed from the VPS worker heartbeat.</p><pre id="service-error-output" class="log-view"></pre></dialog>
   <dialog class="terminal-dialog" id="waf-log-dialog"><div class="section-head"><div><p class="eyebrow">CloFix Security · Nginx</p><h2>WAF error log</h2></div><button type="button" class="secondary" id="waf-log-close">Close</button></div><p class="muted">Recent Nginx error entries, including ModSecurity messages. Refreshed from the worker heartbeat.</p><pre id="waf-log-output" class="log-view"></pre></dialog>
-  <script src="/assets/app.js?v=20261102-themes" defer></script>
+  <script src="/assets/app.js?v=20261104-mode-summaries" defer></script>
   <script src="/assets/qrcode-generator.min.js?v=1" defer></script>
   <script src="/assets/qr-mini.js?v=1" defer></script>
   <script src="/assets/profile.js?v=2" defer></script>
   <script src="/assets/users.js?v=1" defer></script>
-  <script src="/assets/managed-apps.js?v=7" defer></script>
+  <script src="/assets/managed-apps.js?v=12" defer></script>
   <script src="/assets/applications.js?v=4" defer></script>
   <script src="/assets/databases.js?v=9" defer></script>
-  <script src="/assets/kubernetes.js?v=14" defer></script>
+  <script src="/assets/kubernetes.js?v=20261104-cks-fix" defer></script>
   <script src="/assets/load-balancers.js?v=14" defer></script>
-  <script src="/assets/nlb-settings.js?v=5" defer></script>
+  <script src="/assets/nlb-settings.js?v=6" defer></script>
   <script src="/assets/monitoring.js?v=8" defer></script>
   <script src="/assets/logs.js?v=3" defer></script>
   <script src="/assets/license.js?v=11" defer></script>
   <script src="/assets/license-status.js?v=2" defer></script>
-  <script src="/assets/settings-nav.js?v=3" defer></script>
-  <script src="/assets/billing.js?v=9" defer></script>
-  <script src="/assets/dns.js?v=5" defer></script>
+  <script src="/assets/settings-nav.js?v=7" defer></script>
+  <script src="/assets/billing.js?v=11" defer></script>
+  <script src="/assets/dns.js?v=20261104-certs" defer></script>
   <script src="/assets/vpc.js?v=3" defer></script>
-  <script src="/assets/firewall.js?v=1" defer></script>
+  <script src="/assets/firewall.js?v=20261104-fw-layout" defer></script>
+  <script src="/assets/security.js?v=20261104-web-block-langs" defer></script>
   <script src="/assets/efs.js?v=3" defer></script>
-  <script src="/assets/columns.js?v=20261102-cks-list" defer></script>
-  <script src="/assets/console-search.js?v=14" defer></script>
+  <script src="/assets/columns.js?v=20261104-inline-actions" defer></script>
+  <script src="/assets/console-search.js?v=19" defer></script>
   <script src="/assets/home-console.js?v=1" defer></script>
   <script src="/assets/site-footer.js?v=1" defer></script>
 </body>

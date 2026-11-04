@@ -48,7 +48,10 @@ services:
       CLOFIX_LB_WORKER_HOST: worker # Docker service DNS for the local single worker
       CLOFIX_NLB_LISTEN_MAP: '{"127.0.0.1:18080":"0.0.0.0:18080"}' # Explicit local NAT mapping; public deployments bind their assigned IPs directly
       CLOFIX_TLS_NAMES: localhost,127.0.0.1,admin
+      CLOFIX_ACME_EMAIL: ${CLOFIX_ACME_EMAIL:-}
+      CLOFIX_ACME_DIRECTORY: ${CLOFIX_ACME_DIRECTORY:-}
       CLOFIX_S3_MASTER_ADDRESS: ${CLOFIX_S3_MASTER_ADDRESS:-s3pool:9333}
+      CLOFIX_K8S_E2E: ${CLOFIX_K8S_E2E:-}
     ports:
       - "8080:8080"   # Admin UI + API
       - "8443:8443"   # Worker API (mTLS)
@@ -74,6 +77,9 @@ services:
     # DEV ONLY: fx needs namespaces, cgroups v2, overlayfs and mounts
     privileged: true
     cgroup: host
+    # Do not override DNS: custom 8.8.8.8/1.1.1.1 breaks Docker service discovery
+    # (admin, s3pool, database-runtime) and stalls worker heartbeats / CKS readiness.
+    # Template builds that need public GitHub DNS use scripts/build-managed-templates.sh on the host.
     environment:
       CLOFIX_CONFIG_DIR: /etc/clofix-filevps
       CLOFIX_STATE_DIR: /var/lib/clofix-filevps

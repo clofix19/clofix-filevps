@@ -21,6 +21,7 @@ const (
 	ActionUpdateSSHLogin         = "update-ssh-login"
 	ActionUpdateDeleteProtection = "update-delete-protection"
 	ActionUpdateWAF              = "update-waf"
+	ActionUpdateWAFErrorPages    = "update-waf-error-pages"
 	ActionUpdateS3Mount          = "update-s3-mount"
 	ActionUpdateEFS              = "update-efs"
 	ActionUpdateResources        = "update-resources"
@@ -35,6 +36,7 @@ const (
 	ActionExportBackup           = "export-backup"
 	ActionImportBackup           = "import-backup"
 	ActionSetPassword            = "set-password"
+	ActionUpdatePasswordAuth     = "update-password-auth"
 	ActionKubernetesJob          = "kubernetes-job"
 )
 
@@ -100,11 +102,17 @@ type InstanceSpec struct {
 	SSHAuthorizedKey string          `json:"ssh_authorized_key,omitempty"`
 	PasswordAuth     bool            `json:"password_auth,omitempty"`
 	PortMappings     []PortMapping   `json:"port_mappings,omitempty"`
+	// PublishSSH/HTTP/HTTPS control managed DNAT (guest 22/80/443). Nil means published.
+	PublishSSH       *bool           `json:"publish_ssh,omitempty"`
+	PublishHTTP      *bool           `json:"publish_http,omitempty"`
+	PublishHTTPS     *bool           `json:"publish_https,omitempty"`
 	ProtectionMode   *bool           `json:"protection_mode,omitempty"`
 	SSHLoginBlocked  *bool           `json:"ssh_login_blocked,omitempty"`
 	DeleteProtection bool            `json:"delete_protection,omitempty"`
-	OWASPProtection  map[string]bool `json:"owasp_protection,omitempty"`
-	S3MountPath      string          `json:"s3_mount_path,omitempty"`
+	OWASPProtection  map[string]bool   `json:"owasp_protection,omitempty"`
+	// WAFErrorPages maps HTTP status codes (e.g. "403") to custom HTML shown when Nginx returns that status.
+	WAFErrorPages    map[string]string `json:"waf_error_pages,omitempty"`
+	S3MountPath      string            `json:"s3_mount_path,omitempty"`
 	S3ConnectionID   string          `json:"s3_connection_id,omitempty"`
 	StorageMounts    []StorageMount  `json:"storage_mounts,omitempty"`
 	EFSMounts        []StorageMount  `json:"efs_mounts,omitempty"`

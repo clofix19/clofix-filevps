@@ -16,6 +16,8 @@
   };
   const actionName = label => /^actions?$/i.test((label || '').trim());
   document.querySelectorAll('.table-wrap table[id]').forEach(table => {
+    // Keep Edit/Delete/Manage buttons visible in the row (firewall, detail SG, etc.).
+    if (table.hasAttribute('data-inline-actions')) return;
     const key = 'cf_table_columns_v3:' + table.id;
     let saved = null, signature = '', controls, enhancing = false, selectedKeys = new Set(), timer = 0;
     try { const value = JSON.parse(localStorage.getItem(key)); if (Array.isArray(value)) saved = value; } catch (_) {}
