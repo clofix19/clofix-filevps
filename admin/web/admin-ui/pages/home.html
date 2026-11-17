@@ -1,7 +1,11 @@
 {{define "content"}}
 <section class="page active" id="page-home">
   <div class="section-head home-console-head">
-    <div><h2>Console Home</h2></div>
+    <div>
+      <p class="eyebrow">Overview</p>
+      <h2>Console Home</h2>
+      <p class="home-lead">Fleet status, capacity, and shortcuts for this CloFix account.</p>
+    </div>
     <div class="row-actions">
       <button class="secondary" id="home-reset-layout" type="button">Reset layout</button>
       <details class="home-add-widgets" id="home-add-widgets"><summary class="secondary">Add widgets</summary><div id="home-add-list"></div></details>
@@ -10,20 +14,21 @@
   </div>
   <div class="home-loading" id="home-loading" role="status" aria-live="polite">Loading console overview…</div>
   <div class="home-empty" id="home-empty" hidden><strong>No infrastructure yet</strong><p>Create a FileVPS to get started. Workers are enrolled by CloFix administrators.</p><a class="primary" href="/instances">Open FileVPS</a></div>
-  <div class="cards" data-home-admin>
-    <div class="stat"><div class="stat-label">Platform</div><div class="stat-value">Admin</div><div class="stat-note">Accounts, workers, pricing, and billing</div></div>
-    <div class="stat"><div class="stat-label">Users</div><div class="stat-value"><a href="/users">Manage</a></div><div class="stat-note">Create partners and client roots</div></div>
-    <div class="stat"><div class="stat-label">Workers</div><div class="stat-value"><a href="/workers">Fleet</a></div><div class="stat-note">Enrollment tokens and host capacity</div></div>
+  <div class="home-shortcuts cards" data-home-admin>
+    <a class="home-shortcut" href="/users"><span class="home-shortcut-kicker">Platform</span><strong>Users</strong><span>Partners and client roots</span></a>
+    <a class="home-shortcut" href="/workers"><span class="home-shortcut-kicker">Capacity</span><strong>Workers</strong><span>Enrollment and host fleet</span></a>
+    <a class="home-shortcut" href="/billing"><span class="home-shortcut-kicker">Revenue</span><strong>Billing</strong><span>Pricing and invoices</span></a>
+    <a class="home-shortcut" href="/settings"><span class="home-shortcut-kicker">Control</span><strong>Settings</strong><span>Defaults, license, platform</span></a>
   </div>
-  <div class="cards" data-home-partner>
-    <div class="stat"><div class="stat-label">Partner</div><div class="stat-value">Clients</div><div class="stat-note">Only the accounts you manage</div></div>
-    <div class="stat"><div class="stat-label">Directory</div><div class="stat-value"><a href="/users">Users</a></div><div class="stat-note">Create root clients</div></div>
-    <div class="stat"><div class="stat-label">Billing</div><div class="stat-value"><a href="/billing">Invoices</a></div><div class="stat-note">Invoice due bills for your clients</div></div>
+  <div class="home-shortcuts cards" data-home-partner>
+    <a class="home-shortcut" href="/users"><span class="home-shortcut-kicker">Directory</span><strong>Users</strong><span>Create root clients</span></a>
+    <a class="home-shortcut" href="/billing"><span class="home-shortcut-kicker">Billing</span><strong>Invoices</strong><span>Due bills for your clients</span></a>
+    <a class="home-shortcut" href="/instances"><span class="home-shortcut-kicker">Compute</span><strong>FileVPS</strong><span>Client infrastructure</span></a>
   </div>
-  <div class="cards" data-home-client>
-    <div class="stat"><div class="stat-label">Account</div><div class="stat-value">FileVPS</div><div class="stat-note">VPS, storage, networking, and IAM for this account</div></div>
-    <div class="stat"><div class="stat-label">Due bill</div><div class="stat-value"><a href="/billing">Billing</a></div><div class="stat-note">Hourly usage for this account</div></div>
-    <div class="stat"><div class="stat-label">IAM</div><div class="stat-value"><a href="/iam">Users</a></div><div class="stat-note">Create sub-users for this account</div></div>
+  <div class="home-shortcuts cards" data-home-client>
+    <a class="home-shortcut" href="/instances"><span class="home-shortcut-kicker">Compute</span><strong>FileVPS</strong><span>Instances for this account</span></a>
+    <a class="home-shortcut" href="/billing"><span class="home-shortcut-kicker">Usage</span><strong>Billing</strong><span>Hourly due bill</span></a>
+    <a class="home-shortcut" href="/iam"><span class="home-shortcut-kicker">Access</span><strong>IAM</strong><span>Sub-users and keys</span></a>
   </div>
 
   <div class="home-widgets">
@@ -34,45 +39,198 @@
         <a class="home-widget-foot" href="/instances">View FileVPS</a>
       </article>
 
-      <article class="home-widget" data-home-widget="usage" aria-labelledby="home-usage-title">
+      <article class="home-widget home-usage-bit" data-home-widget="usage" aria-labelledby="home-usage-title">
         <div class="home-widget-head"><h3 id="home-usage-title">Resource usage</h3><button class="home-widget-hide" type="button" data-hide-widget="usage" aria-label="Hide resource usage">⋯</button></div>
         <div class="chart-toolbar"><div class="chart-ranges" role="group" aria-label="Chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="6h" aria-pressed="false">6h</button><button type="button" data-chart-range="1d" aria-pressed="false">1d</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button><button type="button" data-chart-range="custom" aria-pressed="false">Custom</button></div><div class="chart-custom" hidden><label>From <input type="datetime-local" data-chart-from></label><label>To <input type="datetime-local" data-chart-to></label><button type="button" class="small-btn" data-chart-custom-apply>Apply</button></div></div>
-        <div class="home-usage-grid">
-          <div>
-            <div class="home-usage-label">Guest CPU</div>
-            <div class="home-usage-value" id="home-cpu">—</div>
-            <div class="meter" role="progressbar" id="home-cpu-meter" aria-label="Guest CPU utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-cpu-bar"></div></div>
-            <svg id="chart-cpu" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS CPU usage and allocated capacity chart"></svg>
-            <div class="chart-current" id="chart-cpu-current">—</div>
-          </div>
-          <div>
-            <div class="home-usage-label">Guest RAM</div>
-            <div class="home-usage-value" id="home-ram">—</div>
-            <div class="meter" role="progressbar" id="home-ram-meter" aria-label="Guest RAM utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-ram-bar"></div></div>
-            <svg id="chart-memory" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS memory usage and allocated capacity chart"></svg>
-            <div class="chart-current" id="chart-memory-current">—</div>
-          </div>
+        <div class="home-usage-grid hard-bit-grid">
+          <section class="bit-card" data-bit="cpu">
+            <div class="bit-side">
+              <div class="bit-kicker">CPU · GUEST</div>
+              <div class="bit-value home-usage-value" id="home-cpu">—</div>
+              <div class="bit-sub" id="chart-cpu-current">—</div>
+              <div class="bit-pie-row">
+                <svg class="bit-pie" id="pie-cpu" viewBox="0 0 72 72" role="img" aria-label="Guest CPU utilization pie">
+                  <circle class="bit-pie-track" cx="36" cy="36" r="26"></circle>
+                  <circle class="bit-pie-arc" id="pie-cpu-arc" cx="36" cy="36" r="26" pathLength="100"></circle>
+                  <text class="bit-pie-num" id="pie-cpu-pct" x="36" y="39" text-anchor="middle">—</text>
+                </svg>
+                <div class="bit-nums">
+                  <div><span>USED</span><strong id="pie-cpu-used">—</strong></div>
+                  <div><span>FREE</span><strong id="pie-cpu-free">—</strong></div>
+                  <div><span>ALLOC</span><strong id="pie-cpu-alloc">—</strong></div>
+                </div>
+              </div>
+              <div class="meter bit-meter" role="progressbar" id="home-cpu-meter" aria-label="Guest CPU utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-cpu-bar"></div></div>
+            </div>
+            <div class="bit-graph">
+              <div class="bit-graph-label">TREND</div>
+              <svg id="chart-cpu" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS CPU usage and allocated capacity chart"></svg>
+            </div>
+          </section>
+          <section class="bit-card" data-bit="ram">
+            <div class="bit-side">
+              <div class="bit-kicker">RAM · GUEST</div>
+              <div class="bit-value home-usage-value" id="home-ram">—</div>
+              <div class="bit-sub" id="chart-memory-current">—</div>
+              <div class="bit-pie-row">
+                <svg class="bit-pie" id="pie-ram" viewBox="0 0 72 72" role="img" aria-label="Guest RAM utilization pie">
+                  <circle class="bit-pie-track" cx="36" cy="36" r="26"></circle>
+                  <circle class="bit-pie-arc" id="pie-ram-arc" cx="36" cy="36" r="26" pathLength="100"></circle>
+                  <text class="bit-pie-num" id="pie-ram-pct" x="36" y="39" text-anchor="middle">—</text>
+                </svg>
+                <div class="bit-nums">
+                  <div><span>USED</span><strong id="pie-ram-used">—</strong></div>
+                  <div><span>FREE</span><strong id="pie-ram-free">—</strong></div>
+                  <div><span>ALLOC</span><strong id="pie-ram-alloc">—</strong></div>
+                </div>
+              </div>
+              <div class="meter bit-meter" role="progressbar" id="home-ram-meter" aria-label="Guest RAM utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-ram-bar"></div></div>
+            </div>
+            <div class="bit-graph">
+              <div class="bit-graph-label">TREND</div>
+              <svg id="chart-memory" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS memory usage and allocated capacity chart"></svg>
+            </div>
+          </section>
         </div>
       </article>
 
-      <article class="home-widget" data-home-widget="compute" aria-labelledby="home-compute-heading">
+      <article class="home-widget home-usage-bit" data-home-widget="compute" aria-labelledby="home-compute-heading">
         <div class="home-widget-head"><h3 id="home-compute-heading">Compute</h3><button class="home-widget-hide" type="button" data-hide-widget="compute" aria-label="Hide compute">⋯</button></div>
-        <div class="cards home-compact-cards">
-          <div class="stat"><div class="stat-label">Total VPS</div><div class="stat-value" id="home-total">—</div><div class="stat-note">All provisioned instances</div></div>
-          <div class="stat"><div class="stat-label">Running VPS</div><div class="stat-value" id="home-running">—</div><div class="stat-note">Currently active</div></div>
-          <div class="stat"><div class="stat-label">Guest swap</div><div class="stat-value" id="home-swap">—</div><div class="stat-note">Used / configured limit</div><div class="meter" role="progressbar" id="home-swap-meter" aria-label="Guest swap utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-swap-bar"></div></div></div>
+        <div class="bit-tile-row">
+          <div class="bit-tile" data-bit="total"><div class="bit-kicker">VPS · TOTAL</div><div class="bit-value" id="home-total">—</div><div class="bit-sub">All provisioned</div></div>
+          <div class="bit-tile" data-bit="run"><div class="bit-kicker">VPS · RUN</div><div class="bit-value" id="home-running">—</div><div class="bit-sub">Currently active</div></div>
+        </div>
+        <div class="hard-bit-grid">
+          <section class="bit-card" data-bit="swap">
+            <div class="bit-side">
+              <div class="bit-kicker">SWAP · GUEST</div>
+              <div class="bit-value" id="home-swap">—</div>
+              <div class="bit-sub" id="chart-swap-current">—</div>
+              <div class="bit-pie-row">
+                <svg class="bit-pie" id="pie-swap" viewBox="0 0 72 72" role="img" aria-label="Guest swap utilization pie">
+                  <circle class="bit-pie-track" cx="36" cy="36" r="26"></circle>
+                  <circle class="bit-pie-arc" id="pie-swap-arc" cx="36" cy="36" r="26" pathLength="100"></circle>
+                  <text class="bit-pie-num" id="pie-swap-pct" x="36" y="39" text-anchor="middle">—</text>
+                </svg>
+                <div class="bit-nums">
+                  <div><span>USED</span><strong id="pie-swap-used">—</strong></div>
+                  <div><span>FREE</span><strong id="pie-swap-free">—</strong></div>
+                  <div><span>ALLOC</span><strong id="pie-swap-alloc">—</strong></div>
+                </div>
+              </div>
+              <div class="meter bit-meter" role="progressbar" id="home-swap-meter" aria-label="Guest swap utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-swap-bar"></div></div>
+            </div>
+            <div class="bit-graph">
+              <div class="bit-graph-label">TREND</div>
+              <svg id="chart-swap" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS swap usage chart"></svg>
+            </div>
+          </section>
         </div>
       </article>
 
-      <article class="home-widget" data-home-widget="host" aria-labelledby="home-host-heading">
-        <div class="home-widget-head"><h3 id="home-host-heading">Host capacity</h3><button class="home-widget-hide" type="button" data-hide-widget="host" aria-label="Hide host capacity">⋯</button></div>
-        <div class="cards home-compact-cards">
-          <div class="stat"><div class="stat-label">Worker RAM</div><div class="stat-value" id="home-host-ram">—</div><div class="stat-note">Available / total across active workers</div><div class="meter" role="progressbar" id="home-host-ram-meter" aria-label="Worker RAM utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-host-ram-bar"></div></div></div>
-          <div class="stat"><div class="stat-label">Worker disk</div><div class="stat-value" id="home-host-disk">—</div><div class="stat-note">Available / total across active workers</div><div class="meter" role="progressbar" id="home-host-disk-meter" aria-label="Worker disk utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-host-disk-bar"></div></div></div>
-          <div class="stat"><div class="stat-label">Host swap</div><div class="stat-value" id="home-host-swap">—</div><div class="stat-note">Used / total on active workers</div><div class="meter" role="progressbar" id="home-host-swap-meter" aria-label="Host swap utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-host-swap-bar"></div></div></div>
-          <div class="stat"><div class="stat-label">Memory PSI</div><div class="stat-value" id="home-memory-psi">—</div><div class="stat-note">Highest worker pressure</div></div>
-          <div class="stat"><div class="stat-label">License usage</div><div class="stat-value" id="home-license">Unavailable</div><div class="stat-note">Requires a license usage endpoint</div></div>
-          <div class="stat"><div class="stat-label">Host CPU</div><div class="stat-note">Core-weighted across active workers</div><div class="meter" role="progressbar" id="home-host-cpu-meter" aria-label="Host CPU utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-host-cpu-bar"></div></div></div>
+      <article class="home-widget home-capacity home-usage-bit" data-home-widget="host" aria-labelledby="home-host-heading">
+        <div class="home-widget-head">
+          <h3 id="home-host-heading">Host capacity</h3>
+          <span class="live-pill" id="home-capacity-live" title="Updates with worker heartbeats"><span class="live-dot" aria-hidden="true"></span>Live</span>
+          <a class="small-btn" href="/workers">Workers</a>
+          <button class="home-widget-hide" type="button" data-hide-widget="host" aria-label="Hide host capacity">⋯</button>
+        </div>
+        <div class="bit-tile-grid">
+          <section class="bit-tile bit-tile-pie" data-bit="host-ram" data-capacity="ram">
+            <div class="bit-kicker">RAM · WORKER</div>
+            <div class="bit-value" id="home-host-ram">—</div>
+            <div class="bit-pie-row">
+              <svg class="bit-pie" id="pie-host-ram" viewBox="0 0 72 72" role="img" aria-label="Worker RAM pie">
+                <circle class="bit-pie-track" cx="36" cy="36" r="26"></circle>
+                <circle class="bit-pie-arc" id="pie-host-ram-arc" cx="36" cy="36" r="26" pathLength="100"></circle>
+                <text class="bit-pie-num" id="pie-host-ram-pct" x="36" y="39" text-anchor="middle">—</text>
+              </svg>
+              <div class="bit-nums">
+                <div><span>USED</span><strong id="pie-host-ram-used">—</strong></div>
+                <div><span>FREE</span><strong id="pie-host-ram-free">—</strong></div>
+                <div><span>TOTAL</span><strong id="pie-host-ram-alloc">—</strong></div>
+              </div>
+            </div>
+            <span class="stat-pct visually-hidden" id="home-host-ram-pct">—</span>
+            <div class="meter bit-meter" role="progressbar" id="home-host-ram-meter" aria-label="Worker RAM utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-host-ram-bar"></div></div>
+          </section>
+          <section class="bit-tile bit-tile-pie" data-bit="host-swap" data-capacity="swap">
+            <div class="bit-kicker">SWAP · HOST</div>
+            <div class="bit-value" id="home-host-swap">—</div>
+            <div class="bit-pie-row">
+              <svg class="bit-pie" id="pie-host-swap" viewBox="0 0 72 72" role="img" aria-label="Host swap pie">
+                <circle class="bit-pie-track" cx="36" cy="36" r="26"></circle>
+                <circle class="bit-pie-arc" id="pie-host-swap-arc" cx="36" cy="36" r="26" pathLength="100"></circle>
+                <text class="bit-pie-num" id="pie-host-swap-pct" x="36" y="39" text-anchor="middle">—</text>
+              </svg>
+              <div class="bit-nums">
+                <div><span>USED</span><strong id="pie-host-swap-used">—</strong></div>
+                <div><span>FREE</span><strong id="pie-host-swap-free">—</strong></div>
+                <div><span>TOTAL</span><strong id="pie-host-swap-alloc">—</strong></div>
+              </div>
+            </div>
+            <span class="stat-pct visually-hidden" id="home-host-swap-pct">—</span>
+            <div class="meter bit-meter" role="progressbar" id="home-host-swap-meter" aria-label="Host swap utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-host-swap-bar"></div></div>
+          </section>
+          <section class="bit-tile bit-tile-pie" data-bit="host-disk" data-capacity="disk">
+            <div class="bit-kicker">DISK · WORKER</div>
+            <div class="bit-value" id="home-host-disk">—</div>
+            <div class="bit-pie-row">
+              <svg class="bit-pie" id="pie-host-disk" viewBox="0 0 72 72" role="img" aria-label="Worker disk pie">
+                <circle class="bit-pie-track" cx="36" cy="36" r="26"></circle>
+                <circle class="bit-pie-arc" id="pie-host-disk-arc" cx="36" cy="36" r="26" pathLength="100"></circle>
+                <text class="bit-pie-num" id="pie-host-disk-pct" x="36" y="39" text-anchor="middle">—</text>
+              </svg>
+              <div class="bit-nums">
+                <div><span>USED</span><strong id="pie-host-disk-used">—</strong></div>
+                <div><span>FREE</span><strong id="pie-host-disk-free">—</strong></div>
+                <div><span>TOTAL</span><strong id="pie-host-disk-alloc">—</strong></div>
+              </div>
+            </div>
+            <span class="stat-pct visually-hidden" id="home-host-disk-pct">—</span>
+            <div class="meter bit-meter" role="progressbar" id="home-host-disk-meter" aria-label="Worker disk utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-host-disk-bar"></div></div>
+          </section>
+          <section class="bit-tile bit-tile-pie" data-bit="host-cpu" data-capacity="cpu">
+            <div class="bit-kicker">CPU · HOST</div>
+            <div class="bit-value" id="home-host-cpu-card">—</div>
+            <div class="bit-pie-row">
+              <svg class="bit-pie" id="pie-host-cpu" viewBox="0 0 72 72" role="img" aria-label="Host CPU pie">
+                <circle class="bit-pie-track" cx="36" cy="36" r="26"></circle>
+                <circle class="bit-pie-arc" id="pie-host-cpu-arc" cx="36" cy="36" r="26" pathLength="100"></circle>
+                <text class="bit-pie-num" id="pie-host-cpu-pct" x="36" y="39" text-anchor="middle">—</text>
+              </svg>
+              <div class="bit-nums">
+                <div><span>USED</span><strong id="pie-host-cpu-used">—</strong></div>
+                <div><span>FREE</span><strong id="pie-host-cpu-free">—</strong></div>
+                <div><span>CORES</span><strong id="pie-host-cpu-alloc">—</strong></div>
+              </div>
+            </div>
+            <span class="stat-pct visually-hidden" id="home-host-cpu-pct">—</span>
+            <div class="meter bit-meter" role="progressbar" id="home-host-cpu-meter" aria-label="Host CPU utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-host-cpu-bar"></div></div>
+          </section>
+          <section class="bit-tile bit-tile-pie" data-bit="psi" data-capacity="psi">
+            <div class="bit-kicker">PSI · MEM</div>
+            <div class="bit-value" id="home-memory-psi">—</div>
+            <div class="bit-pie-row">
+              <svg class="bit-pie" id="pie-psi" viewBox="0 0 72 72" role="img" aria-label="Memory PSI pie">
+                <circle class="bit-pie-track" cx="36" cy="36" r="26"></circle>
+                <circle class="bit-pie-arc" id="pie-psi-arc" cx="36" cy="36" r="26" pathLength="100"></circle>
+                <text class="bit-pie-num" id="pie-psi-pct" x="36" y="39" text-anchor="middle">—</text>
+              </svg>
+              <div class="bit-nums">
+                <div><span>MAX</span><strong id="pie-psi-used">—</strong></div>
+                <div><span>HEAD</span><strong id="pie-psi-free">—</strong></div>
+                <div><span>SCALE</span><strong id="pie-psi-alloc">100%</strong></div>
+              </div>
+            </div>
+            <span class="stat-pct visually-hidden" id="home-memory-psi-pct">—</span>
+            <div class="meter bit-meter" role="progressbar" id="home-memory-psi-meter" aria-label="Memory PSI" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-memory-psi-bar"></div></div>
+          </section>
+          <section class="bit-tile" data-bit="license" data-capacity="license">
+            <div class="bit-kicker">LICENSE</div>
+            <div class="bit-value" id="home-license">Checking…</div>
+            <div class="bit-sub" id="home-license-note">Controller entitlement</div>
+          </section>
         </div>
       </article>
 
@@ -83,14 +241,14 @@
     </div>
 
     <div class="home-col">
-      <article class="home-widget" data-home-widget="security" aria-labelledby="home-security-title">
+      <article class="home-widget home-usage-bit" data-home-widget="security" aria-labelledby="home-security-title">
         <div class="home-widget-head"><h3 id="home-security-title">Security</h3><button class="home-widget-hide" type="button" data-hide-widget="security" aria-label="Hide security">⋯</button></div>
         <p class="muted visually-hidden" id="home-security-note">Protection Mode and HTTP WAF are separate layers</p>
-        <dl class="home-facts">
-          <div><dt>Coverage</dt><dd id="home-security">—</dd></div>
-          <div><dt>Failed VPS</dt><dd><a id="home-failed-link" href="/instances?state=FAILED"><span id="home-failed">—</span></a></dd></div>
-          <div><dt>Pending</dt><dd id="home-pending">—</dd></div>
-        </dl>
+        <div class="bit-tile-grid">
+          <section class="bit-tile" data-bit="sec-cov"><div class="bit-kicker">COVERAGE</div><div class="bit-value" id="home-security">—</div><div class="bit-sub">Protection · WAF</div></section>
+          <section class="bit-tile" data-bit="sec-fail"><div class="bit-kicker">FAILED</div><div class="bit-value"><a id="home-failed-link" href="/instances?state=FAILED"><span id="home-failed">—</span></a></div><div class="bit-sub">VPS needing review</div></section>
+          <section class="bit-tile" data-bit="sec-pend"><div class="bit-kicker">PENDING</div><div class="bit-value" id="home-pending">—</div><div class="bit-sub">Provisioning queue</div></section>
+        </div>
         <p class="muted visually-hidden" id="home-failed-note">Failed instances</p>
         <a class="home-widget-foot" href="/security">Go to Security</a>
       </article>
@@ -105,36 +263,155 @@
         </ul>
       </article>
 
-      <article class="home-widget" data-home-widget="health" aria-labelledby="home-health-title">
+      <article class="home-widget home-usage-bit" data-home-widget="health" aria-labelledby="home-health-title">
         <div class="home-widget-head"><h3 id="home-health-title">Fleet health</h3><button class="home-widget-hide" type="button" data-hide-widget="health" aria-label="Hide fleet health">⋯</button></div>
-        <dl class="home-facts">
-          <div><dt>Workers</dt><dd id="home-workers">—</dd></div>
-          <div><dt>Host CPU</dt><dd id="home-host-cpu">—</dd></div>
-          <div><dt>ZRAM</dt><dd><span class="badge" id="home-zram-state">—</span></dd></div>
-        </dl>
-        <p class="muted" id="home-zram">Waiting for worker data</p>
-        <div class="meter" role="progressbar" id="home-zram-meter" aria-label="ZRAM logical capacity used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-zram-bar"></div></div>
+        <div class="bit-tile-grid">
+          <section class="bit-tile" data-bit="workers">
+            <div class="bit-kicker">WORKERS</div>
+            <div class="bit-value" id="home-workers">—</div>
+            <div class="bit-sub">Active / enrolled</div>
+          </section>
+          <section class="bit-tile bit-tile-pie" data-bit="health-cpu">
+            <div class="bit-kicker">CPU · HOST</div>
+            <div class="bit-value" id="home-host-cpu">—</div>
+            <div class="bit-pie-row">
+              <svg class="bit-pie" id="pie-health-cpu" viewBox="0 0 72 72" role="img" aria-label="Fleet host CPU pie">
+                <circle class="bit-pie-track" cx="36" cy="36" r="26"></circle>
+                <circle class="bit-pie-arc" id="pie-health-cpu-arc" cx="36" cy="36" r="26" pathLength="100"></circle>
+                <text class="bit-pie-num" id="pie-health-cpu-pct" x="36" y="39" text-anchor="middle">—</text>
+              </svg>
+              <div class="bit-nums">
+                <div><span>LOAD</span><strong id="pie-health-cpu-used">—</strong></div>
+                <div><span>IDLE</span><strong id="pie-health-cpu-free">—</strong></div>
+                <div><span>CORES</span><strong id="pie-health-cpu-alloc">—</strong></div>
+              </div>
+            </div>
+          </section>
+          <section class="bit-tile bit-tile-pie" data-bit="zram">
+            <div class="bit-kicker">ZRAM</div>
+            <div class="bit-value"><span class="badge" id="home-zram-state">—</span></div>
+            <div class="bit-sub" id="home-zram">Waiting for worker data</div>
+            <div class="bit-pie-row">
+              <svg class="bit-pie" id="pie-zram" viewBox="0 0 72 72" role="img" aria-label="ZRAM pie">
+                <circle class="bit-pie-track" cx="36" cy="36" r="26"></circle>
+                <circle class="bit-pie-arc" id="pie-zram-arc" cx="36" cy="36" r="26" pathLength="100"></circle>
+                <text class="bit-pie-num" id="pie-zram-pct" x="36" y="39" text-anchor="middle">—</text>
+              </svg>
+              <div class="bit-nums">
+                <div><span>USED</span><strong id="pie-zram-used">—</strong></div>
+                <div><span>FREE</span><strong id="pie-zram-free">—</strong></div>
+                <div><span>LOGIC</span><strong id="pie-zram-alloc">—</strong></div>
+              </div>
+            </div>
+            <div class="meter bit-meter" role="progressbar" id="home-zram-meter" aria-label="ZRAM logical capacity used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="home-zram-bar"></div></div>
+          </section>
+        </div>
         <a class="home-widget-foot" href="/health-checks">Go to Health Checks</a>
       </article>
 
-      <article class="home-widget" data-home-widget="network" aria-labelledby="home-network-heading">
+      <article class="home-widget home-usage-bit" data-home-widget="network" aria-labelledby="home-network-heading">
         <div class="home-widget-head"><h3 id="home-network-heading">Network</h3><button class="home-widget-hide" type="button" data-hide-widget="network" aria-label="Hide network">⋯</button></div>
-        <div class="cards home-compact-cards">
-          <div class="stat"><div class="stat-label">VPS IN</div><div class="stat-value" id="home-net-in">—</div><div class="stat-note" id="home-net-in-note">Received</div></div>
-          <div class="stat"><div class="stat-label">VPS OUT</div><div class="stat-value" id="home-net-out">—</div><div class="stat-note" id="home-net-out-note">Sent</div></div>
-          <div class="stat"><div class="stat-label">VPS bandwidth</div><div class="stat-value" id="home-net-bw">—</div><div class="stat-note" id="home-net-bw-note">IN + OUT</div></div>
-          <div class="stat"><div class="stat-label">Worker IN</div><div class="stat-value" id="home-host-net-in">—</div><div class="stat-note" id="home-host-net-in-note">Uplink receive</div></div>
-          <div class="stat"><div class="stat-label">Worker OUT</div><div class="stat-value" id="home-host-net-out">—</div><div class="stat-note" id="home-host-net-out-note">Uplink transmit</div></div>
-          <div class="stat"><div class="stat-label">Worker bandwidth</div><div class="stat-value" id="home-host-net-bw">—</div><div class="stat-note" id="home-host-net-bw-note">IN + OUT</div></div>
+        <div class="chart-toolbar"><div class="chart-ranges" role="group" aria-label="Chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="6h" aria-pressed="false">6h</button><button type="button" data-chart-range="1d" aria-pressed="false">1d</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button><button type="button" data-chart-range="custom" aria-pressed="false">Custom</button></div><div class="chart-custom" hidden><label>From <input type="datetime-local" data-chart-from></label><label>To <input type="datetime-local" data-chart-to></label><button type="button" class="small-btn" data-chart-custom-apply>Apply</button></div></div>
+        <div class="hard-bit-grid">
+          <section class="bit-card" data-bit="vps-net">
+            <div class="bit-side">
+              <div class="bit-kicker">NET · VPS</div>
+              <div class="bit-value" id="home-net-bw">—</div>
+              <div class="bit-sub" id="chart-net-current">—</div>
+              <div class="bit-pie-row">
+                <svg class="bit-pie" id="pie-vps-net" viewBox="0 0 72 72" role="img" aria-label="VPS IN share pie">
+                  <circle class="bit-pie-track" cx="36" cy="36" r="26"></circle>
+                  <circle class="bit-pie-arc" id="pie-vps-net-arc" cx="36" cy="36" r="26" pathLength="100"></circle>
+                  <text class="bit-pie-num" id="pie-vps-net-pct" x="36" y="39" text-anchor="middle">—</text>
+                </svg>
+                <div class="bit-nums">
+                  <div><span>IN</span><strong id="home-net-in">—</strong></div>
+                  <div><span>OUT</span><strong id="home-net-out">—</strong></div>
+                  <div><span>BW</span><strong id="pie-vps-net-alloc">—</strong></div>
+                </div>
+              </div>
+              <p class="bit-sub" id="home-net-in-note">Received</p>
+              <p class="bit-sub" id="home-net-out-note">Sent</p>
+              <p class="bit-sub visually-hidden" id="home-net-bw-note">IN + OUT</p>
+            </div>
+            <div class="bit-graph">
+              <div class="bit-graph-label">TREND</div>
+              <svg id="chart-net" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS network IN and OUT chart"></svg>
+            </div>
+          </section>
+          <section class="bit-card" data-bit="vps-bw">
+            <div class="bit-side">
+              <div class="bit-kicker">BW · VPS</div>
+              <div class="bit-value" id="chart-bw-current">—</div>
+              <div class="bit-sub">Combined throughput</div>
+              <div class="bit-pie-row">
+                <svg class="bit-pie" id="pie-vps-bw" viewBox="0 0 72 72" role="img" aria-label="VPS bandwidth pie">
+                  <circle class="bit-pie-track" cx="36" cy="36" r="26"></circle>
+                  <circle class="bit-pie-arc" id="pie-vps-bw-arc" cx="36" cy="36" r="26" pathLength="100"></circle>
+                  <text class="bit-pie-num" id="pie-vps-bw-pct" x="36" y="39" text-anchor="middle">—</text>
+                </svg>
+                <div class="bit-nums">
+                  <div><span>IN</span><strong id="pie-vps-bw-used">—</strong></div>
+                  <div><span>OUT</span><strong id="pie-vps-bw-free">—</strong></div>
+                  <div><span>SUM</span><strong id="pie-vps-bw-alloc">—</strong></div>
+                </div>
+              </div>
+            </div>
+            <div class="bit-graph">
+              <div class="bit-graph-label">TREND</div>
+              <svg id="chart-bw" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS bandwidth chart"></svg>
+            </div>
+          </section>
+          <section class="bit-card" data-bit="worker-net">
+            <div class="bit-side">
+              <div class="bit-kicker">NET · WORKER</div>
+              <div class="bit-value" id="home-host-net-bw">—</div>
+              <div class="bit-sub" id="chart-host-net-current">—</div>
+              <div class="bit-pie-row">
+                <svg class="bit-pie" id="pie-worker-net" viewBox="0 0 72 72" role="img" aria-label="Worker IN share pie">
+                  <circle class="bit-pie-track" cx="36" cy="36" r="26"></circle>
+                  <circle class="bit-pie-arc" id="pie-worker-net-arc" cx="36" cy="36" r="26" pathLength="100"></circle>
+                  <text class="bit-pie-num" id="pie-worker-net-pct" x="36" y="39" text-anchor="middle">—</text>
+                </svg>
+                <div class="bit-nums">
+                  <div><span>IN</span><strong id="home-host-net-in">—</strong></div>
+                  <div><span>OUT</span><strong id="home-host-net-out">—</strong></div>
+                  <div><span>BW</span><strong id="pie-worker-net-alloc">—</strong></div>
+                </div>
+              </div>
+              <p class="bit-sub" id="home-host-net-in-note">Uplink receive</p>
+              <p class="bit-sub" id="home-host-net-out-note">Uplink transmit</p>
+              <p class="bit-sub visually-hidden" id="home-host-net-bw-note">IN + OUT</p>
+            </div>
+            <div class="bit-graph">
+              <div class="bit-graph-label">TREND</div>
+              <svg id="chart-host-net" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live worker network IN and OUT chart"></svg>
+            </div>
+          </section>
+          <section class="bit-card" data-bit="worker-bw">
+            <div class="bit-side">
+              <div class="bit-kicker">BW · WORKER</div>
+              <div class="bit-value" id="chart-host-bw-current">—</div>
+              <div class="bit-sub">Uplink combined</div>
+              <div class="bit-pie-row">
+                <svg class="bit-pie" id="pie-worker-bw" viewBox="0 0 72 72" role="img" aria-label="Worker bandwidth pie">
+                  <circle class="bit-pie-track" cx="36" cy="36" r="26"></circle>
+                  <circle class="bit-pie-arc" id="pie-worker-bw-arc" cx="36" cy="36" r="26" pathLength="100"></circle>
+                  <text class="bit-pie-num" id="pie-worker-bw-pct" x="36" y="39" text-anchor="middle">—</text>
+                </svg>
+                <div class="bit-nums">
+                  <div><span>IN</span><strong id="pie-worker-bw-used">—</strong></div>
+                  <div><span>OUT</span><strong id="pie-worker-bw-free">—</strong></div>
+                  <div><span>SUM</span><strong id="pie-worker-bw-alloc">—</strong></div>
+                </div>
+              </div>
+            </div>
+            <div class="bit-graph">
+              <div class="bit-graph-label">TREND</div>
+              <svg id="chart-host-bw" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live worker bandwidth chart"></svg>
+            </div>
+          </section>
         </div>
-        <details class="home-more"><summary>Network charts</summary><div class="chart-toolbar"><div class="chart-ranges" role="group" aria-label="Chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="6h" aria-pressed="false">6h</button><button type="button" data-chart-range="1d" aria-pressed="false">1d</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button><button type="button" data-chart-range="custom" aria-pressed="false">Custom</button></div><div class="chart-custom" hidden><label>From <input type="datetime-local" data-chart-from></label><label>To <input type="datetime-local" data-chart-to></label><button type="button" class="small-btn" data-chart-custom-apply>Apply</button></div></div>
-        <div class="chart-grid home-mini-charts">
-          <article class="chart-panel"><div class="chart-title">VPS network</div><div class="chart-current" id="chart-net-current">—</div><svg id="chart-net" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS network IN and OUT chart"></svg></article>
-          <article class="chart-panel"><div class="chart-title">VPS bandwidth</div><div class="chart-current" id="chart-bw-current">—</div><svg id="chart-bw" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS bandwidth chart"></svg></article>
-          <article class="chart-panel"><div class="chart-title">Worker network</div><div class="chart-current" id="chart-host-net-current">—</div><svg id="chart-host-net" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live worker network IN and OUT chart"></svg></article>
-          <article class="chart-panel"><div class="chart-title">Worker bandwidth</div><div class="chart-current" id="chart-host-bw-current">—</div><svg id="chart-host-bw" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live worker bandwidth chart"></svg></article>
-        </div>
-        </details>
       </article>
 
       <article class="home-widget" data-home-widget="workers" aria-labelledby="home-heading-workers">

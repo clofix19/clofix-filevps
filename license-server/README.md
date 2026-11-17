@@ -1,8 +1,8 @@
 # CloFix company license server
 
-Standalone CloFix-hosted plan validation. Copy and deploy **this directory only**. It has its own Go module, admin console, Docker image, Compose project, company token and data volume. Customer controller and worker source are not required.
+Standalone CloFix **company** license console for managing licenses across **multiple customer admin/controller servers**. Copy and deploy **this directory only**. It has its own Go module, admin UI, Docker image, Compose project (Postgres + API), and data volumes. Customer controller and worker source are not required.
 
-Customer FileVPS stacks only call `POST /api/validate`. Plans, keys and installation binding stay on CloFix infrastructure.
+Customer FileVPS admin stacks only call `POST /api/validate`. Plans, keys and Installation ID binding stay on CloFix infrastructure.
 
 FileVPS guests are OS-level isolation (namespaces, cgroup v2, OverlayFS). They are not KVM/QEMU VMs. Do not describe a license as a hypervisor seat count.
 
@@ -10,18 +10,24 @@ FileVPS guests are OS-level isolation (namespaces, cgroup v2, OverlayFS). They a
 
 ```sh
 cp .env.example .env
-# Set LICENSE_ADMIN_TOKEN to a unique random company secret (minimum 16 chars).
+# Set LICENSE_ADMIN_USER, LICENSE_ADMIN_PASSWORD (≥12 chars), and LICENSE_DB_PASSWORD.
 docker compose up -d --build
 ```
 
+Compose runs **Postgres** (`db`) plus the license API. On **first deploy** (empty database) the service seeds:
+1. Company admin account from `LICENSE_ADMIN_USER` / `LICENSE_ADMIN_PASSWORD`
+2. A default **Standard** plan (one Installation ID per key)
+
+Sign in at the console with that username/password (`POST /api/login` → 12-hour session). Plans, licenses and admin accounts are stored in Postgres (`license_state`). The `licensedata` volume holds the CFL key-encryption secret (`license-key-encryption.key`). If an older `licenses.json` exists on that volume and the database is empty, it is imported once on startup.
+
 Open `http://localhost:8090/` on the company host. By default only loopback is published. Put a TLS reverse proxy in front of port 8090 for the real CloFix license hostname. Restrict `/` and `/api/plans` / `/api/licenses` to company operators. Allow customer controllers to POST `/api/validate`. This service does not listen on port 53 and does not issue certificates.
 
-The company admin token is independent of every customer `ADMIN_TOKEN`. There is no token fallback. `.env` is ignored by Git and Docker build context. The data volume is `clofix-license-server-data` by default. Keep `LICENSE_DATA_VOLUME` stable and back it up.
+Company admin login is independent of every customer `ADMIN_TOKEN`. `LICENSE_ADMIN_TOKEN` is removed. `.env` is ignored by Git and Docker build context. Keep `LICENSE_DATA_VOLUME` and `LICENSE_DB_VOLUME` stable and back both up.
 
 For development outside Docker:
 
 ```sh
-# Export CLOFIX_LICENSE_ADMIN_TOKEN and CLOFIX_LICENSE_DATA_DIR first.
+# Export CLOFIX_LICENSE_ADMIN_USER, CLOFIX_LICENSE_ADMIN_PASSWORD, and CLOFIX_LICENSE_DATA_DIR first.
 GOWORK=off go run ./cmd/clofix-license
 GOWORK=off go test ./...
 ```
@@ -67,6 +73,8 @@ Optional limits (`-1` unlimited, `0` not included, omitted unspecified):
 | `max_kubernetes_clusters` | CKS clusters (unspecified stays unlimited, like DNS) |
 | `max_kubernetes_nodes` | CKS nodes across all pools |
 | `max_kubernetes_node_pools` | CKS node pools |
+| `max_redis_clusters` | Multi-VPS Redis Cluster topologies (unspecified stays unlimited) |
+| `max_docker_containers` / `max_docker_applications` / `max_docker_workers` | Docker runtime entitlements |
 | `max_health_checks` | Custom health-check endpoints (not derived worker/LB checks) |
 | `max_notification_channels` | Alert channels |
 | `max_iam_users` / `max_iam_groups` / `max_iam_policies` / `max_access_keys` | IAM |
@@ -79,7 +87,7 @@ Missing optional fields stay unspecified on old plans; they are not rewritten to
 
 ## API / scope
 
-Bearer-authenticated company APIs: `GET/POST /api/plans`, `PUT/DELETE /api/plans/{id}`, `GET/POST /api/licenses`, `PUT/DELETE /api/licenses/{id}`, `POST /api/licenses/{id}/renew`, `POST /api/licenses/{id}/revoke`, `DELETE /api/licenses/{id}/activations/{installation}` (always 409).
+Auth: `POST /api/login` with `{username,password}` → session token; `POST /api/logout`. Company APIs use `Authorization: Bearer <session>`: `GET/POST /api/plans`, `PUT/DELETE /api/plans/{id}`, `GET/POST /api/licenses`, `PUT/DELETE /api/licenses/{id}`, `POST /api/licenses/{id}/renew`, `POST /api/licenses/{id}/revoke`, `DELETE /api/licenses/{id}/activations/{installation}` (always 409).
 
 Customer validation: `POST /api/validate` with `key` and `installation_id`. No company token. Validation checks expiry, revocation and the bound Installation ID. Keys have 192 random bits. Validation uses SHA-256 hashes; recoverable copies use AES-GCM. List responses omit raw keys and ciphertext. Validation is limited to 60 requests per remote address per minute.
 

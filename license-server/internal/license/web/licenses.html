@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0a0f16">
+<title>CloFix · Issued Licenses</title>
+<link rel="icon" type="image/svg+xml" href="/clofix-mark.svg">
+<link rel="stylesheet" href="/common.css">
+</head>
+<body data-page="licenses">
+<div id="app" hidden>
+  <header class="console-bar" role="banner">
+    <a class="console-logo" href="/plans" aria-label="CloFix Licenses"><img src="/clofix-logo.png" alt="CloFix"></a>
+    <a class="console-home" href="/plans">Licenses</a>
+    <nav class="console-nav" aria-label="License management">
+      <a href="/plans" data-license-nav>Plans <span id="nav-plan-count">—</span></a>
+      <a href="/customers" data-license-nav>Customers <span id="nav-customer-count">—</span></a>
+      <a href="/issue" data-license-nav>Issue</a>
+      <a href="/licenses" data-license-nav>Issued <span id="nav-license-count">—</span></a>
+    </nav>
+    <div class="console-actions">
+      <span class="muted">Company console</span>
+      <button class="icon-button" id="logout" type="button" aria-label="Log out" title="Log out">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 7V5a1 1 0 0 1 1-1h8v16h-8a1 1 0 0 1-1-1v-2"/><path d="M4 12h11M12 8l4 4-4 4"/></svg>
+      </button>
+    </div>
+  </header>
+  <div class="shell"><main class="main">
+    <header class="topbar">
+      <div>
+        <nav class="cloud-crumb" aria-label="Breadcrumb">
+          <a href="/plans">CloFix Licenses</a><span aria-hidden="true">/</span><span>Platform</span><span aria-hidden="true">/</span><span>Issued Licenses</span>
+        </nav>
+        <p class="eyebrow">Platform</p>
+        <h1>Issued Licenses</h1>
+      </div>
+      <div class="top-actions">
+        <span class="top-status status" id="message" role="status" aria-live="polite"></span>
+        <a class="primary" href="/issue">＋ Issue license</a>
+      </div>
+    </header>
+    <div class="cards" aria-label="License counts">
+      <div class="stat"><div class="stat-label">Total licenses</div><div class="stat-value" id="count-total">—</div><div class="stat-note">All created keys</div></div>
+      <div class="stat"><div class="stat-label">Active</div><div class="stat-value" id="count-active">—</div><div class="stat-note">Unexpired · not revoked</div></div>
+      <div class="stat"><div class="stat-label">Expired</div><div class="stat-value" id="count-expired">—</div><div class="stat-note">Past expiry</div></div>
+      <div class="stat"><div class="stat-label">Revoked</div><div class="stat-value" id="count-revoked">—</div><div class="stat-note">Manually revoked</div></div>
+      <div class="stat"><div class="stat-label">Deleted</div><div class="stat-value" id="count-deleted">—</div><div class="stat-note">History retained</div></div>
+    </div>
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <h2>Licenses</h2>
+          <p>All created licenses, including expired and revoked records.</p>
+        </div>
+        <button class="secondary" id="refresh-licenses" type="button">Refresh</button>
+      </div>
+      <div class="filters">
+        <label>Customer<select id="filter-customer"><option value="">All customers</option></select></label>
+        <label>Plan<select id="filter-plan"><option value="">All plans</option></select></label>
+        <label>Status
+          <select id="filter-status">
+            <option value="">All statuses</option>
+            <option value="Active">Active</option>
+            <option value="Expired">Expired</option>
+            <option value="Revoked">Revoked</option>
+            <option value="Deleted">Deleted</option>
+          </select>
+        </label>
+        <label>Search customer / license ID<input id="filter-search" type="search" placeholder="Search licenses…"></label>
+      </div>
+      <p id="license-filter-count" class="muted" role="status"></p>
+      <div class="table-wrap"><table id="licenses"></table></div>
+    </section>
+  </main></div>
+  <footer class="site-footer" role="contentinfo">
+    <div class="site-footer-inner">
+      <span>Powered by <strong>CloFix Infotech</strong></span>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <span>CloFix License Server</span>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <span id="footer-host">—</span>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <time id="footer-clock">—</time>
+    </div>
+  </footer>
+</div>
+
+<dialog id="license-dialog" aria-labelledby="license-edit-title">
+<form id="license-edit-form">
+  <div class="page-heading">
+    <div><p class="eyebrow">License</p><h2 id="license-edit-title">Modify license</h2></div>
+    <button id="license-edit-close" type="button" class="secondary">Close</button>
+  </div>
+  <div class="grid">
+    <label>Customer / organization<select id="license-edit-customer" required></select></label>
+    <label>Plan<select id="license-edit-plan" required></select></label>
+    <label>Renewal duration (days)<input id="license-edit-duration" type="number" min="1" max="36500" required></label>
+    <label>Expiry · UTC<input id="license-edit-expiry" type="datetime-local" required></label>
+  </div>
+  <p class="muted">Changes keep the existing key and activations. Revoked keys remain revoked.</p>
+  <p class="status" id="license-edit-message" role="status" aria-live="polite"></p>
+  <button class="primary" id="license-edit-save" type="submit">Save license</button>
+  <button class="danger" id="license-edit-delete" type="button">Delete license</button>
+</form>
+</dialog>
+
+<dialog id="key-dialog" aria-labelledby="key-dialog-title">
+<form id="key-form">
+  <div class="page-heading">
+    <div><p class="eyebrow">CFL key</p><h2 id="key-dialog-title">CFL key</h2></div>
+    <button type="button" class="secondary" id="key-close">Close</button>
+  </div>
+  <p id="key-help" class="muted"></p>
+  <label>License key<input id="key-value" type="password" autocomplete="off" required></label>
+  <p class="status" id="key-message" role="status" aria-live="polite"></p>
+  <button class="primary" id="key-submit" type="submit">Copy key</button>
+</form>
+</dialog>
+
+<script src="/common.js"></script>
+<script>
+let editingLicense='',keyLicenseID='';
+function badge(text){const s=document.createElement('span');s.className='badge '+text;s.textContent=text;return s;}
+function fillFilterPlans(){
+  const select=$('filter-plan');
+  const old=select.value||new URLSearchParams(location.search).get('plan')||'';
+  select.replaceChildren(new Option('All plans',''));
+  for(const p of plans)select.add(new Option(p.name,p.id));
+  select.value=plans.some(p=>p.id===old)?old:'';
+}
+function fillFilterCustomers(){
+  const select=$('filter-customer');
+  const old=select.value||new URLSearchParams(location.search).get('customer')||'';
+  select.replaceChildren(new Option('All customers',''));
+  const sorted=[...customers].sort((a,b)=>a.name.localeCompare(b.name));
+  for(const c of sorted)select.add(new Option(c.name,c.id));
+  select.value=customers.some(c=>c.id===old)?old:'';
+}
+function renderLicenses(){
+  const lt=$('licenses');
+  lt.replaceChildren();
+  row(lt,['Customer / ID','Plan','Duration','Created','Expires','Status','Installation ID','Actions'],true);
+  const query=$('filter-search').value.trim().toLowerCase();
+  const plan=$('filter-plan').value;
+  const customer=$('filter-customer').value;
+  const status=$('filter-status').value;
+  const visible=licenses.filter(l=>
+    (!plan||l.plan_id===plan)&&
+    (!customer||l.customer_id===customer||(!l.customer_id&&customers.find(c=>c.id===customer)?.name===l.customer))&&
+    (!status||licenseStatus(l)===status)&&
+    (!query||(l.customer+' '+l.id).toLowerCase().includes(query))
+  ).sort((a,b)=>new Date(b.created)-new Date(a.created));
+  $('license-filter-count').textContent=`Showing ${visible.length} of ${licenses.length} created licenses`;
+  if(!visible.length){
+    row(lt,[licenses.length?'No licenses match these filters.':'No licenses issued yet.','','','','','','']);
+    return;
+  }
+  for(const l of visible){
+    const actions=document.createElement('div');
+    actions.className='row-actions';
+    if(!l.deleted){
+      actions.append(
+        button(l.key_available?'Copy key':'Restore key',()=>copyLicenseKey(l),'small-btn'),
+        button('Modify',()=>editLicense(l),'small-btn'),
+        button('Delete',()=>deleteLicense(l),'small-btn')
+      );
+    }
+    if(!l.revoked&&!l.deleted){
+      actions.append(
+        button('Renew',async()=>{
+          if(!confirm('Extend this license by its own '+l.duration_days+'-day duration?'))return;
+          await api('POST','/api/licenses/'+l.id+'/renew');
+          await loadData();
+          msg('License renewed.');
+        },'small-btn'),
+        button('Revoke',async()=>{
+          if(!confirm('Revoke license for '+l.customer+'?'))return;
+          await api('POST','/api/licenses/'+l.id+'/revoke');
+          await loadData();
+          msg('License revoked.');
+        },'small-btn')
+      );
+    }
+    row(lt,[
+      l.customer+' · '+l.id,
+      plans.find(p=>p.id===l.plan_id)?.name||l.plan_id,
+      l.duration_days+' days',
+      new Date(l.created).toLocaleString(),
+      new Date(l.expires).toLocaleString(),
+      badge(licenseStatus(l)),
+      l.installation_id||'Unbound legacy key',
+      actions
+    ]);
+  }
+}
+function editLicense(l){
+  editingLicense=l.id;
+  $('license-edit-duration').value=l.duration_days;
+  $('license-edit-expiry').value=new Date(l.expires).toISOString().slice(0,16);
+  $('license-edit-message').textContent='';
+  const cust=$('license-edit-customer');
+  cust.replaceChildren();
+  const sorted=[...customers].sort((a,b)=>a.name.localeCompare(b.name));
+  for(const c of sorted)cust.add(new Option(c.name,c.id));
+  if(l.customer_id&&customers.some(c=>c.id===l.customer_id))cust.value=l.customer_id;
+  else{
+    const match=customers.find(c=>c.name===l.customer);
+    if(match)cust.value=match.id;
+    else if(l.customer){
+      cust.add(new Option(l.customer+' (legacy)',''));
+      cust.value='';
+    }
+  }
+  const select=$('license-edit-plan');
+  select.replaceChildren();
+  for(const p of plans.filter(p=>p.active||p.id===l.plan_id))select.add(new Option(p.name,p.id));
+  select.value=l.plan_id;
+  $('license-dialog').showModal();
+}
+async function deleteLicense(l){
+  if(!confirm('Delete license for '+l.customer+'? Its key will no longer validate. History is retained.'))return;
+  const finish=pending($('license-edit-form'));
+  msg('Deleting license…');
+  try{
+    await api('DELETE','/api/licenses/'+l.id);
+    if(editingLicense===l.id)$('license-dialog').close();
+    await loadData();
+    msg('License deleted; history retained.');
+  }finally{finish();}
+}
+async function copyLicenseKey(l){
+  keyLicenseID=l.id;
+  $('key-value').value='';
+  $('key-message').textContent='';
+  $('key-value').readOnly=!!l.key_available;
+  $('key-dialog-title').textContent=l.key_available?'Copy CFL key':'Restore original CFL key';
+  $('key-help').textContent=l.key_available
+    ?'Copy the existing key. This does not change its expiry or activations.'
+    :'This older key was stored as a hash. Paste the original CFL key once to enable future copying.';
+  $('key-submit').textContent=l.key_available?'Copy key':'Restore key';
+  if(!l.key_available){$('key-dialog').showModal();return;}
+  const result=await api('POST','/api/licenses/'+l.id+'/key');
+  try{await navigator.clipboard.writeText(result.key);msg('CFL key copied.');}
+  catch(e){
+    $('key-value').value=result.key;
+    $('key-dialog').showModal();
+    $('key-help').textContent='Clipboard permission was denied. Click Copy key, or select and copy manually.';
+  }
+}
+function onDataReady(){fillFilterPlans();fillFilterCustomers();renderLicenses();}
+$('filter-customer').onchange=renderLicenses;
+$('filter-plan').onchange=renderLicenses;
+$('filter-status').onchange=renderLicenses;
+$('filter-search').oninput=renderLicenses;
+$('refresh-licenses').onclick=async()=>{
+  const b=$('refresh-licenses');
+  b.disabled=true;b.textContent='Refreshing…';
+  try{await loadData();msg('License list updated.');}
+  catch(e){msg(e.message);}
+  finally{b.disabled=false;b.textContent='Refresh';}
+};
+$('license-edit-close').onclick=()=>$('license-dialog').close();
+$('license-edit-delete').onclick=async()=>{
+  const l=licenses.find(l=>l.id===editingLicense);
+  if(l)try{await deleteLicense(l);}catch(e){msg(e.message);}
+};
+$('license-edit-form').onsubmit=async e=>{
+  e.preventDefault();
+  if(e.currentTarget.getAttribute('aria-busy')==='true')return;
+  const finish=pending(e.currentTarget);
+  $('license-edit-save').textContent='Saving…';
+  msg('Updating license…');
+  try{
+    const payload={
+      duration_days:Number($('license-edit-duration').value),
+      plan_id:$('license-edit-plan').value,
+      expires:new Date($('license-edit-expiry').value+'Z').toISOString()
+    };
+    if($('license-edit-customer').value)payload.customer_id=$('license-edit-customer').value;
+    else{
+      const legacy=licenses.find(x=>x.id===editingLicense);
+      payload.customer=legacy?.customer||'';
+    }
+    await api('PUT','/api/licenses/'+editingLicense,payload);
+    $('license-dialog').close();
+    await loadData();
+    msg('License updated.');
+  }catch(err){msg(err.message);}
+  finally{finish();$('license-edit-save').textContent='Save license';}
+};
+$('license-dialog').addEventListener('cancel',e=>{
+  if($('license-edit-form').getAttribute('aria-busy')==='true')e.preventDefault();
+});
+$('key-close').onclick=()=>$('key-dialog').close();
+$('key-dialog').addEventListener('close',()=>{$('key-value').value='';});
+$('key-dialog').addEventListener('cancel',e=>{
+  if($('key-form').getAttribute('aria-busy')==='true')e.preventDefault();
+});
+$('key-form').onsubmit=async e=>{
+  e.preventDefault();
+  if(e.currentTarget.getAttribute('aria-busy')==='true')return;
+  const finish=pending(e.currentTarget);
+  try{
+    if($('key-value').readOnly){
+      await navigator.clipboard.writeText($('key-value').value);
+      $('key-dialog').close();
+      msg('CFL key copied.');
+    }else{
+      await api('PUT','/api/licenses/'+keyLicenseID+'/key',{key:$('key-value').value.trim()});
+      $('key-dialog').close();
+      await loadData();
+      msg('Original key restored.');
+    }
+  }catch(err){$('key-message').textContent=err.message;}
+  finally{finish();}
+};
+</script>
+</body>
+</html>

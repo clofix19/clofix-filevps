@@ -38,6 +38,7 @@ func (p *Postgres) EnsureSchema() error {
 		`CREATE TABLE IF NOT EXISTS cf_iam_access_keys (access_key_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES cf_iam_users(id) ON DELETE CASCADE, secret_hash TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT true, created TIMESTAMPTZ NOT NULL DEFAULT now())`,
 		`CREATE INDEX IF NOT EXISTS cf_iam_keys_user ON cf_iam_access_keys(user_id, created)`,
 		`CREATE TABLE IF NOT EXISTS cf_accounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, parent_id TEXT, created TIMESTAMPTZ NOT NULL DEFAULT now())`,
+		`ALTER TABLE cf_accounts ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'`,
 		`ALTER TABLE cf_iam_users ADD COLUMN IF NOT EXISTS email TEXT`,
 		`ALTER TABLE cf_iam_users ADD COLUMN IF NOT EXISTS password_hash TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE cf_iam_users ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'iam'`,
@@ -526,7 +527,7 @@ func (p *Postgres) DeleteIAMAccessKey(id string) error {
 }
 
 func (p *Postgres) ListAccounts() ([]Account, error) {
-	rows, err := p.db.Query(`SELECT id,name,kind,parent_id,created FROM cf_accounts ORDER BY created`)
+	rows, err := p.db.Query(`SELECT id,name,kind,COALESCE(NULLIF(status,''),'active'),parent_id,created FROM cf_accounts ORDER BY created`)
 	if err != nil {
 		return nil, err
 	}
@@ -535,7 +536,7 @@ func (p *Postgres) ListAccounts() ([]Account, error) {
 	for rows.Next() {
 		var v Account
 		var parent sql.NullString
-		if e := rows.Scan(&v.ID, &v.Name, &v.Kind, &parent, &v.Created); e != nil {
+		if e := rows.Scan(&v.ID, &v.Name, &v.Kind, &v.Status, &parent, &v.Created); e != nil {
 			return nil, e
 		}
 		v.ParentID = parent.String
@@ -546,7 +547,7 @@ func (p *Postgres) ListAccounts() ([]Account, error) {
 func (p *Postgres) GetAccount(id string) (Account, error) {
 	var v Account
 	var parent sql.NullString
-	err := p.db.QueryRow(`SELECT id,name,kind,parent_id,created FROM cf_accounts WHERE id=$1`, id).Scan(&v.ID, &v.Name, &v.Kind, &parent, &v.Created)
+	err := p.db.QueryRow(`SELECT id,name,kind,COALESCE(NULLIF(status,''),'active'),parent_id,created FROM cf_accounts WHERE id=$1`, id).Scan(&v.ID, &v.Name, &v.Kind, &v.Status, &parent, &v.Created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return v, ErrNotFound
 	}
@@ -554,7 +555,10 @@ func (p *Postgres) GetAccount(id string) (Account, error) {
 	return v, err
 }
 func (p *Postgres) SaveAccount(v Account) error {
-	_, err := p.db.Exec(`INSERT INTO cf_accounts(id,name,kind,parent_id,created) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET name=$2,kind=$3,parent_id=$4`, v.ID, v.Name, v.Kind, nullString(v.ParentID), v.Created)
+	if v.Status == "" {
+		v.Status = "active"
+	}
+	_, err := p.db.Exec(`INSERT INTO cf_accounts(id,name,kind,status,parent_id,created) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET name=$2,kind=$3,status=$4,parent_id=$5`, v.ID, v.Name, v.Kind, v.Status, nullString(v.ParentID), v.Created)
 	return err
 }
 func (p *Postgres) DeleteAccount(id string) error {
@@ -579,6 +583,10 @@ func (p *Postgres) GetSessionByHash(hash string) (Session, error) {
 		return v, ErrNotFound
 	}
 	return v, err
+}
+func (p *Postgres) DeleteSessionsForUser(userID string) error {
+	_, err := p.db.Exec(`DELETE FROM cf_sessions WHERE user_id=$1`, userID)
+	return err
 }
 func (p *Postgres) DeleteSession(id string) error {
 	_, err := p.db.Exec(`DELETE FROM cf_sessions WHERE id=$1`, id)

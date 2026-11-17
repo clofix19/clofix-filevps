@@ -86,6 +86,100 @@ func TestEnrollmentTokenIsSingleUse(t *testing.T) {
 	}
 }
 
+func TestWorkerInstallationIDBinding(t *testing.T) {
+	s, _ := newSrv(t)
+	want := s.controllerInstallationID()
+	if want == "" || !strings.HasPrefix(want, "ctl-") {
+		t.Fatalf("expected controller Installation ID, got %q", want)
+	}
+	pub := do(s.AdminHandler(), "GET", "/api/installation-id", "", "")
+	if pub.Code != 200 {
+		t.Fatalf("installation-id: want 200 got %d", pub.Code)
+	}
+	var idOut struct {
+		InstallationID string `json:"installation_id"`
+		Workers        struct {
+			Used      int64  `json:"used"`
+			Limit     int64  `json:"limit"`
+			Available int64  `json:"available"`
+			Admit     bool   `json:"admit"`
+			Reason    string `json:"reason"`
+		} `json:"workers"`
+	}
+	json.Unmarshal(pub.Body.Bytes(), &idOut)
+	if idOut.InstallationID != want {
+		t.Fatalf("public id %q != %q", idOut.InstallationID, want)
+	}
+	cap := do(s.WorkerHandler(), "GET", "/v1/worker-capacity", "", "")
+	if cap.Code != 200 {
+		t.Fatalf("worker-capacity: want 200 got %d", cap.Code)
+	}
+	if err := s.matchWorkerInstallationID(""); err == nil {
+		t.Fatal("empty worker Installation ID must fail")
+	}
+	if err := s.matchWorkerInstallationID("ctl-other"); err == nil {
+		t.Fatal("mismatched Installation ID must fail")
+	}
+	if err := s.matchWorkerInstallationID(want); err != nil {
+		t.Fatal(err)
+	}
+	// Wrong ID must not consume the enrollment token.
+	tw := do(s.AdminHandler(), "POST", "/api/enrollment-tokens", "{}", tok)
+	var tokOut struct{ Token string }
+	json.Unmarshal(tw.Body.Bytes(), &tokOut)
+	bad := do(s.WorkerHandler(), "POST", "/v1/enroll", `{"token":"`+tokOut.Token+`","installation_id":"ctl-wrong","hostname":"x","version":"0","csr_pem":"x"}`, "")
+	if bad.Code != 403 {
+		t.Fatalf("enroll mismatch: want 403 got %d body=%s", bad.Code, bad.Body.String())
+	}
+	if err := s.Store.ConsumeToken(hashToken(tokOut.Token), time.Now()); err != nil {
+		t.Fatalf("token should remain usable after installation mismatch: %v", err)
+	}
+}
+
+func TestWorkerCapacityBlocksEnrollBeforeToken(t *testing.T) {
+	s, _ := newSrv(t)
+	// Force a zero worker limit with a fresh license check stamp.
+	s.license.Lock()
+	s.license.Grant.Valid = true
+	s.license.Grant.InstallationID = s.license.InstallationID
+	s.license.Grant.Expires = time.Now().Add(24 * time.Hour)
+	s.license.Grant.Plan.MaxWorkers = 0
+	s.license.LastCheck = time.Now()
+	s.license.EncryptedKey = []byte("test-key")
+	s.license.Unlock()
+	snap := s.workerCapacitySnapshot()
+	if snap["admit"] != false {
+		t.Fatalf("expected admit=false with MaxWorkers=0, got %#v", snap)
+	}
+	pub := do(s.AdminHandler(), "GET", "/api/installation-id", "", "")
+	if pub.Code != 200 {
+		t.Fatalf("installation-id: %d", pub.Code)
+	}
+	var boot struct {
+		Workers struct {
+			Admit bool `json:"admit"`
+		} `json:"workers"`
+	}
+	json.Unmarshal(pub.Body.Bytes(), &boot)
+	if boot.Workers.Admit {
+		t.Fatal("public bootstrap must report admit=false when worker limit is 0")
+	}
+	tw := do(s.AdminHandler(), "POST", "/api/enrollment-tokens", "{}", tok)
+	var tokOut struct{ Token string }
+	json.Unmarshal(tw.Body.Bytes(), &tokOut)
+	want := s.controllerInstallationID()
+	denied := do(s.WorkerHandler(), "POST", "/v1/enroll", `{"token":"`+tokOut.Token+`","installation_id":"`+want+`","hostname":"x","version":"0","csr_pem":"x"}`, "")
+	if denied.Code != 403 {
+		t.Fatalf("enroll at worker limit: want 403 got %d body=%s", denied.Code, denied.Body.String())
+	}
+	if !strings.Contains(denied.Body.String(), "quota") && !strings.Contains(denied.Body.String(), "worker") {
+		t.Fatalf("expected quota/worker error, got %s", denied.Body.String())
+	}
+	if err := s.Store.ConsumeToken(hashToken(tokOut.Token), time.Now()); err != nil {
+		t.Fatalf("token must remain after quota denial: %v", err)
+	}
+}
+
 func TestAutomaticPlacementAndRejection(t *testing.T) {
 	s, m := newSrv(t)
 	m.UpsertWorker(store.Worker{ID: "w1", Status: "active", LastHeartbeat: time.Now(), Capacity: scheduler.Capacity{

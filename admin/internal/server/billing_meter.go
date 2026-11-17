@@ -47,6 +47,8 @@ func usageRateNames(usage string) []string {
 		return []string{"lb", "ipv4", "app"}
 	case "cks":
 		return []string{"cks"}
+	case "redis":
+		return []string{"redis"}
 	case "app":
 		return []string{"app"}
 	default:

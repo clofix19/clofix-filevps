@@ -96,6 +96,17 @@ func TestJavaApplicationServersInLibrary(t *testing.T) {
 		}
 	}
 }
+func TestDevOpsToolsInLibraryCatalog(t *testing.T) {
+	for _, key := range []string{
+		"docker", "podman", "kubectl", "helm", "terraform", "ansible",
+		"fail2ban", "ufw", "wireguard", "nmap", "netdata", "rabbitmq",
+		"caddy", "rclone", "awscli", "jq", "htop", "ripgrep", "zsh",
+	} {
+		if !serviceCatalog[key] {
+			t.Fatal("DevOps tool missing from catalog", key)
+		}
+	}
+}
 func TestManagedDeployOnKubernetesFakeWhenFull(t *testing.T) {
 	t.Setenv("CLOFIX_DATA_DIR", t.TempDir())
 	s, m := newSrv(t)

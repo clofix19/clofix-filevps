@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: ./build.sh [bin|deb|rpm|all]   env: VERSION=0.1.0 GOARCH=amd64
+# Usage: ./build.sh [bin|deb|rpm|all]   env: VERSION=0.1.0 GOARCH=amd64 CLOFIX_INSTALLATION_ID=ctl-…
 set -euo pipefail
 cd "$(dirname "$0")"
 TARGET="${1:-all}"
@@ -7,13 +7,25 @@ export VERSION="${VERSION:-0.1.0}"
 export GOARCH="${GOARCH:-amd64}"
 export SEAWEEDFS_VERSION="${SEAWEEDFS_VERSION:-4.51}"
 export PATH="$(go env GOPATH 2>/dev/null)/bin:${PATH:-}"
+INSTALL_ID="${CLOFIX_INSTALLATION_ID:-}"
 mkdir -p dist
 
 build_bin() {
+  # Always rebuild the agent so Redis Cluster ops + Installation ID binding are current.
+  rm -f "dist/clofix-worker-linux-${GOARCH}"
+  local ldflags="-s -w -X main.version=${VERSION}"
+  if [ -n "$INSTALL_ID" ]; then
+    ldflags="${ldflags} -X github.com/clofix/filevps/worker/internal/config.BakedInstallationID=${INSTALL_ID}"
+  fi
   CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" \
-    go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+    go build -trimpath -ldflags "$ldflags" \
     -o "dist/clofix-worker-linux-${GOARCH}" ./cmd/clofix-worker
   echo "built dist/clofix-worker-linux-${GOARCH}"
+  if [ -n "$INSTALL_ID" ]; then
+    echo "baked Installation ID: $INSTALL_ID"
+  else
+    echo "WARNING: CLOFIX_INSTALLATION_ID unset — worker must receive it via env/worker.json at enroll time" >&2
+  fi
   if [ -x dist/weed ]; then
     echo "reusing dist/weed"
     return 0
@@ -29,8 +41,39 @@ build_bin() {
   rm -rf "$weed_tmp"
   rm -f "$weed_archive"
 }
+
+write_packaged_config() {
+  # nfpm packs dist/worker.json — stamp Installation ID when building packages.
+  mkdir -p dist
+  if [ -n "$INSTALL_ID" ]; then
+    cat > dist/worker.json <<EOF
+{
+  "controller_url": "",
+  "installation_id": "${INSTALL_ID}",
+  "host_reserve_mb": 512,
+  "zram_mb": 0,
+  "heartbeat_seconds": 10,
+  "uid_base": 100000,
+  "user_ns": true
+}
+EOF
+  else
+    cat > dist/worker.json <<'EOF'
+{
+  "controller_url": "",
+  "host_reserve_mb": 512,
+  "zram_mb": 0,
+  "heartbeat_seconds": 10,
+  "uid_base": 100000,
+  "user_ns": true
+}
+EOF
+  fi
+}
+
 pkg() {
   command -v nfpm >/dev/null || { echo "nfpm not found: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest" >&2; exit 1; }
+  write_packaged_config
   # nfpm v2 no longer expands ${GOARCH}/${VERSION} from the process env in contents globs.
   local rendered
   rendered="$(mktemp)"

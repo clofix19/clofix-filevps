@@ -20,6 +20,7 @@ URLs:
   http://localhost:8080/services       Library (Quick Apps / Jenkins / web ZIPs)
   http://localhost:8080/applications   Jobs & Functions
   http://localhost:8080/kubernetes     CKS (lab: CLOFIX_KUBERNETES_FAKE=1)
+  http://localhost:8080/redis-services Redis Cluster (multi-VPS; same VPC only)
   http://localhost:8080/databases      Managed databases
   http://localhost:8080/storage/s3     Object storage
   http://localhost:8080/volumes        Volumes
@@ -32,6 +33,7 @@ URLs:
   http://localhost:8080/workers        Workers
   http://localhost:8080/billing        Billing & Payments
   http://localhost:8080/settings       Settings (General, Pricing, NLB, License, …)
+  http://localhost:8080/api/installation-id  Public ctl-… ID for worker build/enroll
 
 API / TLS (same admin container):
   http://localhost:8080/api/…          Admin JSON API (session cookie)
@@ -46,7 +48,7 @@ License server (CloFix company-side)
 -------------------------------------------------------------------------------
 Path on disk:  license-server/
 Compose:       cd license-server && docker compose up -d --build
-Admin token:   license-server/.env → LICENSE_ADMIN_TOKEN (min 16 chars)
+Admin login:   license-server/.env → LICENSE_ADMIN_USER / LICENSE_ADMIN_PASSWORD (password min 12 chars)
 
 URLs:
   http://localhost:8090/               License admin console (plans / CFL keys)

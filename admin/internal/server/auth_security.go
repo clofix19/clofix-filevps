@@ -188,6 +188,11 @@ func (s *Server) loginMFAAuth(w http.ResponseWriter, r *http.Request) {
 		fail(w, 401, "invalid MFA challenge")
 		return
 	}
+	if s.accountIsSuspended(user.AccountID) {
+		s.noteMFAFailure(ip)
+		fail(w, 403, "account suspended")
+		return
+	}
 	if err := loginIPAllowed(user, ip); err != nil {
 		s.noteMFAFailure(ip)
 		fail(w, 403, err.Error())

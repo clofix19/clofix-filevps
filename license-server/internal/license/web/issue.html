@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0a0f16">
+<title>CloFix · Issue License</title>
+<link rel="icon" type="image/svg+xml" href="/clofix-mark.svg">
+<link rel="stylesheet" href="/common.css">
+</head>
+<body data-page="issue">
+<div id="app" hidden>
+  <header class="console-bar" role="banner">
+    <a class="console-logo" href="/plans" aria-label="CloFix Licenses"><img src="/clofix-logo.png" alt="CloFix"></a>
+    <a class="console-home" href="/plans">Licenses</a>
+    <nav class="console-nav" aria-label="License management">
+      <a href="/plans" data-license-nav>Plans <span id="nav-plan-count">—</span></a>
+      <a href="/customers" data-license-nav>Customers <span id="nav-customer-count">—</span></a>
+      <a href="/issue" data-license-nav>Issue</a>
+      <a href="/licenses" data-license-nav>Issued <span id="nav-license-count">—</span></a>
+    </nav>
+    <div class="console-actions">
+      <span class="muted">Company console</span>
+      <button class="icon-button" id="logout" type="button" aria-label="Log out" title="Log out">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 7V5a1 1 0 0 1 1-1h8v16h-8a1 1 0 0 1-1-1v-2"/><path d="M4 12h11M12 8l4 4-4 4"/></svg>
+      </button>
+    </div>
+  </header>
+  <div class="shell"><main class="main">
+    <header class="topbar">
+      <div>
+        <nav class="cloud-crumb" aria-label="Breadcrumb">
+          <a href="/plans">CloFix Licenses</a><span aria-hidden="true">/</span><span>Platform</span><span aria-hidden="true">/</span><span>Issue License</span>
+        </nav>
+        <p class="eyebrow">Platform</p>
+        <h1>Issue License</h1>
+      </div>
+      <div class="top-actions"><span class="top-status status" id="message" role="status" aria-live="polite"></span></div>
+    </header>
+    <div class="cards" aria-label="License counts">
+      <div class="stat"><div class="stat-label">Total licenses</div><div class="stat-value" id="count-total">—</div><div class="stat-note">All created keys</div></div>
+      <div class="stat"><div class="stat-label">Active</div><div class="stat-value" id="count-active">—</div><div class="stat-note">Unexpired · not revoked</div></div>
+      <div class="stat"><div class="stat-label">Expired</div><div class="stat-value" id="count-expired">—</div><div class="stat-note">Past expiry</div></div>
+      <div class="stat"><div class="stat-label">Revoked</div><div class="stat-value" id="count-revoked">—</div><div class="stat-note">Manually revoked</div></div>
+      <div class="stat"><div class="stat-label">Deleted</div><div class="stat-value" id="count-deleted">—</div><div class="stat-note">History retained</div></div>
+    </div>
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <h2>New license</h2>
+          <p id="issue-plan-count">Choose a plan to see how many licenses have been created.</p>
+        </div>
+        <a class="secondary" href="/licenses">View issued →</a>
+      </div>
+      <form id="issue-form">
+        <div class="grid">
+          <label>Plan<select id="plan" required></select></label>
+          <label>Customer / organization
+            <select id="customer" required></select>
+            <small class="muted">Manage organizations on the <a href="/customers">Customers</a> page.</small>
+          </label>
+          <label>Controller Installation ID
+            <input id="issue-installation" minlength="8" maxlength="128" placeholder="ctl-…" required>
+            <small class="muted">From client Settings → License. One key per admin installation.</small>
+          </label>
+          <label>License duration (days)<input id="issue-duration" type="number" min="1" max="36500" value="365" required></label>
+        </div>
+        <button class="primary" type="submit">Create license</button>
+      </form>
+      <div id="issued" hidden style="margin-top:18px">
+        <p class="muted">Copy the new key now. Add it under Settings → License on the controller.</p>
+        <textarea id="issued-key" rows="2" readonly></textarea>
+        <button class="primary" id="copy" type="button">Copy key</button>
+      </div>
+    </section>
+  </main></div>
+  <footer class="site-footer" role="contentinfo">
+    <div class="site-footer-inner">
+      <span>Powered by <strong>CloFix Infotech</strong></span>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <span>CloFix License Server</span>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <span id="footer-host">—</span>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <time id="footer-clock">—</time>
+    </div>
+  </footer>
+</div>
+<script src="/common.js"></script>
+<script>
+function showIssueCount(){
+  const id=$('plan').value;
+  if(!id){$('issue-plan-count').textContent='Choose a plan to see how many licenses have been created.';return;}
+  const selected=licenses.filter(l=>l.plan_id===id);
+  $('issue-plan-count').textContent=`This plan: ${selected.length} licenses created · ${selected.filter(l=>licenseStatus(l)==='Active').length} active`;
+}
+function fillPlans(){
+  const select=$('plan');
+  const old=select.value;
+  select.replaceChildren(new Option('Select plan…',''));
+  for(const p of plans.filter(p=>p.active))select.add(new Option(p.name,p.id));
+  select.value=plans.some(p=>p.id===old&&p.active)?old:'';
+  showIssueCount();
+}
+function fillCustomers(){
+  const select=$('customer');
+  const pref=new URLSearchParams(location.search).get('customer')||'';
+  const old=select.value||pref;
+  select.replaceChildren(new Option(customers.length?'Select customer…':'Add a customer first',''));
+  const sorted=[...customers].sort((a,b)=>a.name.localeCompare(b.name));
+  for(const c of sorted)select.add(new Option(c.name,c.id));
+  select.value=customers.some(c=>c.id===old)?old:'';
+}
+function onDataReady(){fillPlans();fillCustomers();}
+$('plan').onchange=showIssueCount;
+$('issue-form').onsubmit=async e=>{
+  e.preventDefault();
+  if(!$('customer').value){msg('Add and select a customer first.');return;}
+  const finish=pending(e.currentTarget);
+  $('issued').hidden=true;$('issued-key').value='';
+  msg('Creating license…');
+  try{
+    const result=await api('POST','/api/licenses',{
+      plan_id:$('plan').value,
+      customer_id:$('customer').value,
+      duration_days:Number($('issue-duration').value),
+      installation_id:$('issue-installation').value.trim()
+    });
+    $('issued-key').value=result.key;
+    $('issued').hidden=false;
+    await loadData();
+    msg('License created. Copy the key below.');
+  }catch(err){msg(err.message);}
+  finally{finish();}
+};
+$('copy').onclick=async()=>{
+  try{await navigator.clipboard.writeText($('issued-key').value);msg('Key copied.');}
+  catch(e){msg('Select and copy the key manually.');}
+};
+</script>
+</body>
+</html>

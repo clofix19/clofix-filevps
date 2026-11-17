@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/clofix/filevps/admin/internal/store"
+	"github.com/clofix/filevps/worker/pkg/proto"
 )
 
 func (s *Server) listAccounts(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +33,11 @@ func (s *Server) listAccounts(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
-		out = append(out, map[string]any{"id": acc.ID, "name": acc.Name, "kind": acc.Kind, "parent_id": acc.ParentID, "email": email, "user_kind": kind, "created": acc.Created})
+		status := acc.Status
+		if status == "" {
+			status = "active"
+		}
+		out = append(out, map[string]any{"id": acc.ID, "name": acc.Name, "kind": acc.Kind, "status": status, "parent_id": acc.ParentID, "email": email, "user_kind": kind, "created": acc.Created})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i]["name"].(string) < out[j]["name"].(string) })
 	writeJSON(w, 200, out)
@@ -81,7 +86,7 @@ func (s *Server) createAccountUser(w http.ResponseWriter, r *http.Request) {
 	} else if p.Kind == "partner" {
 		parent = p.AccountID
 	}
-	acc := store.Account{ID: "acc-" + randHex(8), Name: in.Name, Kind: accKind, ParentID: parent, Created: time.Now().UTC()}
+	acc := store.Account{ID: "acc-" + randHex(8), Name: in.Name, Kind: accKind, Status: "active", ParentID: parent, Created: time.Now().UTC()}
 	if err := s.Store.SaveAccount(acc); err != nil {
 		fail(w, 500, "could not create account")
 		return
@@ -242,4 +247,184 @@ func (s *Server) deleteAccountUser(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Store.Audit(p.Name, "account.delete", id, acc.Kind)
 	writeJSON(w, 200, map[string]any{"deleted": true, "id": id})
+}
+
+func accountStatus(acc store.Account) string {
+	if acc.Status == "suspended" {
+		return "suspended"
+	}
+	return "active"
+}
+
+func (s *Server) accountIsSuspended(accountID string) bool {
+	if accountID == "" {
+		return false
+	}
+	acc, err := s.Store.GetAccount(accountID)
+	return err == nil && accountStatus(acc) == "suspended"
+}
+
+// suspendAccountUsers sets every login under the account inactive and drops sessions/keys.
+func (s *Server) suspendAccountUsers(accountID string) {
+	users, _ := s.Store.ListIAMUsers()
+	for _, u := range users {
+		if u.AccountID != accountID {
+			continue
+		}
+		if u.Status != "inactive" {
+			u.Status = "inactive"
+			_ = s.Store.SaveIAMUser(u)
+		}
+		_ = s.Store.DeleteSessionsForUser(u.ID)
+		keys, _ := s.Store.ListIAMAccessKeys(u.ID)
+		for _, key := range keys {
+			if !key.Active {
+				continue
+			}
+			key.Active = false
+			_ = s.Store.SaveIAMAccessKey(key)
+		}
+	}
+}
+
+func (s *Server) setAccountSuspended(w http.ResponseWriter, r *http.Request, suspend bool) {
+	p := principalFrom(r)
+	if p.Kind != "admin" {
+		fail(w, 403, "only platform admin can suspend or resume accounts")
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("id"))
+	acc, err := s.Store.GetAccount(id)
+	if err != nil {
+		fail(w, 404, "account not found")
+		return
+	}
+	if acc.Kind == "admin" || acc.Kind == "platform" {
+		fail(w, 400, "cannot suspend the platform admin account")
+		return
+	}
+	if id == p.AccountID {
+		fail(w, 400, "cannot suspend your own account")
+		return
+	}
+	if suspend {
+		acc.Status = "suspended"
+		if err := s.Store.SaveAccount(acc); err != nil {
+			fail(w, 500, "could not suspend account")
+			return
+		}
+		s.suspendAccountUsers(acc.ID)
+		s.Store.Audit(p.Name, "account.suspend", acc.ID, acc.Kind)
+		writeJSON(w, 200, map[string]any{"id": acc.ID, "status": "suspended", "cascaded_iam": true})
+		return
+	}
+	acc.Status = "active"
+	if err := s.Store.SaveAccount(acc); err != nil {
+		fail(w, 500, "could not resume account")
+		return
+	}
+	// Resume root/partner login only; IAM users stay inactive until re-enabled.
+	if user, ok := s.accountPrimaryUser(acc.ID); ok {
+		user.Status = "active"
+		_ = s.Store.SaveIAMUser(user)
+	}
+	s.Store.Audit(p.Name, "account.resume", acc.ID, acc.Kind)
+	writeJSON(w, 200, map[string]any{"id": acc.ID, "status": "active", "note": "IAM users remain inactive until re-enabled"})
+}
+
+func (s *Server) suspendAccount(w http.ResponseWriter, r *http.Request) {
+	s.setAccountSuspended(w, r, true)
+}
+func (s *Server) resumeAccount(w http.ResponseWriter, r *http.Request) {
+	s.setAccountSuspended(w, r, false)
+}
+
+// stopAccountServices stops running workloads owned by a root/client account (e.g. unpaid bill).
+func (s *Server) stopAccountServices(w http.ResponseWriter, r *http.Request) {
+	p := principalFrom(r)
+	if p.Kind != "admin" {
+		fail(w, 403, "only platform admin can stop account services")
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("id"))
+	acc, err := s.Store.GetAccount(id)
+	if err != nil {
+		fail(w, 404, "account not found")
+		return
+	}
+	if acc.Kind != "client" {
+		fail(w, 400, "stop-services applies to root client accounts")
+		return
+	}
+	owners := s.accountOwnerSet(id)
+	stopped := map[string]int{"vps": 0, "managed_apps": 0, "docker": 0}
+	instances, _ := s.Store.ListInstances()
+	for _, inst := range instances {
+		if inst.AccountID != id {
+			continue
+		}
+		if inst.State != proto.StateRunning && inst.State != "RUNNING" {
+			continue
+		}
+		op := proto.Operation{ID: inst.ID + "/" + proto.ActionStop + "/billing/" + randHex(4), Action: proto.ActionStop, InstanceID: inst.ID}
+		if e := s.Store.QueueOp(inst.WorkerID, op); e == nil {
+			stopped["vps"]++
+		}
+	}
+	if s.applications != nil {
+		s.applications.Lock()
+		changed := false
+		for mid, a := range s.applications.Managed {
+			if !owners[a.Owner] {
+				continue
+			}
+			if strings.EqualFold(a.Desired, "stopped") {
+				continue
+			}
+			a.Desired = "stopped"
+			s.applications.Managed[mid] = a
+			changed = true
+			stopped["managed_apps"]++
+		}
+		if changed {
+			_ = s.applications.save()
+		}
+		s.applications.Unlock()
+	}
+	if s.docker != nil {
+		s.docker.mu.Lock()
+		for cid, c := range s.docker.Containers {
+			if !owners[c.Owner] {
+				continue
+			}
+			if strings.EqualFold(c.Desired, "stopped") || strings.EqualFold(c.State, "exited") || strings.EqualFold(c.State, "stopped") {
+				continue
+			}
+			c.Desired = "stopped"
+			s.docker.Containers[cid] = c
+			stopped["docker"]++
+		}
+		_ = s.docker.save()
+		s.docker.mu.Unlock()
+	}
+	s.Store.Audit(p.Name, "account.stop-services", id, "billing")
+	writeJSON(w, 200, map[string]any{"id": id, "stopped": stopped})
+}
+
+func (s *Server) accountOwnerSet(accountID string) map[string]bool {
+	owners := map[string]bool{accountID: true}
+	users, _ := s.Store.ListIAMUsers()
+	for _, u := range users {
+		if u.AccountID != accountID {
+			continue
+		}
+		owners[u.ID] = true
+		if u.Email != "" {
+			owners[u.Email] = true
+		}
+		if u.Username != "" {
+			owners[u.Username] = true
+		}
+	}
+	return owners
 }

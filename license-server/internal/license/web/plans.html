@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0a0f16">
+<title>CloFix · License Plans</title>
+<link rel="icon" type="image/svg+xml" href="/clofix-mark.svg">
+<link rel="stylesheet" href="/common.css">
+</head>
+<body data-page="plans">
+<div id="app" hidden>
+  <header class="console-bar" role="banner">
+    <a class="console-logo" href="/plans" aria-label="CloFix Licenses">
+      <img src="/clofix-logo.png" alt="CloFix">
+    </a>
+    <a class="console-home" href="/plans">Licenses</a>
+    <nav class="console-nav" aria-label="License management">
+      <a href="/plans" data-license-nav>Plans <span id="nav-plan-count">—</span></a>
+      <a href="/customers" data-license-nav>Customers <span id="nav-customer-count">—</span></a>
+      <a href="/issue" data-license-nav>Issue</a>
+      <a href="/licenses" data-license-nav>Issued <span id="nav-license-count">—</span></a>
+    </nav>
+    <div class="console-actions">
+      <span class="muted">Company console</span>
+      <button class="icon-button" id="logout" type="button" aria-label="Log out" title="Log out">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 7V5a1 1 0 0 1 1-1h8v16h-8a1 1 0 0 1-1-1v-2"/><path d="M4 12h11M12 8l4 4-4 4"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="shell">
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <nav class="cloud-crumb" aria-label="Breadcrumb">
+            <a href="/plans">CloFix Licenses</a>
+            <span aria-hidden="true">/</span>
+            <span>Platform</span>
+            <span aria-hidden="true">/</span>
+            <span>License Plans</span>
+          </nav>
+          <p class="eyebrow">Platform</p>
+          <h1>License Plans</h1>
+        </div>
+        <div class="top-actions">
+          <span class="top-status status" id="message" role="status" aria-live="polite"></span>
+          <button class="primary" type="button" id="plan-add">＋ Create plan</button>
+        </div>
+      </header>
+
+      <div class="cards" aria-label="License counts">
+        <div class="stat"><div class="stat-label">Total licenses</div><div class="stat-value" id="count-total">—</div><div class="stat-note">All created keys</div></div>
+        <div class="stat"><div class="stat-label">Active</div><div class="stat-value" id="count-active">—</div><div class="stat-note">Unexpired · not revoked</div></div>
+        <div class="stat"><div class="stat-label">Expired</div><div class="stat-value" id="count-expired">—</div><div class="stat-note">Past expiry</div></div>
+        <div class="stat"><div class="stat-label">Revoked</div><div class="stat-value" id="count-revoked">—</div><div class="stat-note">Manually revoked</div></div>
+        <div class="stat"><div class="stat-label">Deleted</div><div class="stat-value" id="count-deleted">—</div><div class="stat-note">History retained</div></div>
+      </div>
+
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <h2>Plans</h2>
+            <p>Entitlements returned by <code>POST /api/validate</code>. Controllers enforce these quotas.</p>
+          </div>
+          <button class="secondary" type="button" id="plan-refresh">Refresh</button>
+        </div>
+        <div class="table-wrap"><table id="plans"></table></div>
+      </section>
+    </main>
+  </div>
+
+  <footer class="site-footer" role="contentinfo">
+    <div class="site-footer-inner">
+      <span>Powered by <strong>CloFix Infotech</strong></span>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <span>CloFix License Server</span>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <span id="footer-host">—</span>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <time id="footer-clock">—</time>
+    </div>
+  </footer>
+</div>
+
+<dialog id="plan-dialog" aria-labelledby="plan-title">
+<form id="plan-form">
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">License plan</p>
+      <h2 id="plan-title">Create license plan</h2>
+    </div>
+    <button type="button" class="secondary" id="plan-close">Close</button>
+  </div>
+  <div class="grid">
+    <fieldset><legend>Compute</legend><div class="grid">
+      <label>Plan name<input id="name" maxlength="80" required></label>
+      <label>Maximum FileVPS<input id="vps" type="number" min="1" max="1000000" value="10" required></label>
+      <label>Maximum workers<input id="workers" type="number" min="1" max="100000" value="3" required></label>
+      <label>Jobs &amp; functions<input id="limit-applications" type="number" min="-1" max="1000000" value="10"></label>
+      <label>Managed apps<input id="limit-managed-apps" type="number" min="-1" max="1000000" value="10"></label>
+      <label>CKS clusters (EKS-style)<input id="limit-kubernetes-clusters" type="number" min="-1" max="1000000" value="5"></label>
+      <label>CKS nodes<input id="limit-kubernetes-nodes" type="number" min="-1" max="1000000" value="20"></label>
+      <label>CKS node pools<input id="limit-kubernetes-node-pools" type="number" min="-1" max="1000000" value="10"></label>
+      <label>Redis clusters<input id="limit-redis-clusters" type="number" min="-1" max="1000000" value="5"></label>
+      <label>Docker containers<input id="limit-docker-containers" type="number" min="-1" max="1000000" value="100"></label>
+      <label>Docker applications<input id="limit-docker-applications" type="number" min="-1" max="1000000" value="50"></label>
+      <label>Docker workers<input id="limit-docker-workers" type="number" min="-1" max="1000000" value="10"></label>
+    </div></fieldset>
+    <fieldset><legend>Databases</legend>
+      <p class="muted">MySQL, PostgreSQL, MongoDB and Redis on opted-in Linux workers.</p>
+      <div class="grid">
+        <label>Database instances<input id="limit-max-database-projects" type="number" min="-1" max="1000000" value="5"></label>
+        <label>Logical databases<input id="limit-max-databases" type="number" min="-1" max="1000000" value="25"></label>
+        <label>Database users<input id="limit-max-database-users" type="number" min="-1" max="1000000" value="25"></label>
+        <label>Database backup schedules<input id="limit-max-database-schedules" type="number" min="-1" max="1000000" value="10"></label>
+      </div>
+    </fieldset>
+    <fieldset><legend>Storage</legend><div class="grid">
+      <label>Volumes<input id="limit-volumes" type="number" min="-1" max="1000000" value="10"></label>
+      <label>Total storage entitlement (GiB)<input id="limit-storage" type="number" min="-1" max="1000000" value="100"></label>
+      <label>S3 connections<input id="limit-s3-connections" type="number" min="-1" max="1000000" value="5"></label>
+      <label>Retained backups<input id="limit-backups" type="number" min="-1" max="1000000" value="10"></label>
+    </div></fieldset>
+    <fieldset><legend>Networking</legend>
+      <p class="muted">DNS Service is the controller zone/record store. It does not listen on port 53.</p>
+      <div class="grid">
+        <label>Maximum load balancers<input id="lbs" type="number" min="1" max="100000" value="5" required></label>
+        <label>DNS zones<input id="limit-dns-zones" type="number" min="-1" max="1000000" value="1"></label>
+        <label>DNS records<input id="limit-dns-records" type="number" min="-1" max="1000000" value="200"></label>
+        <label>Health check endpoints<input id="limit-health-checks" type="number" min="-1" max="1000000" value="10"></label>
+      </div>
+    </fieldset>
+    <fieldset><legend>Security</legend><div class="grid">
+      <label>IAM users<input id="limit-iam-users" type="number" min="-1" max="1000000" value="5"></label>
+      <label>IAM groups<input id="limit-iam-groups" type="number" min="-1" max="1000000" value="5"></label>
+      <label>IAM policies<input id="limit-iam-policies" type="number" min="-1" max="1000000" value="10"></label>
+      <label>IAM access keys<input id="limit-access-keys" type="number" min="-1" max="1000000" value="10"></label>
+    </div></fieldset>
+    <fieldset><legend>Platform</legend><div class="grid">
+      <label>Notification channels<input id="limit-channels" type="number" min="-1" max="1000000" value="3"></label>
+      <label>Available for new licenses<select id="active"><option value="true">Active</option><option value="false">Disabled</option></select></label>
+    </div>
+    <p class="muted">One license key is permanently bound to one controller Installation ID.</p>
+    </fieldset>
+  </div>
+  <p class="muted">Optional limits: -1 = unlimited, 0 = not included, blank = not specified.</p>
+  <p class="status" id="plan-message" role="status" aria-live="polite"></p>
+  <button class="primary" id="plan-save" type="submit">Save plan</button>
+  <button class="secondary" id="plan-reset" type="button">Cancel</button>
+  <button class="danger" type="button" id="plan-delete" hidden>Delete plan</button>
+</form>
+</dialog>
+
+<script src="/common.js"></script>
+<script>
+let editing='';
+const extraLimits=[
+  {key:"max_database_projects",id:"limit-max-database-projects",label:"Database instances"},
+  {key:"max_databases",id:"limit-max-databases",label:"Logical databases"},
+  {key:"max_database_users",id:"limit-max-database-users",label:"Database users"},
+  {key:"max_database_schedules",id:"limit-max-database-schedules",label:"Database backup schedules"},
+  {key:"max_health_checks",id:"limit-health-checks",label:"Health checks"},
+  {key:"max_backups",id:"limit-backups",label:"Retained backups"},
+  {key:"max_volumes",id:"limit-volumes",label:"Volumes"},
+  {key:"max_storage_gb",id:"limit-storage",label:"Storage GiB"},
+  {key:"max_s3_connections",id:"limit-s3-connections",label:"S3 connections"},
+  {key:"max_applications",id:"limit-applications",label:"Jobs & functions"},
+  {key:"max_managed_apps",id:"limit-managed-apps",label:"Managed apps"},
+  {key:"max_notification_channels",id:"limit-channels",label:"Notification channels"},
+  {key:"max_iam_users",id:"limit-iam-users",label:"IAM users"},
+  {key:"max_iam_groups",id:"limit-iam-groups",label:"IAM groups"},
+  {key:"max_iam_policies",id:"limit-iam-policies",label:"IAM policies"},
+  {key:"max_access_keys",id:"limit-access-keys",label:"IAM access keys"},
+  {key:"max_dns_zones",id:"limit-dns-zones",label:"DNS zones"},
+  {key:"max_dns_records",id:"limit-dns-records",label:"DNS records"},
+  {key:"max_kubernetes_clusters",id:"limit-kubernetes-clusters",label:"CKS clusters"},
+  {key:"max_kubernetes_nodes",id:"limit-kubernetes-nodes",label:"CKS nodes"},
+  {key:"max_kubernetes_node_pools",id:"limit-kubernetes-node-pools",label:"CKS node pools"},
+  {key:"max_redis_clusters",id:"limit-redis-clusters",label:"Redis clusters"},
+  {key:"max_docker_containers",id:"limit-docker-containers",label:"Docker containers"},
+  {key:"max_docker_applications",id:"limit-docker-applications",label:"Docker applications"},
+  {key:"max_docker_workers",id:"limit-docker-workers",label:"Docker workers"}
+];
+function extraPayload(){
+  return Object.fromEntries(extraLimits.map(x=>[x.key,$(x.id).value.trim()===''?null:Number($(x.id).value)]));
+}
+function reset(){
+  editing='';
+  $('plan-form').reset();
+  $('plan-title').textContent='Create license plan';
+  $('plan-delete').hidden=true;
+  $('plan-message').textContent='';
+}
+function badge(text){
+  const s=document.createElement('span');
+  s.className='badge '+text;
+  s.textContent=text;
+  return s;
+}
+function renderPlans(){
+  const table=$('plans');
+  table.replaceChildren();
+  row(table,['Plan','Licenses','VPS / workers / LBs / CKS / Redis','Entitlements','Issuance','Actions'],true);
+  if(!plans.length){
+    row(table,['No plans yet. Create your first plan.','','','','','']);
+    return;
+  }
+  for(const p of plans){
+    const actions=document.createElement('div');
+    actions.className='row-actions';
+    actions.append(
+      button('Edit',()=>{
+        editing=p.id;
+        $('name').value=p.name;
+        $('vps').value=p.max_vps;
+        $('workers').value=p.max_workers;
+        $('lbs').value=p.max_load_balancers;
+        $('active').value=String(p.active);
+        for(const limit of extraLimits)$(limit.id).value=p[limit.key]??'';
+        $('plan-title').textContent='Edit plan';
+        $('plan-delete').hidden=false;
+        $('plan-message').textContent='';
+        $('plan-dialog').showModal();
+        $('name').focus();
+      },'small-btn'),
+      button('Delete',()=>deletePlan(p),'small-btn')
+    );
+    const limits=document.createElement('details');
+    const summary=document.createElement('summary');
+    summary.textContent='View limits';
+    limits.append(summary);
+    for(const limit of extraLimits){
+      const item=document.createElement('div');
+      item.textContent=limit.label+': '+formatLimit(p[limit.key]);
+      limits.append(item);
+    }
+    const count=button(String(licenses.filter(l=>l.plan_id===p.id).length)+' licenses',()=>{
+      location.href='/licenses?plan='+encodeURIComponent(p.id);
+    },'small-btn');
+    row(table,[
+      p.name,
+      count,
+      `${p.max_vps} / ${p.max_workers} / ${p.max_load_balancers} / ${formatLimit(p.max_kubernetes_clusters)} / ${formatLimit(p.max_redis_clusters)}`,
+      limits,
+      p.active?badge('Active'):badge('Disabled'),
+      actions
+    ]);
+  }
+}
+async function deletePlan(p){
+  if(!confirm('Delete plan '+p.name+'? Plans referenced by issued licenses cannot be deleted.'))return;
+  const finish=pending($('plan-form'));
+  msg('Deleting plan…');
+  try{
+    await api('DELETE','/api/plans/'+p.id);
+    if(editing===p.id){$('plan-dialog').close();reset();}
+    await loadData();
+    msg('Plan deleted.');
+  }finally{finish();}
+}
+function onDataReady(){renderPlans();}
+$('plan-refresh').onclick=async()=>{
+  const b=$('plan-refresh');
+  b.disabled=true;b.textContent='Refreshing…';
+  try{await loadData();msg('Plans updated.');}
+  catch(e){msg(e.message);}
+  finally{b.disabled=false;b.textContent='Refresh';}
+};
+$('plan-reset').onclick=()=>$('plan-dialog').close();
+$('plan-close').onclick=()=>$('plan-dialog').close();
+$('plan-add').onclick=()=>{reset();$('plan-dialog').showModal();};
+$('plan-delete').onclick=async()=>{
+  const plan=plans.find(p=>p.id===editing);
+  if(plan)try{await deletePlan(plan);}catch(e){msg(e.message);}
+};
+$('plan-dialog').addEventListener('cancel',e=>{
+  if($('plan-form').getAttribute('aria-busy')==='true')e.preventDefault();
+});
+$('plan-form').onsubmit=async e=>{
+  e.preventDefault();
+  if(e.currentTarget.getAttribute('aria-busy')==='true')return;
+  const finish=pending(e.currentTarget);
+  const saveLabel=$('plan-save').textContent;
+  $('plan-save').textContent='Saving…';
+  msg('Saving plan…');
+  try{
+    await api(editing?'PUT':'POST','/api/plans'+(editing?'/'+editing:''),{
+      ...extraPayload(),
+      name:$('name').value.trim(),
+      max_vps:Number($('vps').value),
+      max_workers:Number($('workers').value),
+      max_load_balancers:Number($('lbs').value),
+      max_activations:1,
+      active:$('active').value==='true'
+    });
+    $('plan-dialog').close();
+    reset();
+    await loadData();
+    msg('Plan saved. Limit changes apply on next validation.');
+  }catch(err){msg(err.message);}
+  finally{finish();$('plan-save').textContent=saveLabel;}
+};
+</script>
+</body>
+</html>

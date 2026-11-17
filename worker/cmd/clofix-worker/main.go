@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -67,6 +68,7 @@ func main() {
 		fs := flag.NewFlagSet("enroll", flag.ExitOnError)
 		url := fs.String("controller", "", "controller worker-API URL, e.g. https://controller:8443")
 		ca := fs.String("ca", "", "path to the controller CA certificate")
+		install := fs.String("installation-id", "", "controller Installation ID (ctl-…); defaults to CLOFIX_INSTALLATION_ID / baked build ID")
 		fs.Parse(os.Args[2:])
 		if *url == "" || *ca == "" {
 			fs.Usage()
@@ -77,11 +79,14 @@ func main() {
 			log.Fatal(err)
 		}
 		cfg, _ := config.Load()
+		if id := strings.TrimSpace(*install); id != "" {
+			cfg.InstallationID = id
+		}
 		cfg, err = agent.Enroll(*url, *ca, tok, cfg)
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println("enrolled as", cfg.WorkerID)
+		fmt.Println("enrolled as", cfg.WorkerID, "installation", cfg.InstallationID)
 	case "status":
 		cfg, _ := config.Load()
 		eng := lifecycle.New(cfg)
@@ -105,6 +110,9 @@ func run() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatal(err)
+	}
+	if strings.TrimSpace(cfg.InstallationID) == "" {
+		log.Fatal("installation_id missing: rebuild/enroll this worker with the admin Installation ID (Settings → License / CLOFIX_INSTALLATION_ID)")
 	}
 	if cfg.ZRAMMB > 0 {
 		if err := swap.EnsureZRAM(cfg.ZRAMMB); err != nil {

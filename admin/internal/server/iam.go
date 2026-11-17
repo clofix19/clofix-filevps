@@ -40,6 +40,7 @@ var iamUsernamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]{2,64}$`)
 var iamPermissionSet = map[string]bool{
 	"databases:read": true, "databases:manage": true,
 	"kubernetes:read": true, "kubernetes:manage": true,
+	"cluster-services:read": true, "cluster-services:manage": true,
 	"license:read": true, "license:manage": true,
 	"health-checks:read": true, "health-checks:manage": true,
 	"load-balancers:read": true, "load-balancers:manage": true,
@@ -82,7 +83,7 @@ func (s *Server) authenticate(r *http.Request) (iamPrincipal, bool) {
 		return iamPrincipal{}, false
 	}
 	user, err := s.Store.GetIAMUser(key.UserID)
-	if err != nil || user.Status != "active" {
+	if err != nil || user.Status != "active" || s.accountIsSuspended(user.AccountID) {
 		return iamPrincipal{}, false
 	}
 	if loginIPAllowed(user, clientIP(r)) != nil {
@@ -95,6 +96,8 @@ func permissionResource(path string) string {
 	switch {
 	case strings.HasPrefix(path, "/api/v1/kubernetes"), strings.HasPrefix(path, "/api/kubernetes"):
 		return "kubernetes"
+	case strings.HasPrefix(path, "/api/cluster-services"):
+		return "cluster-services"
 	case strings.HasPrefix(path, "/api/databases"):
 		return "databases"
 	case strings.HasPrefix(path, "/api/license"):
@@ -283,8 +286,9 @@ func iamBuiltInPolicies() []map[string]any {
 		{"name": "CloFixFullAdministrator", "description": "All API resource scopes", "category": "Global", "permissions": []string{"*"}},
 		{"name": "CloFixReadOnly", "description": "View every resource without changes", "category": "Global", "permissions": []string{"read:*"}},
 		{"name": "CloFixComputeOperator", "description": "FileVPS, workers, Library apps, Jobs & Functions, Docker, CKS and VPS backups", "category": "Compute", "permissions": []string{
-			"instances:manage", "workers:manage", "managed-apps:manage", "applications:manage", "docker:manage", "services:manage", "kubernetes:manage", "backups:manage",
+			"instances:manage", "workers:manage", "managed-apps:manage", "applications:manage", "docker:manage", "services:manage", "kubernetes:manage", "cluster-services:manage", "backups:manage",
 		}},
+		{"name": "CloFixClusterServicesOperator", "description": "Redis Cluster multi-VPS topology", "category": "Compute", "permissions": []string{"cluster-services:manage", "instances:manage", "storage:manage"}},
 		{"name": "CloFixDockerOperator", "description": "Docker Engine containers, images, Compose and deployments", "category": "Compute", "permissions": []string{"docker:manage"}},
 		{"name": "CloFixVPSOperator", "description": "Day-to-day FileVPS, services, security controls, volumes and backups", "category": "Compute", "permissions": []string{
 			"instances:manage", "services:manage", "security:manage", "volumes:manage", "backups:manage",
@@ -440,6 +444,11 @@ func (s *Server) saveIAMUser(w http.ResponseWriter, r *http.Request) {
 		}
 		user.PasswordHash = hash
 	}
+	if in.Status == "active" && s.accountIsSuspended(user.AccountID) {
+		fail(w, 409, "cannot activate user while the parent account is suspended")
+		return
+	}
+	prevStatus := user.Status
 	user.Username, user.Role, user.Status, user.GroupIDs, user.PolicyIDs = in.Username, in.Role, in.Status, in.GroupIDs, in.PolicyIDs
 	if user.Kind == "" {
 		user.Kind = "iam"
@@ -455,8 +464,78 @@ func (s *Server) saveIAMUser(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if user.Status == "inactive" && prevStatus != "inactive" {
+		s.revokeIAMUserAccess(user.ID)
+	}
 	s.Store.Audit(principalFrom(r).Name, "iam.user.save", user.ID, user.Role)
 	writeJSON(w, 200, user)
+}
+
+func (s *Server) revokeIAMUserAccess(userID string) {
+	_ = s.Store.DeleteSessionsForUser(userID)
+	keys, _ := s.Store.ListIAMAccessKeys(userID)
+	for _, key := range keys {
+		if !key.Active {
+			continue
+		}
+		key.Active = false
+		_ = s.Store.SaveIAMAccessKey(key)
+	}
+}
+
+func (s *Server) setIAMUserSuspended(w http.ResponseWriter, r *http.Request, suspend bool) {
+	actor := principalFrom(r)
+	id := r.PathValue("id")
+	if !iamIDPattern.MatchString(id) || !strings.HasPrefix(id, "usr-") {
+		fail(w, 400, "invalid IAM user id")
+		return
+	}
+	user, err := s.Store.GetIAMUser(id)
+	if err != nil || !s.canAccessAccount(actor, user.AccountID) {
+		fail(w, 404, "IAM user not found")
+		return
+	}
+	if user.Kind != "iam" && actor.Kind != "admin" {
+		fail(w, 403, "use account suspend for root or partner logins")
+		return
+	}
+	if actor.UserID == id {
+		fail(w, 400, "cannot suspend your own login")
+		return
+	}
+	if suspend {
+		if user.Status == "inactive" {
+			writeJSON(w, 200, map[string]any{"id": user.ID, "status": "inactive"})
+			return
+		}
+		user.Status = "inactive"
+		if err := s.Store.SaveIAMUser(user); err != nil {
+			fail(w, 500, "could not suspend IAM user")
+			return
+		}
+		s.revokeIAMUserAccess(user.ID)
+		s.Store.Audit(actor.Name, "iam.user.suspend", user.ID, user.Kind)
+		writeJSON(w, 200, map[string]any{"id": user.ID, "status": "inactive"})
+		return
+	}
+	if s.accountIsSuspended(user.AccountID) {
+		fail(w, 409, "cannot resume user while the parent account is suspended")
+		return
+	}
+	user.Status = "active"
+	if err := s.Store.SaveIAMUser(user); err != nil {
+		fail(w, 500, "could not resume IAM user")
+		return
+	}
+	s.Store.Audit(actor.Name, "iam.user.resume", user.ID, user.Kind)
+	writeJSON(w, 200, map[string]any{"id": user.ID, "status": "active"})
+}
+
+func (s *Server) suspendIAMUser(w http.ResponseWriter, r *http.Request) {
+	s.setIAMUserSuspended(w, r, true)
+}
+func (s *Server) resumeIAMUser(w http.ResponseWriter, r *http.Request) {
+	s.setIAMUserSuspended(w, r, false)
 }
 func (s *Server) deleteIAMUser(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/clofix/filevps/worker/pkg/proto"
 )
 
 // Wire types only: the customer controller does not import the company license server.
@@ -42,6 +44,7 @@ type licensePlan struct {
 	MaxDockerContainers     *int `json:"max_docker_containers,omitempty"`
 	MaxDockerApplications   *int `json:"max_docker_applications,omitempty"`
 	MaxDockerWorkers        *int `json:"max_docker_workers,omitempty"`
+	MaxRedisClusters        *int `json:"max_redis_clusters,omitempty"`
 
 	ID             string `json:"id"`
 	Name           string `json:"name"`
@@ -106,12 +109,6 @@ func (s *Server) licenseRoutes(m *http.ServeMux) {
 	m.HandleFunc("PUT /api/license", s.auth(s.saveControllerLicense))
 	m.HandleFunc("POST /api/license/validate", s.auth(s.validateControllerLicense))
 }
-func (s *Server) getControllerLicense(w http.ResponseWriter, r *http.Request) {
-	d := s.license
-	d.Lock()
-	defer d.Unlock()
-	writeJSON(w, 200, map[string]any{"management_url": os.Getenv("CLOFIX_LICENSE_PUBLIC_URL"), "server_url": d.ServerURL, "configured": len(d.EncryptedKey) > 0, "installation_id": d.InstallationID, "last_check": d.LastCheck, "grant": d.Grant, "status": d.Status, "enforcement": true})
-}
 func (s *Server) saveControllerLicense(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		ServerURL string `json:"server_url"`
@@ -171,10 +168,26 @@ func (s *Server) saveControllerLicense(w http.ResponseWriter, r *http.Request) {
 	s.Store.Audit("admin", "license.configure", d.InstallationID, "ok")
 	writeJSON(w, 200, map[string]bool{"saved": true})
 }
+const (
+	// licenseCheckInterval is how often the controller revalidates with the company license server.
+	licenseCheckInterval = 2 * time.Minute
+	// licenseStopGrace is how long after Expires existing workloads may keep running
+	// before the controller auto-stops them. Creates are blocked as soon as Expires passes.
+	licenseStopGrace = 7 * 24 * time.Hour
+)
+
 func (s *Server) checkControllerLicense(ctx context.Context) error {
+	return s.checkControllerLicenseOpt(ctx, true)
+}
+
+// checkControllerLicenseOpt validates against the company license server.
+// When the license server is unreachable, a previously synced grant (plan, duration,
+// expires, last sync) is retained until Expires so the controller can keep operating offline.
+func (s *Server) checkControllerLicenseOpt(ctx context.Context, retainOffline bool) error {
 	d := s.license
 	d.Lock()
 	serverURL, encrypted, id := d.ServerURL, append([]byte{}, d.EncryptedKey...), d.InstallationID
+	prevGrant, prevStatus, prevCheck := d.Grant, d.Status, d.LastCheck
 	d.Unlock()
 	if len(encrypted) == 0 {
 		return fmt.Errorf("configure a license key first")
@@ -193,10 +206,12 @@ func (s *Server) checkControllerLicense(ctx context.Context) error {
 	res, e := client.Do(req)
 	grant := licenseGrant{}
 	status := "License server unavailable"
+	transportErr := e != nil
 	if e == nil {
 		defer res.Body.Close()
 		if json.NewDecoder(io.LimitReader(res.Body, 65536)).Decode(&grant) != nil {
 			status = "Invalid license server response"
+			transportErr = true
 		} else if res.StatusCode == 200 && grant.Valid && grant.InstallationID == id {
 			status = "Valid"
 		} else {
@@ -215,9 +230,28 @@ func (s *Server) checkControllerLicense(ctx context.Context) error {
 	if d.ServerURL != serverURL || !bytes.Equal(d.EncryptedKey, encrypted) {
 		return fmt.Errorf("license settings changed during validation; retry")
 	}
+	if transportErr && retainOffline && prevGrant.Valid && prevGrant.InstallationID == id && !prevGrant.Expires.IsZero() {
+		d.Grant = prevGrant
+		d.LastCheck = prevCheck // keep last successful sync date
+		if time.Now().Before(prevGrant.Expires) {
+			d.Status = fmt.Sprintf("Valid (offline · cached until %s)", prevGrant.Expires.UTC().Format(time.RFC3339))
+		} else {
+			d.Status = fmt.Sprintf("Expired (offline · last sync %s)", prevCheck.UTC().Format(time.RFC3339))
+		}
+		if e := d.save(); e != nil {
+			d.Grant, d.Status, d.LastCheck = prevGrant, prevStatus, prevCheck
+			return fmt.Errorf("could not persist license validation")
+		}
+		if !time.Now().Before(prevGrant.Expires) {
+			return fmt.Errorf("license expired; renew and validate the license")
+		}
+		return nil
+	}
 	d.Grant = grant
 	d.Status = status
-	d.LastCheck = time.Now().UTC()
+	if grant.Valid {
+		d.LastCheck = time.Now().UTC()
+	}
 	if e := d.save(); e != nil {
 		return fmt.Errorf("could not persist license validation")
 	}
@@ -235,16 +269,122 @@ func (s *Server) validateControllerLicense(w http.ResponseWriter, r *http.Reques
 	}
 	s.getControllerLicense(w, r)
 }
+
+// licensePhase reports enforcement state from the cached grant.
+// active: before Expires; expired: after Expires (creates blocked); stopped: after Expires+7d (auto-stop).
+func (s *Server) licensePhase() (phase string, expires, stopAfter time.Time, offline bool) {
+	d := s.license
+	d.Lock()
+	defer d.Unlock()
+	offline = d.Status != "" && strings.Contains(strings.ToLower(d.Status), "offline")
+	if len(d.EncryptedKey) == 0 || !d.Grant.Valid || d.Grant.InstallationID != d.InstallationID || d.Grant.Expires.IsZero() {
+		return "invalid", time.Time{}, time.Time{}, offline
+	}
+	expires = d.Grant.Expires.UTC()
+	stopAfter = expires.Add(licenseStopGrace)
+	now := time.Now().UTC()
+	if now.Before(expires) {
+		return "active", expires, stopAfter, offline
+	}
+	if now.Before(stopAfter) {
+		return "expired", expires, stopAfter, offline
+	}
+	return "stopped", expires, stopAfter, offline
+}
+
+func (s *Server) getControllerLicense(w http.ResponseWriter, r *http.Request) {
+	d := s.license
+	d.Lock()
+	view := map[string]any{
+		"management_url":  os.Getenv("CLOFIX_LICENSE_PUBLIC_URL"),
+		"server_url":      d.ServerURL,
+		"configured":      len(d.EncryptedKey) > 0,
+		"installation_id": d.InstallationID,
+		"last_check":      d.LastCheck,
+		"last_sync":       d.LastCheck,
+		"grant":           d.Grant,
+		"status":          d.Status,
+		"enforcement":     true,
+	}
+	d.Unlock()
+	phase, expires, stopAfter, offline := s.licensePhase()
+	view["phase"] = phase
+	view["offline"] = offline
+	if !expires.IsZero() {
+		view["expires"] = expires
+		view["stop_services_after"] = stopAfter
+	}
+	view["stop_grace_days"] = int(licenseStopGrace / (24 * time.Hour))
+	writeJSON(w, 200, view)
+}
+
 func (s *Server) RunLicenseScheduler(ctx context.Context) {
-	s.checkControllerLicense(ctx)
-	ticker := time.NewTicker(5 * time.Minute)
+	s.checkControllerLicenseOpt(ctx, true)
+	s.enforceExpiredLicenseStops()
+	ticker := time.NewTicker(licenseCheckInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.checkControllerLicense(ctx)
+			s.checkControllerLicenseOpt(ctx, true)
+			s.enforceExpiredLicenseStops()
 		}
+	}
+}
+
+// enforceExpiredLicenseStops stops running workloads once Expires+7d has passed.
+// Workloads stay stopped until a renewed grant (later Expires) is validated.
+func (s *Server) enforceExpiredLicenseStops() {
+	phase, _, _, _ := s.licensePhase()
+	if phase != "stopped" {
+		return
+	}
+	s.stopAllForExpiredLicense()
+}
+
+func (s *Server) stopAllForExpiredLicense() {
+	instances, err := s.Store.ListInstances()
+	if err == nil {
+		for _, inst := range instances {
+			if inst.State != proto.StateRunning && inst.State != "RUNNING" {
+				continue
+			}
+			op := proto.Operation{ID: inst.ID + "/" + proto.ActionStop + "/license/" + randHex(4), Action: proto.ActionStop, InstanceID: inst.ID}
+			if e := s.Store.QueueOp(inst.WorkerID, op); e == nil {
+				s.Store.Audit("license", "expire.stop", inst.ID, "vps")
+			}
+		}
+	}
+	if s.applications != nil {
+		s.applications.Lock()
+		changed := false
+		for id, a := range s.applications.Managed {
+			if strings.EqualFold(a.Desired, "stopped") {
+				continue
+			}
+			a.Desired = "stopped"
+			s.applications.Managed[id] = a
+			changed = true
+			s.Store.Audit("license", "expire.stop", id, "managed-app")
+		}
+		if changed {
+			_ = s.applications.save()
+		}
+		s.applications.Unlock()
+	}
+	if s.docker != nil {
+		s.docker.mu.Lock()
+		for id, c := range s.docker.Containers {
+			if strings.EqualFold(c.Desired, "stopped") || strings.EqualFold(c.State, "exited") || strings.EqualFold(c.State, "stopped") {
+				continue
+			}
+			c.Desired = "stopped"
+			s.docker.Containers[id] = c
+			s.Store.Audit("license", "expire.stop", id, "docker")
+		}
+		_ = s.docker.save()
+		s.docker.mu.Unlock()
 	}
 }

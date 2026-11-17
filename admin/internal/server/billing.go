@@ -24,8 +24,9 @@ var billingProducts = map[string]string{
 	"load-balancer":  "Load Balancer",
 	"application":    "Application",
 	"cks":            "CKS",
+	"redis":          "Redis Cluster",
 }
-var billingResources = []string{"cpu", "ram", "ssd", "cks", "lb", "transfer", "backup", "ipv4", "volume", "efs", "s3", "app"}
+var billingResources = []string{"cpu", "ram", "ssd", "cks", "redis", "lb", "transfer", "backup", "ipv4", "volume", "efs", "s3", "app"}
 var billingGateways = map[string]bool{
 	"none": true, "manual": true, "stripe": true, "sslcommerz": true,
 	"bkash": true, "nagad": true,
@@ -86,11 +87,17 @@ type billingGateway struct {
 	Enabled        bool   `json:"enabled"`
 }
 type billingCurrency struct {
-	Currency    string  `json:"currency"`
-	TaxName     string  `json:"tax_name"`
-	TaxPercent  float64 `json:"tax_percent"`
-	BDTPerUSD   float64 `json:"bdt_per_usd,omitempty"`
-	DefaultTier string  `json:"default_tier,omitempty"`
+	Currency       string  `json:"currency"`
+	TaxName        string  `json:"tax_name"`
+	TaxPercent     float64 `json:"tax_percent"`
+	BDTPerUSD      float64 `json:"bdt_per_usd,omitempty"`
+	DefaultTier    string  `json:"default_tier,omitempty"`
+	InvoiceCompany string  `json:"invoice_company,omitempty"`
+	InvoiceFrom    string  `json:"invoice_from,omitempty"`
+	InvoiceEmail   string  `json:"invoice_email,omitempty"`
+	InvoiceFooter  string  `json:"invoice_footer,omitempty"`
+	InvoiceNotes   string  `json:"invoice_notes,omitempty"`
+	InvoiceLogo    string  `json:"invoice_logo,omitempty"`
 }
 type billingNotify struct {
 	InvoiceIssued        bool `json:"invoice_issued"`
@@ -247,6 +254,15 @@ func (d *billingStore) ensure() {
 	if d.Currency.Currency == "" {
 		d.Currency.Currency = "USD"
 	}
+	if d.Currency.TaxName == "" {
+		d.Currency.TaxName = "VAT"
+		if d.Currency.TaxPercent == 0 {
+			d.Currency.TaxPercent = 15
+		}
+	}
+	if d.Currency.BDTPerUSD <= 0 {
+		d.Currency.BDTPerUSD = 122
+	}
 	merged := mergeBillingResources(d.Resources, d.Currency.Currency)
 	if d.file != "" && billingResourcesJSON(d.Resources) != billingResourcesJSON(merged) {
 		d.Resources = merged
@@ -259,6 +275,8 @@ func billingProductID(id string) string {
 	switch strings.ToLower(strings.TrimSpace(id)) {
 	case "kubernetes", "k8s", "eks":
 		return "cks"
+	case "redis-cluster", "redis-clusters", "cluster-services":
+		return "redis"
 	default:
 		return strings.TrimSpace(id)
 	}
@@ -271,10 +289,10 @@ func billingProductLabel(id string) string {
 	return id
 }
 func billingResourceLabels() map[string]string {
-	return map[string]string{"cpu": "vCPU", "ram": "RAM", "ssd": "SSD", "transfer": "Transfer", "backup": "Backup", "ipv4": "IPv4", "volume": "Volume", "efs": "EFS", "s3": "S3", "lb": "Load balancer", "cks": "CKS", "app": "Application"}
+	return map[string]string{"cpu": "vCPU", "ram": "RAM", "ssd": "SSD", "transfer": "Transfer", "backup": "Backup", "ipv4": "IPv4", "volume": "Volume", "efs": "EFS", "s3": "S3", "lb": "Load balancer", "cks": "CKS", "redis": "Redis Cluster", "app": "Application"}
 }
 func billingResourceUnits() map[string]string {
-	return map[string]string{"cpu": "vCPU", "ram": "GB", "ssd": "GB", "transfer": "GB", "backup": "GB", "ipv4": "address", "volume": "GB", "efs": "GB", "s3": "GB", "lb": "balancer", "cks": "CKS cluster", "app": "app"}
+	return map[string]string{"cpu": "vCPU", "ram": "GB", "ssd": "GB", "transfer": "GB", "backup": "GB", "ipv4": "address", "volume": "GB", "efs": "GB", "s3": "GB", "lb": "balancer", "cks": "CKS cluster", "redis": "Redis cluster", "app": "app"}
 }
 func defaultBillingResources(currency string) []billingResource {
 	units := billingResourceUnits()
@@ -287,6 +305,7 @@ func defaultBillingResources(currency string) []billingResource {
 func mergeBillingResources(existing []billingResource, currency string) []billingResource {
 	byName := map[string]billingResource{}
 	for _, item := range existing {
+		item.Resource = billingProductID(item.Resource)
 		if item.Resource == "kubernetes" {
 			item.Resource = "cks"
 		}
@@ -297,7 +316,7 @@ func mergeBillingResources(existing []billingResource, currency string) []billin
 	out := make([]billingResource, 0, len(billingResources))
 	for _, item := range defaultBillingResources(currency) {
 		if old, ok := byName[item.Resource]; ok {
-			if old.Resource == "cks" {
+			if old.Resource == "cks" || old.Resource == "redis" {
 				if old.Unit == "" || old.Unit == "cluster" {
 					old.Unit = item.Unit
 				}
@@ -308,7 +327,7 @@ func mergeBillingResources(existing []billingResource, currency string) []billin
 			out = append(out, old)
 			continue
 		}
-		if item.Resource == "cks" {
+		if item.Resource == "cks" || item.Resource == "redis" {
 			item.Enabled = true
 		}
 		out = append(out, item)
@@ -812,6 +831,9 @@ func (s *Server) savePricingResources(w http.ResponseWriter, r *http.Request) {
 		if item.Resource == "kubernetes" {
 			item.Resource = "cks"
 		}
+		if item.Resource == "redis-cluster" {
+			item.Resource = "redis"
+		}
 		item.Unit = strings.TrimSpace(item.Unit)
 		item.Currency = strings.ToUpper(strings.TrimSpace(item.Currency))
 		if !containsString(billingResources, item.Resource) || item.Unit == "" || len(item.Unit) > 24 || !validCurrency(item.Currency) || !moneyOK(item.MonthlyCents) || !moneyOK(item.HourlyCents) || !moneyOK(item.LowcostMonthlyCents) || !moneyOK(item.LowcostHourlyCents) || seen[item.Resource] {
@@ -979,15 +1001,32 @@ func (s *Server) savePricingGateway(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) savePricingCurrency(w http.ResponseWriter, r *http.Request) {
 	var in billingCurrency
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&in) != nil {
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&in) != nil {
 		fail(w, 400, "invalid currency payload")
 		return
 	}
 	in.Currency = strings.ToUpper(strings.TrimSpace(in.Currency))
 	in.TaxName = strings.TrimSpace(in.TaxName)
 	in.DefaultTier = normalizeBillingTier(in.DefaultTier)
+	in.InvoiceCompany = strings.TrimSpace(in.InvoiceCompany)
+	in.InvoiceFrom = strings.TrimSpace(in.InvoiceFrom)
+	in.InvoiceEmail = strings.TrimSpace(in.InvoiceEmail)
+	in.InvoiceFooter = strings.TrimSpace(in.InvoiceFooter)
+	in.InvoiceNotes = strings.TrimSpace(in.InvoiceNotes)
+	in.InvoiceLogo = filepath.Base(strings.TrimSpace(in.InvoiceLogo))
+	if in.InvoiceLogo == "." || in.InvoiceLogo == ".." {
+		in.InvoiceLogo = ""
+	}
+	if in.InvoiceLogo != "" && !strings.HasSuffix(strings.ToLower(in.InvoiceLogo), ".png") {
+		fail(w, 400, "invoice_logo must be a .png filename")
+		return
+	}
 	if !validCurrency(in.Currency) || len(in.TaxName) > 40 || in.TaxPercent < 0 || in.TaxPercent > 100 || in.BDTPerUSD < 0 || in.BDTPerUSD > 10000 {
 		fail(w, 400, "currency must be a 3-letter code, tax percent 0-100, and BDT per USD 0-10000")
+		return
+	}
+	if len(in.InvoiceCompany) > 80 || len(in.InvoiceFrom) > 80 || len(in.InvoiceEmail) > 120 || len(in.InvoiceFooter) > 160 || len(in.InvoiceNotes) > 600 || len(in.InvoiceLogo) > 80 {
+		fail(w, 400, "invoice branding fields are too long")
 		return
 	}
 	d := s.billing
@@ -1510,7 +1549,7 @@ func (s *Server) createBillingInvoice(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	rate := billingFX(d.Currency)
 	periodStart, periodEnd := billingMonthBounds(now)
-	tax := int64(float64(in.AmountCents) * d.Currency.TaxPercent / 100)
+	tax := invoiceTaxCents(in.AmountCents, d.Currency.TaxPercent)
 	lines := buildInvoiceLines(sub, plan, d.Resources, in.AmountCents, in.Description, currency, rate)
 	if in.FromDue {
 		lines = dueLines

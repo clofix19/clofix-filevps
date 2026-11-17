@@ -1,0 +1,86 @@
+{{define "content"}}
+<section class="page active" id="page-redis-services">
+  <div class="section-head">
+    <div>
+      <p class="eyebrow">Compute</p>
+      <h2>Redis Cluster</h2>
+      <p>Multi-VPS Redis: master–master (Cluster) or master–slave (replication), with local or EFS data.</p>
+    </div>
+    <div class="row-actions">
+      <button type="button" class="primary" id="cs-create-open">＋ Create Redis cluster</button>
+    </div>
+  </div>
+  <div class="cards" id="cs-stats" aria-live="polite">
+    <div class="stat"><div class="stat-label">Clusters</div><div class="stat-value" id="cs-stat-total">—</div><div class="stat-note">All Redis clusters</div></div>
+    <div class="stat"><div class="stat-label">Ready</div><div class="stat-value" id="cs-stat-ready">—</div><div class="stat-note">Serving endpoints</div></div>
+    <div class="stat"><div class="stat-label">In progress</div><div class="stat-value" id="cs-stat-busy">—</div><div class="stat-note">Provisioning / joining</div></div>
+    <div class="stat"><div class="stat-label">Failed</div><div class="stat-value" id="cs-stat-failed">—</div><div class="stat-note">Need attention</div></div>
+  </div>
+  <p class="message" id="cs-message" role="status" aria-live="polite" hidden></p>
+  <div class="panel">
+    <div class="section-head">
+      <div><h2>Inventory</h2><p>Each cluster owns FileVPS members on the private VPC.</p></div>
+    </div>
+    <div class="table-wrap"><table id="cs-table"></table></div>
+  </div>
+</section>
+
+<dialog class="terminal-dialog form-dialog" id="cs-create-dialog" aria-labelledby="cs-create-title">
+  <form id="cs-create-form">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Redis Cluster</p>
+        <h2 id="cs-create-title">Create Redis cluster</h2>
+        <p>Provisions member VPS nodes, installs Redis, then joins the topology.</p>
+      </div>
+      <button type="button" class="secondary" id="cs-create-close">Close</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-field"><label for="cs-name">Name</label><input id="cs-name" required maxlength="80" placeholder="redis-prod" autocomplete="off"></div>
+      <div class="form-field"><label for="cs-topology">Topology</label>
+        <select id="cs-topology">
+          <option value="master_master">Master–master (Redis Cluster)</option>
+          <option value="master_slave">Master–slave (replication)</option>
+        </select>
+      </div>
+      <div class="form-field"><label for="cs-nodes">Node count</label><input id="cs-nodes" type="number" min="2" max="9" value="3"></div>
+      <div class="form-field"><label for="cs-storage">Storage</label>
+        <select id="cs-storage">
+          <option value="temp">Temporary (local disk)</option>
+          <option value="persistent">Persistent (EFS)</option>
+        </select>
+      </div>
+      <div class="form-field" id="cs-efs-field" hidden>
+        <label for="cs-efs">EFS share</label>
+        <select id="cs-efs"><option value="">Select EFS ID</option></select>
+        <small class="muted">Mounted at /data/redis; each node uses its own subdirectory.</small>
+      </div>
+      <div class="form-field"><label for="cs-ram">RAM (MiB) / node</label><input id="cs-ram" type="number" min="256" max="8192" value="256"></div>
+      <div class="form-field"><label for="cs-cpu">CPU / node</label><input id="cs-cpu" type="number" min="0.25" max="8" step="0.25" value="0.5"></div>
+      <div class="form-field"><label for="cs-disk">Disk (MiB) / node</label><input id="cs-disk" type="number" min="1024" max="102400" value="2048"></div>
+    </div>
+    <input type="hidden" id="cs-app" value="redis">
+    <p class="muted" id="cs-topo-note">Master–master creates Redis Cluster with all masters (min 3).</p>
+    <p class="error" id="cs-create-error" role="alert" hidden></p>
+    <button type="submit" class="primary">Create Redis cluster</button>
+  </form>
+</dialog>
+
+<dialog class="terminal-dialog form-dialog" id="cs-detail-dialog" aria-labelledby="cs-detail-title">
+  <div class="section-head">
+    <div>
+      <p class="eyebrow">Redis Cluster</p>
+      <h2 id="cs-detail-title">Cluster details</h2>
+      <p id="cs-detail-sub" class="muted"></p>
+    </div>
+    <button type="button" class="secondary" id="cs-detail-close">Close</button>
+  </div>
+  <div class="resource-grid" id="cs-detail-meta"></div>
+  <p class="error" id="cs-detail-error" hidden></p>
+  <div class="section-head" style="margin-top:14px"><div><h3>Nodes</h3></div></div>
+  <div class="table-wrap"><table id="cs-detail-nodes"></table></div>
+  <div class="inline-fields" style="margin-top:14px">
+    <button type="button" class="danger" id="cs-detail-delete">Delete cluster</button>
+  </div>
+</dialog>
+{{end}}

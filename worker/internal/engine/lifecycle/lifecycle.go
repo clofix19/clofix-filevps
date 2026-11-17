@@ -1025,6 +1025,16 @@ func (e *Engine) Apply(op proto.Operation) error {
 		return e.InstallService(op.InstanceID, op.ServiceID)
 	case proto.ActionUninstallService:
 		return e.UninstallService(op.InstanceID, op.ServiceID)
+	case proto.ActionConfigureClusterNode:
+		if op.ClusterNode == nil {
+			return errors.New("cluster node configure requires cluster_node")
+		}
+		return e.ConfigureClusterNode(op.InstanceID, *op.ClusterNode)
+	case proto.ActionJoinCluster:
+		if op.ClusterNode == nil {
+			return errors.New("cluster join requires cluster_node")
+		}
+		return e.JoinCluster(op.InstanceID, *op.ClusterNode)
 	case proto.ActionDelete:
 		return e.Delete(op.InstanceID)
 	case proto.ActionUpdatePorts:
@@ -1560,30 +1570,7 @@ func directoryBytes(root string) uint64 {
 
 // InstallService accepts catalog IDs only; package names and shell commands are never supplied by the API.
 func (e *Engine) InstallService(id, serviceID string) error {
-	packages, ok := map[string][]string{
-		"tomcat":      {"tomcat10", "default-jre-headless"},
-		"wildfly":     {"openjdk-21-jre-headless", "curl", "ca-certificates", "tar"},
-		"haproxy":     {"haproxy"},
-		"memcached":   {"memcached"},
-		"supervisor":  {"supervisor"},
-		"git":         {"git"},
-		"composer":    {"composer"},
-		"golang":      {"golang-go"},
-		"java":        {"default-jdk"},
-		"ruby":        {"ruby-full"},
-		"build-tools": {"build-essential", "pkg-config"},
-		"sqlite":      {"sqlite3"},
-		"certbot":     {"certbot"},
-		"rsync":       {"rsync"},
-
-		"nginx": {"nginx"}, "apache": {"apache2"}, "mysql": {"mysql-server"},
-		"mariadb": {"mariadb-server"}, "postgresql": {"postgresql"}, "redis": {"redis-server"},
-		"php":    {"php-fpm", "php-cli", "php-mysql", "php-xml", "php-mbstring", "php-curl", "php-zip", "php-gd"},
-		"nodejs": {"nodejs", "npm"}, "python": {"python3", "python3-venv", "python3-pip"},
-		"wordpress": {"wordpress", "apache2", "libapache2-mod-php", "php-mysql", "php-gd", "php-curl", "php-xml", "php-mbstring", "php-zip", "mariadb-server"},
-		"joomla":    {"apache2", "libapache2-mod-php", "php-mysql", "php-gd", "php-curl", "php-xml", "php-mbstring", "php-zip", "php-intl", "mariadb-server", "curl", "tar"},
-		"owasp-waf": {"nginx", "libnginx-mod-http-modsecurity", "modsecurity-crs"},
-	}[serviceID]
+	packages, ok := serviceCatalogPackages(serviceID)
 	if !ok {
 		return errors.New("unknown service catalog item")
 	}
@@ -1605,20 +1592,30 @@ func (e *Engine) InstallService(id, serviceID string) error {
 	_ = e.save(m)
 	e.mu.Unlock()
 	defer func() { e.mu.Lock(); _ = e.save(m); e.mu.Unlock() }()
-	if err = e.guestPackageCommand(id, m.Pid, []string{"update"}); err != nil {
-		e.mu.Lock()
-		setInstallState(m, serviceID, "FAILED")
-		e.mu.Unlock()
-		return fmt.Errorf("apt update failed: %w", err)
-	}
-	args := append([]string{"install", "--no-install-recommends"}, packages...)
-	if err = e.guestPackageCommand(id, m.Pid, args); err != nil {
-		e.mu.Lock()
-		setInstallState(m, serviceID, "FAILED")
-		e.mu.Unlock()
-		return fmt.Errorf("package installation failed: %w", err)
+	if len(packages) > 0 {
+		if err = e.guestPackageCommand(id, m.Pid, []string{"update"}); err != nil {
+			e.mu.Lock()
+			setInstallState(m, serviceID, "FAILED")
+			e.mu.Unlock()
+			return fmt.Errorf("apt update failed: %w", err)
+		}
+		args := append([]string{"install", "--no-install-recommends"}, packages...)
+		if err = e.guestPackageCommand(id, m.Pid, args); err != nil {
+			e.mu.Lock()
+			setInstallState(m, serviceID, "FAILED")
+			e.mu.Unlock()
+			return fmt.Errorf("package installation failed: %w", err)
+		}
 	}
 	if setup := javaServiceSetup(serviceID); setup != "" {
+		if err = e.guestShell(id, m.Pid, setup); err != nil {
+			e.mu.Lock()
+			setInstallState(m, serviceID, "FAILED")
+			e.mu.Unlock()
+			return fmt.Errorf("%s setup failed: %w", serviceID, err)
+		}
+	}
+	if setup := devopsToolSetup(serviceID); setup != "" {
 		if err = e.guestShell(id, m.Pid, setup); err != nil {
 			e.mu.Lock()
 			setInstallState(m, serviceID, "FAILED")
@@ -1655,26 +1652,7 @@ func (e *Engine) UninstallService(id, serviceID string) error {
 	if serviceID == "owasp-waf" {
 		return e.UninstallWAF(id, serviceID)
 	}
-	packages, ok := map[string][]string{
-		"tomcat": {"tomcat10"}, "wildfly": {},
-		"haproxy":     {"haproxy"},
-		"memcached":   {"memcached"},
-		"supervisor":  {"supervisor"},
-		"git":         {"git"},
-		"composer":    {"composer"},
-		"golang":      {"golang-go"},
-		"java":        {"default-jdk"},
-		"ruby":        {"ruby-full"},
-		"build-tools": {"build-essential", "pkg-config"},
-		"sqlite":      {"sqlite3"},
-		"certbot":     {"certbot"},
-		"rsync":       {"rsync"},
-
-		"nginx": {"nginx"}, "apache": {"apache2"}, "mysql": {"mysql-server"},
-		"mariadb": {"mariadb-server"}, "postgresql": {"postgresql"}, "redis": {"redis-server"},
-		"php":    {"php-fpm", "php-cli", "php-mysql", "php-xml", "php-mbstring", "php-curl", "php-zip", "php-gd"},
-		"nodejs": {"nodejs", "npm"}, "wordpress": {"wordpress"},
-	}[serviceID]
+	packages, ok := serviceCatalogUninstallPackages(serviceID)
 	if !ok && serviceID != "joomla" {
 		return errors.New("service does not support uninstall from CloFix")
 	}
@@ -1734,6 +1712,20 @@ func (e *Engine) UninstallService(id, serviceID string) error {
 		setInstallState(m, serviceID, "UNINSTALLED")
 		e.mu.Unlock()
 		return nil
+	}
+	if cleanup := devopsToolCleanup(serviceID); cleanup != "" {
+		if err := e.guestShell(id, m.Pid, cleanup); err != nil {
+			e.mu.Lock()
+			setInstallState(m, serviceID, "UNINSTALL_FAILED")
+			e.mu.Unlock()
+			return fmt.Errorf("%s uninstall failed: %w", serviceID, err)
+		}
+		if len(packages) == 0 {
+			e.mu.Lock()
+			setInstallState(m, serviceID, "UNINSTALLED")
+			e.mu.Unlock()
+			return nil
+		}
 	}
 	if serviceID == "wildfly" || serviceID == "tomcat" {
 		cleanup := "set -eu; if [ -x /etc/init.d/tomcat10 ]; then service tomcat10 stop; fi; update-rc.d -f tomcat10 remove; rm -f /etc/init.d/tomcat10"

@@ -43,14 +43,39 @@ func HostInterface(id string) string {
 	return host
 }
 
+// SetPortIsolated toggles bridge port isolation for an instance's host veth.
+// Isolated ports cannot talk to other isolated ports on cfbr0.
+func (m *Manager) SetPortIsolated(id string, isolated bool) error {
+	hostIf := HostInterface(id)
+	mode := "on"
+	if !isolated {
+		mode = "off"
+	}
+	if _, err := command("ip", "link", "show", hostIf); err != nil {
+		return fmt.Errorf("host interface %s not found: %w", hostIf, err)
+	}
+	if _, err := command("bridge", "link", "set", "dev", hostIf, "isolated", mode); err != nil {
+		return err
+	}
+	return nil
+}
+
 func firewall() error {
-	if _, err := command("nft", "list", "table", "ip", "clofix"); err == nil {
+	if out, err := command("nft", "list", "table", "ip", "clofix"); err == nil {
+		// Existing lab tables omitted east-west bridge traffic; Redis/cluster peers need it.
+		if !strings.Contains(string(out), `iifname "cfbr0" oifname "cfbr0" accept`) {
+			if _, err := command("nft", "insert", "rule", "ip", "clofix", "forward",
+				"iifname", "cfbr0", "oifname", "cfbr0", "accept"); err != nil {
+				return fmt.Errorf("enable VPS-to-VPS forwarding: %w", err)
+			}
+		}
 		return nil
 	}
 	rules := `table ip clofix {
  chain forward {
   type filter hook forward priority filter; policy drop;
   iifname "cfbr0" ip daddr 169.254.169.254 drop
+  iifname "cfbr0" oifname "cfbr0" accept
   iifname "cfbr0" oifname != "cfbr0" accept
   iifname != "cfbr0" oifname "cfbr0" ct status dnat accept
   iifname != "cfbr0" oifname "cfbr0" ct state established,related accept
@@ -117,9 +142,13 @@ func (m *Manager) Setup(id string, pid int, spec proto.InstanceSpec) error {
 			command("ip", "link", "del", hostIf)
 		}
 	}()
+	isolated := "on"
+	if spec.AllowVPCPeers != nil && *spec.AllowVPCPeers {
+		isolated = "off"
+	}
 	steps := [][]string{
 		{"ip", "link", "set", hostIf, "master", bridgeName},
-		{"bridge", "link", "set", "dev", hostIf, "isolated", "on"},
+		{"bridge", "link", "set", "dev", hostIf, "isolated", isolated},
 		{"ip", "link", "set", hostIf, "up"},
 		{"ip", "link", "set", peerIf, "netns", strconv.Itoa(pid)},
 		{"nsenter", "-t", strconv.Itoa(pid), "-n", "ip", "link", "set", peerIf, "name", "eth0"},

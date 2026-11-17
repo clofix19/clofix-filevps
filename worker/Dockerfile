@@ -1,10 +1,11 @@
 FROM golang:1.23-bookworm AS build
+ARG CLOFIX_INSTALLATION_ID=
 WORKDIR /src
 COPY go.mod ./
 COPY cmd ./cmd
 COPY internal ./internal
 COPY pkg ./pkg
-RUN CGO_ENABLED=0 go build -o /out/clofix-worker ./cmd/clofix-worker
+RUN CGO_ENABLED=0 go build -ldflags "-s -w -X github.com/clofix/filevps/worker/internal/config.BakedInstallationID=${CLOFIX_INSTALLATION_ID}" -o /out/clofix-worker ./cmd/clofix-worker
 
 FROM chrislusf/seaweedfs:4.51 AS seaweed
 FROM docker:27-cli AS dockercli

@@ -134,5 +134,185 @@
   "supervisor": {
     "file": "supervisor.png",
     "source": "https://raw.githubusercontent.com/Supervisor/supervisor/main/supervisor/ui/images/icon.png"
+  },
+  "docker": {
+    "file": "docker.svg",
+    "source": "simple-icons docker"
+  },
+  "podman": {
+    "file": "podman.svg",
+    "source": "simple-icons podman"
+  },
+  "ansible": {
+    "file": "ansible.svg",
+    "source": "simple-icons ansible"
+  },
+  "terraform": {
+    "file": "terraform.svg",
+    "source": "simple-icons terraform"
+  },
+  "kubectl": {
+    "file": "kubectl.svg",
+    "source": "placeholder brand tile"
+  },
+  "helm": {
+    "file": "helm.svg",
+    "source": "simple-icons helm"
+  },
+  "fail2ban": {
+    "file": "fail2ban.svg",
+    "source": "placeholder brand tile"
+  },
+  "ufw": {
+    "file": "ufw.svg",
+    "source": "placeholder brand tile"
+  },
+  "wireguard": {
+    "file": "wireguard.svg",
+    "source": "simple-icons wireguard"
+  },
+  "openvpn": {
+    "file": "openvpn.svg",
+    "source": "simple-icons openvpn"
+  },
+  "nmap": {
+    "file": "nmap.svg",
+    "source": "placeholder brand tile"
+  },
+  "tcpdump": {
+    "file": "tcpdump.svg",
+    "source": "placeholder brand tile"
+  },
+  "mtr": {
+    "file": "mtr.svg",
+    "source": "placeholder brand tile"
+  },
+  "iperf3": {
+    "file": "iperf3.svg",
+    "source": "placeholder brand tile"
+  },
+  "jq": {
+    "file": "jq.svg",
+    "source": "simple-icons json"
+  },
+  "httpie": {
+    "file": "httpie.svg",
+    "source": "simple-icons httpie"
+  },
+  "htop": {
+    "file": "htop.svg",
+    "source": "simple-icons htop"
+  },
+  "tmux": {
+    "file": "tmux.svg",
+    "source": "simple-icons tmux"
+  },
+  "vim": {
+    "file": "vim.svg",
+    "source": "simple-icons vim"
+  },
+  "neovim": {
+    "file": "neovim.svg",
+    "source": "simple-icons neovim"
+  },
+  "zip-tools": {
+    "file": "zip-tools.svg",
+    "source": "placeholder brand tile"
+  },
+  "tree": {
+    "file": "tree.svg",
+    "source": "placeholder brand tile"
+  },
+  "cmake": {
+    "file": "cmake.svg",
+    "source": "simple-icons cmake"
+  },
+  "rabbitmq": {
+    "file": "rabbitmq.svg",
+    "source": "simple-icons rabbitmq"
+  },
+  "netdata": {
+    "file": "netdata.svg",
+    "source": "placeholder brand tile"
+  },
+  "node-exporter": {
+    "file": "node-exporter.svg",
+    "source": "placeholder brand tile"
+  },
+  "collectd": {
+    "file": "collectd.svg",
+    "source": "placeholder brand tile"
+  },
+  "caddy": {
+    "file": "caddy.svg",
+    "source": "simple-icons caddy"
+  },
+  "varnish": {
+    "file": "varnish.svg",
+    "source": "placeholder brand tile"
+  },
+  "squid": {
+    "file": "squid.svg",
+    "source": "placeholder brand tile"
+  },
+  "clamav": {
+    "file": "clamav.svg",
+    "source": "placeholder brand tile"
+  },
+  "rclone": {
+    "file": "rclone.svg",
+    "source": "placeholder brand tile"
+  },
+  "restic": {
+    "file": "restic.svg",
+    "source": "placeholder brand tile"
+  },
+  "awscli": {
+    "file": "awscli.svg",
+    "source": "simple-icons amazonaws"
+  },
+  "ripgrep": {
+    "file": "ripgrep.svg",
+    "source": "placeholder brand tile"
+  },
+  "fd": {
+    "file": "fd.svg",
+    "source": "placeholder brand tile"
+  },
+  "bat": {
+    "file": "bat.svg",
+    "source": "placeholder brand tile"
+  },
+  "ncdu": {
+    "file": "ncdu.svg",
+    "source": "placeholder brand tile"
+  },
+  "sysstat": {
+    "file": "sysstat.svg",
+    "source": "placeholder brand tile"
+  },
+  "dns-tools": {
+    "file": "dns-tools.svg",
+    "source": "placeholder brand tile"
+  },
+  "apache-utils": {
+    "file": "apache-utils.svg",
+    "source": "placeholder brand tile"
+  },
+  "zsh": {
+    "file": "zsh.svg",
+    "source": "simple-icons zsh"
+  },
+  "fish": {
+    "file": "fish.svg",
+    "source": "placeholder brand tile"
+  },
+  "buildah": {
+    "file": "buildah.svg",
+    "source": "placeholder brand tile"
+  },
+  "skopeo": {
+    "file": "skopeo.svg",
+    "source": "placeholder brand tile"
   }
 }

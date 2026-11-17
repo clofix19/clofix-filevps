@@ -11,13 +11,32 @@ import (
 	"time"
 )
 
-const testToken = "license-test-admin-token-123"
+const testUser = "admin"
+const testPassword = "license-test-password-12"
+
+var testSession string
+
+func login(t *testing.T, h http.Handler) string {
+	t.Helper()
+	w := call(h, "POST", "/api/login", map[string]string{"username": testUser, "password": testPassword}, false)
+	if w.Code != 200 {
+		t.Fatalf("login: %s", w.Body.String())
+	}
+	var out struct {
+		Token string `json:"token"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &out)
+	if out.Token == "" {
+		t.Fatal("empty session token")
+	}
+	return out.Token
+}
 
 func call(h http.Handler, method, path string, body any, auth bool) *httptest.ResponseRecorder {
 	raw, _ := json.Marshal(body)
 	r := httptest.NewRequest(method, path, bytes.NewReader(raw))
 	if auth {
-		r.Header.Set("Authorization", "Bearer "+testToken)
+		r.Header.Set("Authorization", "Bearer "+testSession)
 	}
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -25,11 +44,12 @@ func call(h http.Handler, method, path string, body any, auth bool) *httptest.Re
 }
 func TestLicenseLifecycleAndActivationLimit(t *testing.T) {
 	dir := t.TempDir()
-	s, e := New(dir, testToken)
+	s, e := New(dir, testUser, testPassword)
 	if e != nil {
 		t.Fatal(e)
 	}
 	h := s.Handler()
+	testSession = login(t, h)
 	if w := call(h, "GET", "/api/plans", nil, false); w.Code != 401 {
 		t.Fatal("admin route lacks auth")
 	}
@@ -80,7 +100,7 @@ func TestLicenseLifecycleAndActivationLimit(t *testing.T) {
 	if w := call(h, "DELETE", "/api/plans/"+p.ID, nil, true); w.Code != 409 {
 		t.Fatal("referenced plan deleted")
 	}
-	restored, e := New(dir, testToken)
+	restored, e := New(dir, testUser, testPassword)
 	if e != nil || len(restored.Licenses) != 1 {
 		t.Fatal("license persistence failed", e)
 	}
@@ -96,8 +116,9 @@ func TestLicenseLifecycleAndActivationLimit(t *testing.T) {
 	}
 }
 func TestLicenseExpiryAndDisabledPlan(t *testing.T) {
-	s, _ := New(t.TempDir(), testToken)
+	s, _ := New(t.TempDir(), testUser, testPassword)
 	h := s.Handler()
+	testSession = login(t, h)
 	p := Plan{Name: "Plan", MaxVPS: 1, MaxWorkers: 1, MaxLB: 1, MaxActivations: 1, Active: false}
 	w := call(h, "POST", "/api/plans", p, true)
 	json.Unmarshal(w.Body.Bytes(), &p)
@@ -113,16 +134,17 @@ func TestLicenseExpiryAndDisabledPlan(t *testing.T) {
 
 func TestPlanExtendedEntitlements(t *testing.T) {
 	dir := t.TempDir()
-	s, _ := New(dir, testToken)
+	s, _ := New(dir, testUser, testPassword)
 	h := s.Handler()
-	p := map[string]any{"name": "Complete", "max_vps": 10, "max_workers": 2, "max_load_balancers": 3, "max_activations": 1, "active": true, "max_database_projects": 4, "max_databases": 20, "max_database_users": 40, "max_database_schedules": 15, "max_health_checks": 25, "max_backups": 0, "max_volumes": 10, "max_storage_gb": 100, "max_s3_connections": 5, "max_applications": 20, "max_managed_apps": 10, "max_notification_channels": -1, "max_iam_users": 10, "max_iam_groups": 4, "max_iam_policies": 20, "max_access_keys": 30, "max_dns_zones": 1, "max_dns_records": 50, "max_kubernetes_clusters": 2, "max_kubernetes_nodes": 8, "max_kubernetes_node_pools": 4}
+	testSession = login(t, h)
+	p := map[string]any{"name": "Complete", "max_vps": 10, "max_workers": 2, "max_load_balancers": 3, "max_activations": 1, "active": true, "max_database_projects": 4, "max_databases": 20, "max_database_users": 40, "max_database_schedules": 15, "max_health_checks": 25, "max_backups": 0, "max_volumes": 10, "max_storage_gb": 100, "max_s3_connections": 5, "max_applications": 20, "max_managed_apps": 10, "max_notification_channels": -1, "max_iam_users": 10, "max_iam_groups": 4, "max_iam_policies": 20, "max_access_keys": 30, "max_dns_zones": 1, "max_dns_records": 50, "max_kubernetes_clusters": 2, "max_kubernetes_nodes": 8, "max_kubernetes_node_pools": 4, "max_redis_clusters": 3}
 	w := call(h, "POST", "/api/plans", p, true)
 	if w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
 	var plan Plan
 	json.Unmarshal(w.Body.Bytes(), &plan)
-	if plan.MaxDatabaseProjects == nil || *plan.MaxDatabaseProjects != 4 || plan.MaxDatabases == nil || *plan.MaxDatabases != 20 || plan.MaxDatabaseUsers == nil || *plan.MaxDatabaseUsers != 40 || plan.MaxDatabaseSchedules == nil || *plan.MaxDatabaseSchedules != 15 || plan.MaxHealthChecks == nil || *plan.MaxHealthChecks != 25 || plan.MaxBackups == nil || *plan.MaxBackups != 0 || plan.MaxNotificationChannels == nil || *plan.MaxNotificationChannels != -1 || plan.MaxDNSZones == nil || *plan.MaxDNSZones != 1 || plan.MaxDNSRecords == nil || *plan.MaxDNSRecords != 50 || plan.MaxKubernetesClusters == nil || *plan.MaxKubernetesClusters != 2 || plan.MaxKubernetesNodes == nil || *plan.MaxKubernetesNodes != 8 || plan.MaxKubernetesNodePools == nil || *plan.MaxKubernetesNodePools != 4 {
+	if plan.MaxDatabaseProjects == nil || *plan.MaxDatabaseProjects != 4 || plan.MaxDatabases == nil || *plan.MaxDatabases != 20 || plan.MaxDatabaseUsers == nil || *plan.MaxDatabaseUsers != 40 || plan.MaxDatabaseSchedules == nil || *plan.MaxDatabaseSchedules != 15 || plan.MaxHealthChecks == nil || *plan.MaxHealthChecks != 25 || plan.MaxBackups == nil || *plan.MaxBackups != 0 || plan.MaxNotificationChannels == nil || *plan.MaxNotificationChannels != -1 || plan.MaxDNSZones == nil || *plan.MaxDNSZones != 1 || plan.MaxDNSRecords == nil || *plan.MaxDNSRecords != 50 || plan.MaxKubernetesClusters == nil || *plan.MaxKubernetesClusters != 2 || plan.MaxKubernetesNodes == nil || *plan.MaxKubernetesNodes != 8 || plan.MaxKubernetesNodePools == nil || *plan.MaxKubernetesNodePools != 4 || plan.MaxRedisClusters == nil || *plan.MaxRedisClusters != 3 {
 		t.Fatal("quota semantics lost")
 	}
 	w = call(h, "POST", "/api/licenses", map[string]any{"installation_id": "controller-1", "duration_days": 30, "plan_id": plan.ID, "customer": "Customer"}, true)
@@ -146,7 +168,7 @@ func TestPlanExtendedEntitlements(t *testing.T) {
 			}
 		}
 	}
-	reloaded, e := New(dir, testToken)
+	reloaded, e := New(dir, testUser, testPassword)
 	if e != nil || reloaded.Plans[plan.ID].MaxBackups == nil || *reloaded.Plans[plan.ID].MaxBackups != 0 {
 		t.Fatal("quota persistence failed", e)
 	}
@@ -165,8 +187,9 @@ func TestPlanExtendedEntitlements(t *testing.T) {
 }
 
 func TestModifyAndDeleteLicenseRetainsHistory(t *testing.T) {
-	s, _ := New(t.TempDir(), testToken)
+	s, _ := New(t.TempDir(), testUser, testPassword)
 	h := s.Handler()
+	testSession = login(t, h)
 	plan := Plan{Name: "Plan", MaxVPS: 5, MaxWorkers: 1, MaxLB: 1, MaxActivations: 1, Active: true}
 	w := call(h, "POST", "/api/plans", plan, true)
 	json.Unmarshal(w.Body.Bytes(), &plan)
@@ -213,8 +236,9 @@ func TestModifyAndDeleteLicenseRetainsHistory(t *testing.T) {
 }
 
 func TestLicenseDurationIsPerKey(t *testing.T) {
-	s, _ := New(t.TempDir(), testToken)
+	s, _ := New(t.TempDir(), testUser, testPassword)
 	h := s.Handler()
+	testSession = login(t, h)
 	plan := Plan{Name: "Same plan", MaxVPS: 1, MaxWorkers: 1, MaxLB: 1, MaxActivations: 1, Active: true}
 	w := call(h, "POST", "/api/plans", plan, true)
 	if w.Code != 200 {
@@ -259,7 +283,7 @@ func TestLegacyPlanDurationMigrationPreservesLicense(t *testing.T) {
 	if e := os.WriteFile(dir+"/licenses.json", raw, 0600); e != nil {
 		t.Fatal(e)
 	}
-	s, e := New(dir, testToken)
+	s, e := New(dir, testUser, testPassword)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -270,7 +294,7 @@ func TestLegacyPlanDurationMigrationPreservesLicense(t *testing.T) {
 	if _, e := os.Stat(dir + "/licenses.json.before-key-duration"); e != nil {
 		t.Fatal("missing migration backup")
 	}
-	again, e := New(dir, testToken)
+	again, e := New(dir, testUser, testPassword)
 	if e != nil || again.Licenses["old-key"].DurationDays != 90 {
 		t.Fatal("migration not persisted", e)
 	}
@@ -278,8 +302,9 @@ func TestLegacyPlanDurationMigrationPreservesLicense(t *testing.T) {
 
 func TestEncryptedKeyCopyRestoreAndAccessControl(t *testing.T) {
 	dir := t.TempDir()
-	s, _ := New(dir, testToken)
+	s, _ := New(dir, testUser, testPassword)
 	h := s.Handler()
+	testSession = login(t, h)
 	plan := Plan{Name: "Plan", MaxVPS: 1, MaxWorkers: 1, MaxLB: 1, MaxActivations: 1, Active: true}
 	w := call(h, "POST", "/api/plans", plan, true)
 	json.Unmarshal(w.Body.Bytes(), &plan)
@@ -312,15 +337,18 @@ func TestEncryptedKeyCopyRestoreAndAccessControl(t *testing.T) {
 	if strings.Contains(w.Body.String(), issued.Key) || strings.Contains(w.Body.String(), "encrypted_key") {
 		t.Fatal("list leaks key material")
 	}
-	loaded, e := New(dir, testToken)
+	loaded, e := New(dir, testUser, testPassword)
 	if e != nil {
 		t.Fatal(e)
 	}
-	w = call(loaded.Handler(), "POST", "/api/licenses/"+id+"/key", nil, true)
+	loadedH := loaded.Handler()
+	testSession = login(t, loadedH)
+	w = call(loadedH, "POST", "/api/licenses/"+id+"/key", nil, true)
 	json.Unmarshal(w.Body.Bytes(), &revealed)
 	if w.Code != 200 || revealed.Key != issued.Key {
 		t.Fatal("key lost on restart")
 	}
+	testSession = login(t, h)
 	legacy := s.Licenses[id]
 	legacy.EncryptedKey = nil
 	s.Licenses[id] = legacy
@@ -345,8 +373,9 @@ func TestEncryptedKeyCopyRestoreAndAccessControl(t *testing.T) {
 
 func TestPermanentSingleInstallationBinding(t *testing.T) {
 	dir := t.TempDir()
-	s, _ := New(dir, testToken)
+	s, _ := New(dir, testUser, testPassword)
 	h := s.Handler()
+	testSession = login(t, h)
 	plan := Plan{Name: "Single", MaxVPS: 1, MaxWorkers: 1, MaxLB: 1, MaxActivations: 2, Active: true}
 	if w := call(h, "POST", "/api/plans", plan, true); w.Code != 400 {
 		t.Fatal("multi-controller plan allowed")
@@ -363,7 +392,7 @@ func TestPermanentSingleInstallationBinding(t *testing.T) {
 	if e := s.save(); e != nil {
 		t.Fatal(e)
 	}
-	migrated, e := New(dir, testToken)
+	migrated, e := New(dir, testUser, testPassword)
 	if e != nil {
 		t.Fatal(e)
 	}

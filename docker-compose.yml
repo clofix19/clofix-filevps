@@ -88,6 +88,8 @@ services:
       CLOFIX_CONFIG_DIR: /etc/clofix-filevps
       CLOFIX_STATE_DIR: /var/lib/clofix-filevps
       CLOFIX_LOG_DIR: /var/log/clofix-filevps
+      # Must match Admin → Settings → License (ctl-…). Fetch: curl -s localhost:8080/api/installation-id
+      CLOFIX_INSTALLATION_ID: ${CLOFIX_INSTALLATION_ID:-}
       CLOFIX_USER_NS: "false" # local Docker Desktop only; production keeps user namespaces enabled
       CLOFIX_ZRAM_MB: ${ZRAM_MB:-0} # set ZRAM_MB in .env on Linux hosts with /dev/zram0
       CLOFIX_DATABASE_PUBLIC_HOST: 127.0.0.1

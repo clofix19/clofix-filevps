@@ -23,11 +23,12 @@ func (s *Server) licensedPlan() (licensePlan, error) {
 	if len(d.EncryptedKey) == 0 || !d.Grant.Valid || d.Grant.InstallationID != d.InstallationID {
 		return licensePlan{}, fmt.Errorf("valid license required; open Settings > License")
 	}
-	if !time.Now().Before(d.Grant.Expires) {
-		return licensePlan{}, fmt.Errorf("license expired; renew and validate the license")
+	if d.Grant.Expires.IsZero() {
+		return licensePlan{}, fmt.Errorf("license expiry missing; validate the license")
 	}
-	if d.LastCheck.IsZero() || time.Since(d.LastCheck) > 10*time.Minute {
-		return licensePlan{}, fmt.Errorf("license validation is stale; validate the license before allocating resources")
+	// Offline OK: last synced plan/duration stay in force until Expires even if the license server is down.
+	if !time.Now().Before(d.Grant.Expires) {
+		return licensePlan{}, fmt.Errorf("license expired; renew and increase license duration, then validate")
 	}
 	return d.Grant.Plan, nil
 }
@@ -88,13 +89,15 @@ func quotaLimit(p licensePlan, resource string) int64 {
 		optional = p.MaxDockerApplications
 	case "docker-workers":
 		optional = p.MaxDockerWorkers
+	case "redis-clusters":
+		optional = p.MaxRedisClusters
 	default:
 		return 0
 	}
 	if optional == nil {
-		// DNS, CKS and Docker shipped after existing plans. Unspecified values stay
-		// unlimited so current controllers keep operating until CloFix sets a limit.
-		if resource == "dns-zones" || resource == "dns-records" || resource == "kubernetes-clusters" || resource == "kubernetes-nodes" || resource == "kubernetes-node-pools" || resource == "docker-containers" || resource == "docker-applications" || resource == "docker-workers" {
+		// DNS, CKS, Docker and Redis Cluster shipped after existing plans. Unspecified
+		// values stay unlimited so current controllers keep operating until CloFix sets a limit.
+		if resource == "dns-zones" || resource == "dns-records" || resource == "kubernetes-clusters" || resource == "kubernetes-nodes" || resource == "kubernetes-node-pools" || resource == "docker-containers" || resource == "docker-applications" || resource == "docker-workers" || resource == "redis-clusters" {
 			return -1
 		}
 		return 0
@@ -183,8 +186,26 @@ func (s *Server) quotaUsed(resource string) (int64, error) {
 		return s.kubernetesQuotaUsed(resource), nil
 	case "docker-containers", "docker-applications", "docker-workers":
 		return s.dockerQuotaUsed(resource), nil
+	case "redis-clusters":
+		return s.redisClusterQuotaUsed(), nil
 	}
 	return 0, fmt.Errorf("unknown quota resource")
+}
+
+func (s *Server) redisClusterQuotaUsed() int64 {
+	if s.clusters == nil {
+		return 0
+	}
+	s.clusters.Lock()
+	defer s.clusters.Unlock()
+	n := int64(0)
+	for _, item := range s.clusters.Items {
+		if item.Status == clusterStatusDeleting {
+			continue
+		}
+		n++
+	}
+	return n
 }
 
 func (s *Server) dockerQuotaUsed(resource string) int64 {
@@ -381,6 +402,8 @@ func quotaCreation(r *http.Request) string {
 		return "dns-records"
 	case "/api/v1/kubernetes/clusters":
 		return "kubernetes-clusters"
+	case "/api/cluster-services":
+		return "redis-clusters"
 	case "/api/iam/users":
 		return "iam-users"
 	case "/api/iam/groups":
@@ -428,6 +451,8 @@ func quotaOperation(r *http.Request) string {
 		return "iam-policies"
 	case strings.HasPrefix(p, "/api/v1/kubernetes/"):
 		return "kubernetes-clusters"
+	case strings.HasPrefix(p, "/api/cluster-services/"):
+		return "redis-clusters"
 	}
 	return ""
 }
@@ -483,7 +508,7 @@ func (s *Server) licenseUsage(w http.ResponseWriter, r *http.Request) {
 	defer s.quotaMu.Unlock()
 	p, e := s.licensedPlan()
 	out := map[string]quotaEntry{}
-	resources := []string{"database-projects", "databases", "database-users", "database-schedules", "instances", "workers", "load-balancers", "dns-zones", "dns-records", "health-checks", "backups", "volumes", "s3-connections", "applications", "managed-apps", "notification-channels", "iam-users", "iam-groups", "iam-policies", "access-keys", "kubernetes-clusters", "kubernetes-nodes", "kubernetes-node-pools"}
+	resources := []string{"database-projects", "databases", "database-users", "database-schedules", "instances", "workers", "load-balancers", "dns-zones", "dns-records", "health-checks", "backups", "volumes", "s3-connections", "applications", "managed-apps", "notification-channels", "iam-users", "iam-groups", "iam-policies", "access-keys", "kubernetes-clusters", "kubernetes-nodes", "kubernetes-node-pools", "redis-clusters", "docker-containers", "docker-applications", "docker-workers"}
 	for _, resource := range resources {
 		used, err := s.quotaUsed(resource)
 		if err != nil {

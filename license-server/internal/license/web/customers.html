@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0a0f16">
+<title>CloFix · Customers</title>
+<link rel="icon" type="image/svg+xml" href="/clofix-mark.svg">
+<link rel="stylesheet" href="/common.css">
+</head>
+<body data-page="customers">
+<div id="app" hidden>
+  <header class="console-bar" role="banner">
+    <a class="console-logo" href="/plans" aria-label="CloFix Licenses"><img src="/clofix-logo.png" alt="CloFix"></a>
+    <a class="console-home" href="/plans">Licenses</a>
+    <nav class="console-nav" aria-label="License management">
+      <a href="/plans" data-license-nav>Plans <span id="nav-plan-count">—</span></a>
+      <a href="/customers" data-license-nav>Customers <span id="nav-customer-count">—</span></a>
+      <a href="/issue" data-license-nav>Issue</a>
+      <a href="/licenses" data-license-nav>Issued <span id="nav-license-count">—</span></a>
+    </nav>
+    <div class="console-actions">
+      <span class="muted">Company console</span>
+      <button class="icon-button" id="logout" type="button" aria-label="Log out" title="Log out">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 7V5a1 1 0 0 1 1-1h8v16h-8a1 1 0 0 1-1-1v-2"/><path d="M4 12h11M12 8l4 4-4 4"/></svg>
+      </button>
+    </div>
+  </header>
+  <div class="shell"><main class="main">
+    <header class="topbar">
+      <div>
+        <nav class="cloud-crumb" aria-label="Breadcrumb">
+          <a href="/plans">CloFix Licenses</a><span aria-hidden="true">/</span><span>Platform</span><span aria-hidden="true">/</span><span>Customers</span>
+        </nav>
+        <p class="eyebrow">Platform</p>
+        <h1>Customers / organizations</h1>
+      </div>
+      <div class="top-actions">
+        <span class="top-status status" id="message" role="status" aria-live="polite"></span>
+        <button class="primary" type="button" id="customer-add">＋ Add customer</button>
+      </div>
+    </header>
+    <div class="cards" aria-label="Customer counts">
+      <div class="stat"><div class="stat-label">Organizations</div><div class="stat-value" id="count-customers">—</div><div class="stat-note">Managed customers</div></div>
+      <div class="stat"><div class="stat-label">With licenses</div><div class="stat-value" id="count-with-licenses">—</div><div class="stat-note">At least one issued key</div></div>
+      <div class="stat"><div class="stat-label">Active licenses</div><div class="stat-value" id="count-active">—</div><div class="stat-note">Across all customers</div></div>
+      <div class="stat"><div class="stat-label">Total licenses</div><div class="stat-value" id="count-total">—</div><div class="stat-note">Created keys</div></div>
+      <div class="stat"><div class="stat-label">Plans</div><div class="stat-value" id="count-plans">—</div><div class="stat-note">Available templates</div></div>
+    </div>
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <h2>Organizations</h2>
+          <p>Add customers here, then issue licenses bound to their Installation ID.</p>
+        </div>
+        <button class="secondary" type="button" id="customer-refresh">Refresh</button>
+      </div>
+      <div class="filters">
+        <label>Search<input id="customer-search" type="search" placeholder="Search name, contact, notes…"></label>
+      </div>
+      <p id="customer-filter-count" class="muted" role="status"></p>
+      <div class="table-wrap"><table id="customers"></table></div>
+    </section>
+  </main></div>
+  <footer class="site-footer" role="contentinfo">
+    <div class="site-footer-inner">
+      <span>Powered by <strong>CloFix Infotech</strong></span>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <span>CloFix License Server</span>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <span id="footer-host">—</span>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <time id="footer-clock">—</time>
+    </div>
+  </footer>
+</div>
+
+<dialog id="customer-dialog" aria-labelledby="customer-title">
+<form id="customer-form">
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">Customer</p>
+      <h2 id="customer-title">Add customer</h2>
+    </div>
+    <button type="button" class="secondary" id="customer-close">Close</button>
+  </div>
+  <div class="grid">
+    <label>Customer / organization name<input id="customer-name" maxlength="160" required></label>
+    <label>Contact (email or phone)<input id="customer-contact" maxlength="160" placeholder="optional"></label>
+    <label class="form-span" style="grid-column:1/-1">Notes<textarea id="customer-notes" rows="3" maxlength="1000" placeholder="optional"></textarea></label>
+  </div>
+  <p class="status" id="customer-message" role="status" aria-live="polite"></p>
+  <button class="primary" id="customer-save" type="submit">Save customer</button>
+  <button class="secondary" id="customer-cancel" type="button">Cancel</button>
+  <button class="danger" id="customer-delete" type="button" hidden>Delete customer</button>
+</form>
+</dialog>
+
+<script src="/common.js"></script>
+<script>
+let editing='';
+function reset(){
+  editing='';
+  $('customer-form').reset();
+  $('customer-title').textContent='Add customer';
+  $('customer-delete').hidden=true;
+  $('customer-message').textContent='';
+}
+function licenseCountFor(c){
+  return licenses.filter(l=>!l.deleted && (l.customer_id===c.id || (!l.customer_id && l.customer===c.name))).length;
+}
+function renderCustomerCounts(){
+  const withLic=customers.filter(c=>licenseCountFor(c)>0).length;
+  if($('count-customers'))$('count-customers').textContent=customers.length;
+  if($('count-with-licenses'))$('count-with-licenses').textContent=withLic;
+  if($('count-plans'))$('count-plans').textContent=plans.length;
+  if($('nav-customer-count'))$('nav-customer-count').textContent=customers.length;
+}
+function renderCustomers(){
+  const table=$('customers');
+  table.replaceChildren();
+  row(table,['Organization','Contact','Licenses','Updated','Notes','Actions'],true);
+  const q=$('customer-search').value.trim().toLowerCase();
+  const visible=customers.filter(c=>{
+    if(!q)return true;
+    return (c.name+' '+(c.contact||'')+' '+(c.notes||'')).toLowerCase().includes(q);
+  }).sort((a,b)=>a.name.localeCompare(b.name));
+  $('customer-filter-count').textContent=`Showing ${visible.length} of ${customers.length} customers`;
+  if(!visible.length){
+    row(table,[customers.length?'No customers match this search.':'No customers yet. Add your first organization.','','','','','']);
+    return;
+  }
+  for(const c of visible){
+    const actions=document.createElement('div');
+    actions.className='row-actions';
+    actions.append(
+      button('Edit',()=>{
+        editing=c.id;
+        $('customer-name').value=c.name;
+        $('customer-contact').value=c.contact||'';
+        $('customer-notes').value=c.notes||'';
+        $('customer-title').textContent='Edit customer';
+        $('customer-delete').hidden=false;
+        $('customer-message').textContent='';
+        $('customer-dialog').showModal();
+        $('customer-name').focus();
+      },'small-btn'),
+      button('Issue license',()=>{location.href='/issue?customer='+encodeURIComponent(c.id);},'small-btn'),
+      button('Licenses',()=>{location.href='/licenses?customer='+encodeURIComponent(c.id);},'small-btn'),
+      button('Delete',()=>deleteCustomer(c),'small-btn')
+    );
+    const notes=(c.notes||'').slice(0,80)+(c.notes&&c.notes.length>80?'…':'');
+    row(table,[
+      c.name,
+      c.contact||'—',
+      button(String(licenseCountFor(c))+' licenses',()=>{location.href='/licenses?customer='+encodeURIComponent(c.id);},'small-btn'),
+      c.updated?new Date(c.updated).toLocaleString():'—',
+      notes||'—',
+      actions
+    ]);
+  }
+}
+async function deleteCustomer(c){
+  if(!confirm('Delete customer '+c.name+'? Customers with active licenses cannot be deleted.'))return;
+  const finish=pending($('customer-form'));
+  msg('Deleting customer…');
+  try{
+    await api('DELETE','/api/customers/'+c.id);
+    if(editing===c.id){$('customer-dialog').close();reset();}
+    await loadData();
+    msg('Customer deleted.');
+  }finally{finish();}
+}
+function onDataReady(){
+  renderCustomerCounts();
+  renderCustomers();
+}
+$('customer-search').oninput=renderCustomers;
+$('customer-refresh').onclick=async()=>{
+  const b=$('customer-refresh');
+  b.disabled=true;b.textContent='Refreshing…';
+  try{await loadData();msg('Customers updated.');}
+  catch(e){msg(e.message);}
+  finally{b.disabled=false;b.textContent='Refresh';}
+};
+$('customer-add').onclick=()=>{reset();$('customer-dialog').showModal();};
+$('customer-close').onclick=()=>$('customer-dialog').close();
+$('customer-cancel').onclick=()=>$('customer-dialog').close();
+$('customer-delete').onclick=async()=>{
+  const c=customers.find(x=>x.id===editing);
+  if(c)try{await deleteCustomer(c);}catch(e){msg(e.message);}
+};
+$('customer-dialog').addEventListener('cancel',e=>{
+  if($('customer-form').getAttribute('aria-busy')==='true')e.preventDefault();
+});
+$('customer-form').onsubmit=async e=>{
+  e.preventDefault();
+  if(e.currentTarget.getAttribute('aria-busy')==='true')return;
+  const finish=pending(e.currentTarget);
+  const saveLabel=$('customer-save').textContent;
+  $('customer-save').textContent='Saving…';
+  msg('Saving customer…');
+  try{
+    await api(editing?'PUT':'POST','/api/customers'+(editing?'/'+editing:''),{
+      name:$('customer-name').value.trim(),
+      contact:$('customer-contact').value.trim(),
+      notes:$('customer-notes').value.trim()
+    });
+    $('customer-dialog').close();
+    reset();
+    await loadData();
+    msg('Customer saved.');
+  }catch(err){msg(err.message);$('customer-message').textContent=err.message;}
+  finally{finish();$('customer-save').textContent=saveLabel;}
+};
+const _msg=msg;
+window.msg=function(text){
+  _msg(text);
+  if($('customer-dialog')?.open)$('customer-message').textContent=text;
+};
+</script>
+</body>
+</html>

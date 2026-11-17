@@ -7,7 +7,7 @@
       <a href="#billing-resources" data-settings-link aria-controls="billing-resources"><strong>Live resources</strong><span>Name, ID, worker and USD/BDT</span></a>
       <a href="#billing-due" data-settings-link aria-controls="billing-due"><strong>Due bill</strong><span>Hourly usage including deleted</span></a>
       <a href="#billing-analysis" data-settings-link aria-controls="billing-analysis"><strong>Monthly analysis</strong><span>USD/BDT spend by resource</span></a>
-      <a href="#billing-invoices" data-settings-link aria-controls="billing-invoices"><strong>Invoices</strong><span>Draft and paid invoices</span></a>
+      <a href="#billing-invoices" data-settings-link aria-controls="billing-invoices"><strong>Invoices</strong><span>Unpaid and paid invoices</span></a>
       <a href="#billing-wallet" data-settings-link aria-controls="billing-wallet"><strong>Wallet Management</strong><span>Customer credit balances</span></a>
       <a href="#billing-payments" data-settings-link aria-controls="billing-payments"><strong>Payments &amp; Transactions</strong><span>Manual payment records</span></a>
       <a href="#billing-subscriptions" data-settings-link aria-controls="billing-subscriptions"><strong>Subscriptions</strong><span>Snapshotted plan prices</span></a>
@@ -23,7 +23,7 @@
       </div>
       <div class="panel settings-section" id="billing-resources" data-settings-panel aria-labelledby="billing-heading-resources" hidden>
         <h2 id="billing-heading-resources" tabindex="-1">Live resources</h2>
-        <p class="muted">Scanned VPS, CKS clusters, load balancers, databases, deployed applications, volumes, backups, S3 and EFS. CKS bills a control-plane unit plus node CPU/RAM/disk; attached LBs stay on the Load Balancer row. Amounts are the current monthly estimate from <a href="/settings#settings-resource-pricing">Settings → Resource Pricing</a>. A stopped VPS or database is billed for storage only. Hourly usage is tracked on Due bill.</p>
+        <p class="muted">Scanned VPS, CKS clusters, Redis clusters, load balancers, databases, deployed applications, volumes, backups, S3 and EFS. CKS bills a control-plane unit plus node CPU/RAM/disk; Redis Cluster bills the topology unit while member VPS stay on the FileVPS rows; attached LBs stay on the Load Balancer row. Amounts are the current monthly estimate from <a href="/settings#settings-resource-pricing">Settings → Resource Pricing</a>. A stopped VPS or database is billed for storage only. Hourly usage is tracked on Due bill.</p>
         <p class="message" id="billing-inventory-message" role="status" aria-live="polite"></p>
         <div class="table-wrap"><table id="billing-inventory-table"></table></div>
       </div>
@@ -47,6 +47,7 @@
       </div>
       <div class="panel settings-section" id="billing-invoices" data-settings-panel aria-labelledby="billing-heading-invoices" hidden>
         <h2 id="billing-heading-invoices" tabindex="-1">Invoices</h2>
+        <p class="muted">Standard smart invoices. Unpaid invoices can be paid manually; paid invoices keep the PDF record.</p>
         <form id="billing-invoice-form">
           <div class="form-grid">
             <div class="form-field"><label for="billing-invoice-subscription">From subscription</label><select id="billing-invoice-subscription"><option value="">Manual amount</option></select></div>
@@ -54,15 +55,37 @@
             <div class="form-field"><label for="billing-invoice-description">Description</label><input id="billing-invoice-description" maxlength="160"></div>
             <div class="form-field"><label for="billing-invoice-amount">Amount</label><input id="billing-invoice-amount" type="number" min="0" step="0.01" value="0"></div>
           </div>
-          <button class="primary" id="billing-invoice-save" type="submit">Create draft invoice</button>
+          <button class="primary" id="billing-invoice-save" type="submit">Create invoice</button>
         </form>
         <p class="message" id="billing-invoice-message" role="status" aria-live="polite"></p>
         <div class="table-wrap"><table id="billing-invoice-table"></table></div>
-        <div id="billing-invoice-detail" hidden>
-          <div class="section-head"><h3 id="billing-invoice-detail-title">Invoice</h3><button class="secondary" type="button" id="billing-invoice-detail-close">Close</button></div>
-          <div class="form-grid" id="billing-invoice-detail-summary"></div>
-          <div class="table-wrap"><table id="billing-invoice-detail-lines"></table></div>
-        </div>
+        <article class="smart-invoice" id="billing-invoice-detail" hidden aria-labelledby="billing-invoice-detail-title">
+          <header class="smart-invoice-bar">
+            <div class="smart-invoice-brand">
+              <img src="/clofix-logo.png" alt="" width="120" height="36" onerror="this.hidden=true">
+              <strong>CloFix Cloud</strong>
+            </div>
+            <div class="smart-invoice-actions">
+              <button class="secondary" type="button" id="billing-invoice-detail-pdf">Download PDF</button>
+              <button class="secondary" type="button" id="billing-invoice-detail-close">Close</button>
+            </div>
+          </header>
+          <div class="smart-invoice-head">
+            <div>
+              <p class="smart-invoice-kicker">Invoice</p>
+              <h3 id="billing-invoice-detail-title">Invoice</h3>
+              <p class="smart-invoice-sub" id="billing-invoice-detail-sub">—</p>
+            </div>
+            <div class="smart-invoice-status-wrap">
+              <span class="smart-invoice-status" id="billing-invoice-detail-status">—</span>
+            </div>
+          </div>
+          <div class="smart-invoice-meta" id="billing-invoice-detail-summary"></div>
+          <div class="smart-invoice-billto" id="billing-invoice-detail-billto"></div>
+          <div class="table-wrap smart-invoice-lines"><table id="billing-invoice-detail-lines"></table></div>
+          <div class="smart-invoice-totals" id="billing-invoice-detail-totals"></div>
+          <footer class="smart-invoice-notes" id="billing-invoice-detail-notes"></footer>
+        </article>
       </div>
       <div class="panel settings-section" id="billing-wallet" data-settings-panel aria-labelledby="billing-heading-wallet" hidden>
         <h2 id="billing-heading-wallet" tabindex="-1">Wallet Management</h2>
@@ -86,9 +109,9 @@
       </div>
       <div class="panel settings-section" id="billing-payments" data-settings-panel aria-labelledby="billing-heading-payments" hidden>
         <h2 id="billing-heading-payments" tabindex="-1">Payments &amp; Transactions</h2>
-        <p>Record a manual payment against a draft invoice. No card or bank charge is sent.</p>
+        <p>Record a manual payment against an unpaid invoice. No card or bank charge is sent.</p>
         <form id="billing-payment-form">
-          <div class="form-field"><label for="billing-payment-invoice">Draft invoice</label><select id="billing-payment-invoice" required></select></div>
+          <div class="form-field"><label for="billing-payment-invoice">Unpaid invoice</label><select id="billing-payment-invoice" required></select></div>
           <button class="primary" id="billing-payment-save" type="submit">Record manual payment</button>
         </form>
         <p class="message" id="billing-payment-message" role="status" aria-live="polite"></p>

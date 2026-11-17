@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -82,6 +83,7 @@ func (s *Server) scanBillingInventory() []billingInventoryItem {
 	items = append(items, s.inventoryBackups(catalog, currency, rate, owners, workers)...)
 	items = append(items, s.inventoryDatabases(catalog, currency, rate, owners, workers)...)
 	items = append(items, s.inventoryKubernetes(catalog, currency, rate, owners, workers)...)
+	items = append(items, s.inventoryRedisClusters(catalog, currency, rate, owners, workers)...)
 	items = append(items, s.inventoryLoadBalancers(catalog, currency, rate, owners, workers)...)
 	items = append(items, s.inventoryApps(catalog, currency, rate, owners, workers)...)
 	items = append(items, s.inventoryEFS(catalog, currency, rate, owners, workers)...)
@@ -420,6 +422,51 @@ func (s *Server) inventoryKubernetes(catalog []billingResource, currency string,
 		}
 		lines := []billingInvoiceLine{inventoryLine("backup", b.ID, b.Name, b.WorkerID, worker, "backup", "CKS etcd backup", "GB-month", currency, qty, resourceCharge(catalog, qty, "backup", "ssd"), rate)}
 		out = append(out, finishInventoryItem("backup", "backup", b.ID, b.Name, b.WorkerID, worker, b.Owner, b.State, "", currency, true, lines, rate))
+	}
+	return out
+}
+
+func (s *Server) inventoryRedisClusters(catalog []billingResource, currency string, rate float64, owners, workers map[string]string) []billingInventoryItem {
+	if s.clusters == nil {
+		return nil
+	}
+	s.clusters.Lock()
+	list := make([]clusterService, 0, len(s.clusters.Items))
+	for _, item := range s.clusters.Items {
+		if item.Status == clusterStatusDeleting || item.Deleting {
+			continue
+		}
+		list = append(list, item)
+	}
+	s.clusters.Unlock()
+	out := make([]billingInventoryItem, 0, len(list))
+	for _, c := range list {
+		name := strings.TrimSpace(c.Name)
+		if name == "" {
+			name = c.ID
+		}
+		workerID := ""
+		for _, node := range c.Nodes {
+			if node.InstanceID == "" {
+				continue
+			}
+			if inst, err := s.Store.GetInstance(node.InstanceID); err == nil && inst.WorkerID != "" {
+				workerID = inst.WorkerID
+				break
+			}
+		}
+		worker := workers[workerID]
+		owner := owners[c.ID]
+		if owner == "" {
+			owner = c.AccountID
+		}
+		topo := "master–master"
+		if c.Topology == clusterTopoMasterSlave {
+			topo = "master–slave"
+		}
+		lines := []billingInvoiceLine{inventoryLine("redis", c.ID, name, workerID, worker, "redis", "Redis Cluster topology", "Redis-cluster-month", currency, 1, resourceCharge(catalog, 1, "redis"), rate)}
+		note := fmt.Sprintf("Redis Cluster (%s, %d nodes). Member FileVPS instances bill CPU/RAM/disk on the VPS rows; EFS persistence bills on EFS when attached.", topo, c.NodeCount)
+		out = append(out, finishInventoryItem("redis", "redis", c.ID, name, workerID, worker, owner, c.Status, note, currency, false, lines, rate))
 	}
 	return out
 }

@@ -21,7 +21,7 @@ func (s *Server) downloadBillingInvoicePDF(w http.ResponseWriter, r *http.Reques
 	d := s.billing
 	d.Lock()
 	inv, ok := d.Invoices[id]
-	taxName := d.Currency.TaxName
+	cur := d.Currency
 	rate := billingFX(d.Currency)
 	refunded := int64(0)
 	for _, item := range d.Refunds {
@@ -34,16 +34,103 @@ func (s *Server) downloadBillingInvoicePDF(w http.ResponseWriter, r *http.Reques
 		fail(w, 404, "invoice not found")
 		return
 	}
-	if taxName == "" {
-		taxName = "Tax"
-	}
+	brand := invoiceBrandFrom(cur, s.UIDir, os.Getenv("CLOFIX_DATA_DIR"))
 	inv = enrichInvoice(inv, rate)
-	raw := invoicePDF(inv, taxName, refunded, loadInvoiceLogo(s.UIDir))
+	if inv.TaxCents == 0 && brand.TaxPercent > 0 {
+		inv.TaxCents = invoiceTaxCents(inv.AmountCents, brand.TaxPercent)
+	}
+	inv.USDCents, inv.BDTCents = 0, 0
+	stampInvoiceMoney(&inv, rate)
+	d.Lock()
+	if stored, ok := d.Invoices[id]; ok {
+		changed := false
+		if stored.TaxCents == 0 && inv.TaxCents > 0 {
+			stored.TaxCents = inv.TaxCents
+			changed = true
+		}
+		if stored.USDCents != inv.USDCents || stored.BDTCents != inv.BDTCents || stored.FXBDTPerUSD != inv.FXBDTPerUSD {
+			stored.USDCents, stored.BDTCents, stored.FXBDTPerUSD = inv.USDCents, inv.BDTCents, inv.FXBDTPerUSD
+			changed = true
+		}
+		if changed {
+			d.Invoices[id] = stored
+			_ = d.save()
+		}
+	}
+	d.Unlock()
+	raw := invoicePDF(inv, brand, refunded)
 	w.Header().Set("Content-Type", "application/pdf")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+id+`.pdf"`)
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Write(raw)
+}
+
+type invoiceBrand struct {
+	Company    string
+	From       string
+	Email      string
+	Footer     string
+	Notes      []string
+	TaxName    string
+	TaxPercent float64
+	Logo       *invoiceLogo
+}
+
+func invoiceTaxCents(amountCents int64, taxPercent float64) int64 {
+	if amountCents <= 0 || taxPercent <= 0 {
+		return 0
+	}
+	return int64(float64(amountCents)*taxPercent/100 + 0.5)
+}
+
+func invoiceBrandFrom(cur billingCurrency, uiDir, dataDir string) invoiceBrand {
+	taxName := strings.TrimSpace(cur.TaxName)
+	if taxName == "" {
+		taxName = "VAT"
+	}
+	taxPercent := cur.TaxPercent
+	if taxPercent < 0 {
+		taxPercent = 0
+	}
+	company := strings.TrimSpace(cur.InvoiceCompany)
+	if company == "" {
+		company = "CloFix Cloud"
+	}
+	from := strings.TrimSpace(cur.InvoiceFrom)
+	if from == "" {
+		from = "CloFix Infotech"
+	}
+	email := strings.TrimSpace(cur.InvoiceEmail)
+	if email == "" {
+		email = "billing@clofix.cloud"
+	}
+	footer := strings.TrimSpace(cur.InvoiceFooter)
+	if footer == "" {
+		footer = "CloFix Cloud - Standard invoice - Generated from Billing & Payments"
+	}
+	notes := []string{}
+	for _, line := range strings.Split(cur.InvoiceNotes, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			notes = append(notes, line)
+		}
+	}
+	if len(notes) == 0 {
+		notes = []string{
+			"Thank you for your business. This is a standard CloFix Cloud invoice.",
+			"Amounts are shown in invoice currency with USD/BDT equivalents.",
+		}
+	}
+	logoName := filepath.Base(strings.TrimSpace(cur.InvoiceLogo))
+	if logoName == "." || logoName == ".." {
+		logoName = ""
+	}
+	return invoiceBrand{
+		Company: company, From: from, Email: email, Footer: footer, Notes: notes,
+		TaxName: taxName, TaxPercent: taxPercent,
+		Logo: loadInvoiceLogo(uiDir, dataDir, logoName),
+	}
 }
 
 type invoiceLogo struct {
@@ -52,11 +139,38 @@ type invoiceLogo struct {
 	RGB    []byte
 }
 
-func loadInvoiceLogo(uiDir string) *invoiceLogo {
-	if uiDir == "" {
-		return nil
+func loadInvoiceLogo(uiDir, dataDir, preferred string) *invoiceLogo {
+	candidates := []string{}
+	if preferred != "" {
+		name := filepath.Base(preferred)
+		if dataDir != "" {
+			candidates = append(candidates, filepath.Join(dataDir, "branding", name), filepath.Join(dataDir, name))
+		}
+		if uiDir != "" {
+			candidates = append(candidates, filepath.Join(uiDir, name), filepath.Join(uiDir, "branding", name))
+		}
 	}
-	f, err := os.Open(filepath.Join(uiDir, "clofix-logo.png"))
+	if dataDir != "" {
+		candidates = append(candidates, filepath.Join(dataDir, "branding", "invoice-logo.png"), filepath.Join(dataDir, "invoice-logo.png"))
+	}
+	if uiDir != "" {
+		candidates = append(candidates, filepath.Join(uiDir, "invoice-logo.png"), filepath.Join(uiDir, "branding", "invoice-logo.png"), filepath.Join(uiDir, "clofix-logo.png"))
+	}
+	seen := map[string]bool{}
+	for _, path := range candidates {
+		if path == "" || seen[path] {
+			continue
+		}
+		seen[path] = true
+		if logo := decodeInvoiceLogo(path); logo != nil {
+			return logo
+		}
+	}
+	return nil
+}
+
+func decodeInvoiceLogo(path string) *invoiceLogo {
+	f, err := os.Open(path)
 	if err != nil {
 		return nil
 	}
@@ -70,139 +184,252 @@ func loadInvoiceLogo(uiDir string) *invoiceLogo {
 	if w < 8 || h < 8 || w > 2000 || h > 2000 {
 		return nil
 	}
+	// Composite onto the dark header so transparent logos do not leave a white box.
+	const bgR, bgG, bgB = 15.0, 26.0, 41.0
 	rgb := make([]byte, w*h*3)
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			r, g, b, a := img.At(bounds.Min.X+x, bounds.Min.Y+y).RGBA()
 			alpha := float64(a) / 65535
 			i := (y*w + x) * 3
-			rgb[i] = byte(float64(r>>8)*alpha + 10*(1-alpha))
-			rgb[i+1] = byte(float64(g>>8)*alpha + 15*(1-alpha))
-			rgb[i+2] = byte(float64(b>>8)*alpha + 22*(1-alpha))
+			rgb[i] = byte(float64(r>>8)*alpha + bgR*(1-alpha))
+			rgb[i+1] = byte(float64(g>>8)*alpha + bgG*(1-alpha))
+			rgb[i+2] = byte(float64(b>>8)*alpha + bgB*(1-alpha))
 		}
 	}
 	return &invoiceLogo{Width: w, Height: h, RGB: rgb}
 }
 
-func invoicePDF(inv billingInvoice, taxName string, refunded int64, logo *invoiceLogo) []byte {
+// pdfLogoPlacement fits the logo into maxW x maxH while preserving aspect ratio.
+func pdfLogoPlacement(logo *invoiceLogo, maxW, maxH, x, yBottom float64) (drawW, drawH, drawX, drawY float64) {
+	if logo == nil || logo.Width <= 0 || logo.Height <= 0 {
+		return 0, 0, x, yBottom
+	}
+	aw, ah := float64(logo.Width), float64(logo.Height)
+	scale := maxW / aw
+	if ah*scale > maxH {
+		scale = maxH / ah
+	}
+	drawW, drawH = aw*scale, ah*scale
+	drawX = x
+	drawY = yBottom + (maxH-drawH)/2
+	return drawW, drawH, drawX, drawY
+}
+
+func invoiceStatusPDF(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "paid":
+		return "PAID"
+	case "void", "cancelled", "canceled":
+		return "VOID"
+	default:
+		return "UNPAID"
+	}
+}
+
+func invoicePDF(inv billingInvoice, brand invoiceBrand, refunded int64) []byte {
+	if brand.TaxPercent > 0 && inv.TaxCents == 0 {
+		inv.TaxCents = invoiceTaxCents(inv.AmountCents, brand.TaxPercent)
+		inv.USDCents, inv.BDTCents = 0, 0
+	}
 	stampInvoiceMoney(&inv, inv.FXBDTPerUSD)
 	total := inv.AmountCents + inv.TaxCents
 	issued := inv.Created.UTC().Format("02 Jan 2006")
-	status := strings.ToUpper(inv.Status)
-	if status == "" {
-		status = "DRAFT"
-	}
+	status := invoiceStatusPDF(inv.Status)
 	desc := strings.TrimSpace(inv.Description)
 	if desc == "" {
 		desc = "CloFix Cloud service"
 	}
+	if brand.Company == "" {
+		brand.Company = "CloFix Cloud"
+	}
+	if brand.From == "" {
+		brand.From = "CloFix Infotech"
+	}
+	if brand.Email == "" {
+		brand.Email = "billing@clofix.cloud"
+	}
+	if brand.Footer == "" {
+		brand.Footer = "CloFix Cloud - Standard invoice - Generated from Billing & Payments"
+	}
+	if brand.TaxName == "" {
+		brand.TaxName = "VAT"
+	}
+	taxLabel := brand.TaxName
+	if brand.TaxPercent > 0 {
+		if brand.TaxPercent == float64(int64(brand.TaxPercent)) {
+			taxLabel = fmt.Sprintf("%s %d%%", brand.TaxName, int64(brand.TaxPercent))
+		} else {
+			taxLabel = fmt.Sprintf("%s %.2f%%", brand.TaxName, brand.TaxPercent)
+		}
+	}
+	if len(brand.Notes) == 0 {
+		brand.Notes = []string{"Thank you for your business."}
+	}
+	logo := brand.Logo
 	var body strings.Builder
-	body.WriteString("0.039 0.059 0.086 rg\n0 704 612 88 re f\n")
-	body.WriteString("0.212 0.722 0.647 rg\n0 704 612 4 re f\n")
+	// White page.
+	body.WriteString("1 1 1 rg\n0 0 612 792 re f\n")
+	// Header band + teal accent.
+	body.WriteString("0.06 0.10 0.16 rg\n0 730 612 62 re f\n")
+	body.WriteString("0.18 0.62 0.56 rg\n0 726 612 4 re f\n")
 	if logo != nil {
-		body.WriteString("q\n150 0 0 56 36 724 cm\n/Im1 Do\nQ\n")
+		dw, dh, dx, dy := pdfLogoPlacement(logo, 150, 44, 44, 738)
+		body.WriteString(fmt.Sprintf("q\n%.2f 0 0 %.2f %.2f %.2f cm\n/Im1 Do\nQ\n", dw, dh, dx, dy))
 	} else {
-		body.WriteString(pdfText("F2", 20, 36, 746, 1, 1, 1, "CloFix Cloud"))
+		body.WriteString(pdfText("F2", 18, 44, 756, 1, 1, 1, brand.Company))
 	}
-	body.WriteString(pdfRight("F2", 26, 564, 748, 1, 1, 1, "INVOICE"))
-	body.WriteString(pdfRight("F1", 10, 564, 728, 0.82, 0.90, 0.88, status))
-	body.WriteString(pdfText("F2", 9, 48, 668, 0.40, 0.45, 0.50, "INVOICE NUMBER"))
-	body.WriteString(pdfText("F1", 11, 48, 652, 0.08, 0.10, 0.14, inv.ID))
-	body.WriteString(pdfText("F2", 9, 250, 668, 0.40, 0.45, 0.50, "INVOICE DATE"))
-	body.WriteString(pdfText("F1", 11, 250, 652, 0.08, 0.10, 0.14, issued))
-	body.WriteString(pdfText("F2", 9, 420, 668, 0.40, 0.45, 0.50, "STATUS"))
-	body.WriteString(pdfText("F1", 11, 420, 652, 0.08, 0.10, 0.14, status))
-	body.WriteString("0.93 0.95 0.96 rg\n48 560 250 70 re f\n")
-	body.WriteString(pdfText("F2", 9, 60, 612, 0.40, 0.45, 0.50, "BILL TO"))
-	body.WriteString(pdfText("F2", 12, 60, 594, 0.08, 0.10, 0.14, inv.Owner))
-	if inv.SubscriptionID != "" {
-		body.WriteString(pdfText("F1", 9, 60, 578, 0.35, 0.40, 0.45, "Subscription "+inv.SubscriptionID))
-	}
+	body.WriteString(pdfRight("F2", 20, 572, 762, 1, 1, 1, "INVOICE"))
+	body.WriteString(pdfRight("F1", 9, 572, 744, 0.70, 0.90, 0.84, status))
+
+	// Meta strip.
+	body.WriteString("0.96 0.97 0.98 rg\n40 668 532 42 re f\n")
+	body.WriteString(pdfText("F2", 7, 52, 698, 0.45, 0.50, 0.55, "INVOICE NUMBER"))
+	body.WriteString(pdfText("F1", 10, 52, 682, 0.08, 0.10, 0.14, inv.ID))
+	body.WriteString(pdfText("F2", 7, 230, 698, 0.45, 0.50, 0.55, "DATE"))
+	body.WriteString(pdfText("F1", 10, 230, 682, 0.08, 0.10, 0.14, issued))
+	body.WriteString(pdfText("F2", 7, 360, 698, 0.45, 0.50, 0.55, "STATUS"))
+	body.WriteString(pdfText("F1", 10, 360, 682, 0.08, 0.10, 0.14, status))
 	if !inv.PeriodStart.IsZero() {
-		body.WriteString(pdfText("F1", 9, 420, 636, 0.35, 0.40, 0.45, inv.PeriodStart.UTC().Format("02 Jan")+" - "+inv.PeriodEnd.UTC().Format("02 Jan 2006")))
+		body.WriteString(pdfText("F2", 7, 460, 698, 0.45, 0.50, 0.55, "SERVICE PERIOD"))
+		body.WriteString(pdfText("F1", 9, 460, 682, 0.08, 0.10, 0.14, inv.PeriodStart.UTC().Format("02 Jan")+" - "+inv.PeriodEnd.UTC().Format("02 Jan 2006")))
 	}
-	body.WriteString(pdfText("F2", 9, 48, 532, 0.40, 0.45, 0.50, "DESCRIPTION"))
-	y := 514.0
-	for _, line := range pdfWrap(desc, 86) {
-		body.WriteString(pdfText("F1", 11, 48, y, 0.08, 0.10, 0.14, line))
-		y -= 16
+
+	// Parties.
+	body.WriteString(pdfText("F2", 8, 52, 648, 0.45, 0.50, 0.55, "BILL TO"))
+	body.WriteString(pdfText("F2", 8, 320, 648, 0.45, 0.50, 0.55, "FROM"))
+	body.WriteString("0.86 0.89 0.91 RG\n0.8 w\n40 638 532 0 re S\n")
+	body.WriteString(pdfText("F2", 12, 52, 622, 0.08, 0.10, 0.14, inv.Owner))
+	billSub := desc
+	if inv.SubscriptionID != "" {
+		billSub = "Subscription " + inv.SubscriptionID
 	}
-	y -= 12
-	body.WriteString(fmt.Sprintf("0.039 0.059 0.086 rg\n48 %.1f 516 22 re f\n", y-6))
-	body.WriteString(pdfText("F2", 9, 60, y, 1, 1, 1, "Description"))
-	body.WriteString(pdfText("F2", 9, 300, y, 1, 1, 1, "Resource"))
-	body.WriteString(pdfRight("F2", 9, 470, y, 1, 1, 1, "USD"))
-	body.WriteString(pdfRight("F2", 9, 548, y, 1, 1, 1, "BDT"))
+	for i, line := range pdfWrap(billSub, 38) {
+		if i > 1 {
+			break
+		}
+		body.WriteString(pdfText("F1", 9, 52, 606-float64(i*12), 0.35, 0.40, 0.45, line))
+	}
+	body.WriteString(pdfText("F2", 12, 320, 622, 0.08, 0.10, 0.14, brand.From))
+	body.WriteString(pdfText("F1", 9, 320, 606, 0.35, 0.40, 0.45, brand.Company))
+	body.WriteString(pdfText("F1", 9, 320, 592, 0.35, 0.40, 0.45, brand.Email))
+
+	// Line-item table.
+	y := 556.0
+	body.WriteString(fmt.Sprintf("0.06 0.10 0.16 rg\n40 %.1f 532 24 re f\n", y-8))
+	body.WriteString(pdfText("F2", 8, 50, y, 1, 1, 1, "#"))
+	body.WriteString(pdfText("F2", 8, 68, y, 1, 1, 1, "DESCRIPTION"))
+	body.WriteString(pdfText("F2", 8, 278, y, 1, 1, 1, "RESOURCE"))
+	body.WriteString(pdfRight("F2", 8, 382, y, 1, 1, 1, "QTY"))
+	body.WriteString(pdfRight("F2", 8, 462, y, 1, 1, 1, "UNIT"))
+	body.WriteString(pdfRight("F2", 8, 560, y, 1, 1, 1, "AMOUNT"))
 	y -= 28
+
 	lines := inv.Lines
 	if len(lines) == 0 {
 		item := desc
 		if inv.SubscriptionID != "" {
 			item = desc + " / " + inv.SubscriptionID
 		}
-		lines = []billingInvoiceLine{{Description: item, ResourceID: inv.ResourceID, AmountCents: inv.AmountCents, USDCents: inv.USDCents, BDTCents: inv.BDTCents}}
+		lines = []billingInvoiceLine{{
+			Description: item, ResourceID: inv.ResourceID, Quantity: 1, Unit: "ea",
+			UnitCents: inv.AmountCents, AmountCents: inv.AmountCents, USDCents: inv.USDCents, BDTCents: inv.BDTCents,
+		}}
 	}
-	if len(lines) > 8 {
-		lines = lines[:8]
+	if len(lines) > 10 {
+		lines = lines[:10]
 	}
-	for _, line := range lines {
-		label := line.Description
-		if line.Quantity > 0 && line.Unit != "" {
-			label = fmt.Sprintf("%.2g %s %s", line.Quantity, line.Unit, line.Description)
+	for i, line := range lines {
+		if i%2 == 1 {
+			body.WriteString(fmt.Sprintf("0.97 0.98 0.99 rg\n40 %.1f 532 22 re f\n", y-8))
 		}
-		wrapped := pdfWrap(label, 36)
-		body.WriteString(pdfText("F1", 9, 60, y, 0.08, 0.10, 0.14, wrapped[0]))
+		label := strings.TrimSpace(line.Description)
+		if label == "" {
+			label = desc
+		}
+		wrapped := pdfWrap(label, 30)
+		body.WriteString(pdfText("F1", 9, 50, y, 0.08, 0.10, 0.14, fmt.Sprintf("%d", i+1)))
+		body.WriteString(pdfText("F1", 9, 68, y, 0.08, 0.10, 0.14, wrapped[0]))
 		resource := line.ResourceID
 		if resource == "" {
 			resource = line.UsageType
 		}
 		if resource == "" {
-			resource = "—"
+			resource = "-"
 		}
-		body.WriteString(pdfText("F1", 8, 300, y, 0.08, 0.10, 0.14, resource))
-		body.WriteString(pdfRight("F1", 9, 470, y, 0.08, 0.10, 0.14, pdfMoney(line.USDCents, "USD")))
-		body.WriteString(pdfRight("F1", 9, 548, y, 0.08, 0.10, 0.14, pdfMoney(line.BDTCents, "BDT")))
-		y -= 14
+		qty := line.Quantity
+		if qty <= 0 {
+			qty = 1
+		}
+		unitLabel := line.Unit
+		if unitLabel == "" {
+			unitLabel = "ea"
+		}
+		unitPrice := line.UnitCents
+		if unitPrice == 0 && qty > 0 {
+			unitPrice = line.AmountCents
+		}
+		body.WriteString(pdfText("F1", 8, 278, y, 0.08, 0.10, 0.14, resource))
+		body.WriteString(pdfRight("F1", 9, 382, y, 0.08, 0.10, 0.14, fmt.Sprintf("%.2g %s", qty, unitLabel)))
+		body.WriteString(pdfRight("F1", 9, 462, y, 0.08, 0.10, 0.14, pdfMoney(unitPrice, inv.Currency)))
+		body.WriteString(pdfRight("F1", 9, 560, y, 0.08, 0.10, 0.14, pdfMoney(line.AmountCents, inv.Currency)))
+		y -= 16
 		for _, extra := range wrapped[1:] {
-			body.WriteString(pdfText("F1", 8, 60, y, 0.35, 0.40, 0.45, extra))
+			body.WriteString(pdfText("F1", 8, 68, y, 0.40, 0.45, 0.50, extra))
 			y -= 12
 		}
+		y -= 6
 	}
-	y -= 8
-	body.WriteString(fmt.Sprintf("0.86 0.89 0.91 RG\n0.6 w\n48 %.1f 516 0 re S\n", y+8))
-	y -= 8
-	body.WriteString(pdfText("F1", 10, 300, y, 0.35, 0.40, 0.45, "Subtotal"))
-	body.WriteString(pdfRight("F1", 10, 548, y, 0.08, 0.10, 0.14, pdfMoney(inv.AmountCents, inv.Currency)))
+
+	// Totals.
+	y -= 6
+	body.WriteString(fmt.Sprintf("0.86 0.89 0.91 RG\n0.7 w\n310 %.1f 262 0 re S\n", y+12))
+	body.WriteString(pdfText("F1", 10, 324, y, 0.35, 0.40, 0.45, "Subtotal"))
+	body.WriteString(pdfRight("F1", 10, 560, y, 0.08, 0.10, 0.14, pdfMoney(inv.AmountCents, inv.Currency)))
 	y -= 18
-	body.WriteString(pdfText("F1", 10, 300, y, 0.35, 0.40, 0.45, taxName))
-	body.WriteString(pdfRight("F1", 10, 548, y, 0.08, 0.10, 0.14, pdfMoney(inv.TaxCents, inv.Currency)))
+	body.WriteString(pdfText("F1", 10, 324, y, 0.35, 0.40, 0.45, taxLabel))
+	body.WriteString(pdfRight("F1", 10, 560, y, 0.08, 0.10, 0.14, pdfMoney(inv.TaxCents, inv.Currency)))
+	y -= 28
+	body.WriteString(fmt.Sprintf("0.06 0.10 0.16 rg\n310 %.1f 262 34 re f\n", y-12))
+	body.WriteString(pdfText("F2", 11, 322, y, 1, 1, 1, "Total due"))
+	body.WriteString(pdfRight("F2", 13, 560, y, 1, 1, 1, pdfMoney(total, inv.Currency)))
+	y -= 30
+	body.WriteString(pdfRight("F1", 8, 560, y, 0.40, 0.45, 0.50, pdfMoney(inv.USDCents, "USD")+" / "+pdfMoney(inv.BDTCents, "BDT")))
 	y -= 24
-	body.WriteString(fmt.Sprintf("0.212 0.722 0.647 rg\n300 %.1f 264 40 re f\n", y-20))
-	body.WriteString(pdfText("F2", 11, 312, y, 1, 1, 1, "Total"))
-	body.WriteString(pdfRight("F2", 10, 548, y, 1, 1, 1, pdfMoney(total, inv.Currency)))
-	y -= 16
-	body.WriteString(pdfRight("F1", 9, 548, y, 1, 1, 1, pdfMoney(inv.USDCents, "USD")+" / "+pdfMoney(inv.BDTCents, "BDT")))
-	y -= 36
+
 	if inv.Paid != nil {
-		body.WriteString(pdfText("F1", 10, 48, y, 0.08, 0.10, 0.14, "Paid on "+inv.Paid.UTC().Format("02 Jan 2006 15:04 UTC")+" - manual bookkeeping"))
+		body.WriteString(pdfText("F1", 10, 52, y, 0.08, 0.10, 0.14, "Paid on "+inv.Paid.UTC().Format("02 Jan 2006 15:04 UTC")))
 		y -= 16
 	}
 	if refunded > 0 {
-		body.WriteString(pdfText("F1", 10, 48, y, 0.08, 0.10, 0.14, "Refunded "+pdfMoney(refunded, inv.Currency)+" - remaining "+pdfMoney(total-refunded, inv.Currency)))
+		body.WriteString(pdfText("F1", 10, 52, y, 0.08, 0.10, 0.14, "Refunded "+pdfMoney(refunded, inv.Currency)+" - Remaining "+pdfMoney(total-refunded, inv.Currency)))
 		y -= 16
 	}
-	body.WriteString("0.93 0.95 0.96 rg\n48 48 516 88 re f\n")
-	body.WriteString(pdfText("F2", 9, 60, 118, 0.40, 0.45, 0.50, "NOTES"))
-	notes := []string{"This invoice lists stored CloFix controller fields only.", "Card charges are not processed in this version."}
-	if inv.Status == "draft" {
-		notes = append(notes, "Draft invoices are unpaid bookkeeping records.")
+
+	// Notes + footer.
+	body.WriteString("0.96 0.97 0.98 rg\n40 44 532 88 re f\n")
+	body.WriteString(pdfText("F2", 8, 52, 116, 0.45, 0.50, 0.55, "NOTES"))
+	notes := append([]string{}, brand.Notes...)
+	if status == "UNPAID" {
+		notes = append(notes, "Payment status: Unpaid.")
 	}
-	ny := 102.0
+	if brand.TaxPercent > 0 {
+		notes = append(notes, fmt.Sprintf("%s applied at %.2g%% on subtotal.", brand.TaxName, brand.TaxPercent))
+	}
+	if len(notes) > 5 {
+		notes = notes[:5]
+	}
+	ny := 100.0
 	for _, note := range notes {
-		body.WriteString(pdfText("F1", 9, 60, ny, 0.25, 0.30, 0.34, note))
-		ny -= 13
+		for _, wrap := range pdfWrap(note, 88) {
+			if ny < 52 {
+				break
+			}
+			body.WriteString(pdfText("F1", 9, 52, ny, 0.25, 0.30, 0.34, wrap))
+			ny -= 12
+		}
 	}
-	body.WriteString(pdfText("F1", 8, 48, 28, 0.45, 0.50, 0.55, "CloFix Cloud  -  Generated from Billing & Payments"))
+	body.WriteString(pdfText("F1", 8, 40, 26, 0.45, 0.50, 0.55, brand.Footer))
 	return pdfFile(body.String(), logo)
 }
 
@@ -310,13 +537,21 @@ func pdfEscape(v string) string {
 			b.WriteString(`\(`)
 		case r == ')':
 			b.WriteString(`\)`)
-		case r == '\n', r == '\r', r == '\t':
+		case r == '\n', r == '\r', r == '\t', r == '\u00a0':
 			b.WriteByte(' ')
+		case r == '·' || r == '•' || r == '∙':
+			b.WriteString(" - ")
+		case r == '–' || r == '—' || r == '−':
+			b.WriteByte('-')
+		case r == '×':
+			b.WriteByte('x')
+		case r == '…':
+			b.WriteString("...")
 		case r >= 32 && r <= 126:
 			b.WriteRune(r)
 		default:
-			b.WriteByte('?')
+			b.WriteByte(' ')
 		}
 	}
-	return b.String()
+	return strings.Join(strings.Fields(b.String()), " ")
 }

@@ -62,6 +62,7 @@ type Server struct {
 	logs              *logStore
 	firewall          *firewallStore
 	efs               *efsStore
+	clusters          *clusterServiceStore
 	securityCenter    *securityCenterStore
 	docker            *dockerStore
 	waf               *wafStore
@@ -95,7 +96,7 @@ func New(s store.Store, ca *pki.CA, adminToken, uiDir string) *Server {
 	if dataDir == "" {
 		dataDir = "/var/lib/clofix-controller"
 	}
-	server := &Server{license: loadControllerLicense(dataDir), monitoring: loadMonitoring(dataDir), balancers: loadBalancers(dataDir), applications: loadServerless(dataDir), billing: loadBilling(dataDir), dns: loadDNS(dataDir), vpcs: loadVPCs(dataDir), sshKeys: loadSSHKeys(dataDir), logs: loadLogs(dataDir), firewall: loadFirewall(dataDir), efs: loadEFS(dataDir), securityCenter: loadSecurityCenter(dataDir), waf: loadWAF(dataDir), metricsHistory: loadMetricsHistory(dataDir), Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), S3MasterAddress: os.Getenv("CLOFIX_S3_MASTER_ADDRESS"), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}, backups: map[string]proto.BackupInfo{}, certificates: loadCertificates(dataDir), platform: loadPlatform(dataDir), images: loadImageCatalog(dataDir), s3Pool: loadS3PoolSettings(dataDir)}
+	server := &Server{license: loadControllerLicense(dataDir), monitoring: loadMonitoring(dataDir), balancers: loadBalancers(dataDir), applications: loadServerless(dataDir), billing: loadBilling(dataDir), dns: loadDNS(dataDir), vpcs: loadVPCs(dataDir), sshKeys: loadSSHKeys(dataDir), logs: loadLogs(dataDir), firewall: loadFirewall(dataDir), efs: loadEFS(dataDir), clusters: loadClusterServices(dataDir), securityCenter: loadSecurityCenter(dataDir), waf: loadWAF(dataDir), metricsHistory: loadMetricsHistory(dataDir), Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), S3MasterAddress: os.Getenv("CLOFIX_S3_MASTER_ADDRESS"), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}, backups: map[string]proto.BackupInfo{}, certificates: loadCertificates(dataDir), platform: loadPlatform(dataDir), images: loadImageCatalog(dataDir), s3Pool: loadS3PoolSettings(dataDir)}
 	server.initDatabases(dataDir)
 	server.initKubernetes(dataDir)
 	server.initDocker(dataDir)
@@ -136,6 +137,7 @@ func (s *Server) AdminHandler() http.Handler {
 	s.wafRoutes(mux)
 	s.securityRoutes(mux)
 	s.efsRoutes(mux)
+	s.clusterServiceRoutes(mux)
 	s.loadBalancerRoutes(mux)
 	s.applicationRoutes(mux)
 	s.managedRoutes(mux)
@@ -151,6 +153,9 @@ func (s *Server) AdminHandler() http.Handler {
 		w.Header().Set("Content-Type", "application/x-pem-file")
 		w.Write(s.CA.CertPEM)
 	})
+	// Public bootstrap for worker build/enroll (same trust model as ca.pem).
+	// Includes worker license capacity so agents can check the limit before connecting.
+	mux.HandleFunc("GET /api/installation-id", s.publicInstallationBootstrap)
 	mux.HandleFunc("POST /api/auth/register", s.registerAuth)
 	mux.HandleFunc("POST /api/auth/login", s.loginAuth)
 	mux.HandleFunc("POST /api/auth/login/mfa", s.loginMFAAuth)
@@ -164,12 +169,17 @@ func (s *Server) AdminHandler() http.Handler {
 	mux.HandleFunc("GET /api/accounts", s.auth(s.listAccounts))
 	mux.HandleFunc("POST /api/accounts", s.auth(s.createAccountUser))
 	mux.HandleFunc("PUT /api/accounts/{id}", s.auth(s.updateAccountUser))
+	mux.HandleFunc("POST /api/accounts/{id}/suspend", s.auth(s.suspendAccount))
+	mux.HandleFunc("POST /api/accounts/{id}/resume", s.auth(s.resumeAccount))
+	mux.HandleFunc("POST /api/accounts/{id}/stop-services", s.auth(s.stopAccountServices))
 	mux.HandleFunc("DELETE /api/accounts/{id}", s.auth(s.deleteAccountUser))
 	mux.HandleFunc("POST /api/enrollment-tokens", s.auth(s.createToken))
 	mux.HandleFunc("GET /api/iam/me", s.auth(s.iamMe))
 	mux.HandleFunc("GET /api/iam/users", s.auth(s.listIAMUsers))
 	mux.HandleFunc("POST /api/iam/users", s.auth(s.saveIAMUser))
 	mux.HandleFunc("PUT /api/iam/users/{id}", s.auth(s.saveIAMUser))
+	mux.HandleFunc("POST /api/iam/users/{id}/suspend", s.auth(s.suspendIAMUser))
+	mux.HandleFunc("POST /api/iam/users/{id}/resume", s.auth(s.resumeIAMUser))
 	mux.HandleFunc("DELETE /api/iam/users/{id}", s.auth(s.deleteIAMUser))
 	mux.HandleFunc("GET /api/iam/users/{id}/keys", s.auth(s.listIAMUserKeys))
 	mux.HandleFunc("POST /api/iam/users/{id}/keys", s.auth(s.createIAMUserKey))
@@ -435,6 +445,10 @@ func (s *Server) uiHandler() http.Handler {
 			http.Redirect(w, r, "/instances?create=1", http.StatusSeeOther)
 			return
 		}
+		if cleanURL == "/cluster-services" || cleanURL == "/clusters" {
+			http.Redirect(w, r, "/redis-services", http.StatusSeeOther)
+			return
+		}
 		if cleanURL == "/login" || cleanURL == "/register" {
 			setAuthSecurityHeaders(w)
 			if s.authPageRateLimited(r) {
@@ -531,6 +545,8 @@ func uiPage(route string) (page, title, instanceID string, ok bool) {
 		return "waf", "WAF", "", true
 	case "/efs":
 		return "efs", "EFS", "", true
+	case "/redis-services":
+		return "redis-services", "Redis Cluster", "", true
 	}
 	parts := strings.Split(strings.TrimPrefix(route, "/"), "/")
 	if len(parts) == 2 && parts[0] == "load-balancers" && regexp.MustCompile(`^lb-[0-9a-f]{32}$`).MatchString(parts[1]) {
@@ -2135,7 +2151,19 @@ func (s *Server) serviceErrorLog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"service": name, "logs": "Service is not reporting logs. Start it and wait for a worker heartbeat."})
 }
 
-var serviceCatalog = map[string]bool{"wildfly": true, "tomcat": true, "nginx": true, "apache": true, "mysql": true, "mariadb": true, "postgresql": true, "redis": true, "php": true, "nodejs": true, "python": true, "wordpress": true, "joomla": true, "owasp-waf": true, "haproxy": true, "memcached": true, "supervisor": true, "git": true, "composer": true, "golang": true, "java": true, "ruby": true, "build-tools": true, "sqlite": true, "certbot": true, "rsync": true}
+var serviceCatalog = map[string]bool{
+	"wildfly": true, "tomcat": true, "nginx": true, "apache": true, "mysql": true, "mariadb": true, "postgresql": true, "redis": true,
+	"php": true, "nodejs": true, "python": true, "wordpress": true, "joomla": true, "owasp-waf": true, "haproxy": true, "memcached": true,
+	"supervisor": true, "git": true, "composer": true, "golang": true, "java": true, "ruby": true, "build-tools": true, "sqlite": true,
+	"certbot": true, "rsync": true,
+	"docker": true, "podman": true, "buildah": true, "skopeo": true, "kubectl": true, "helm": true, "terraform": true, "ansible": true,
+	"fail2ban": true, "ufw": true, "wireguard": true, "openvpn": true, "nmap": true, "tcpdump": true, "mtr": true, "iperf3": true, "clamav": true,
+	"netdata": true, "node-exporter": true, "collectd": true, "rabbitmq": true,
+	"caddy": true, "varnish": true, "squid": true,
+	"rclone": true, "restic": true, "awscli": true,
+	"jq": true, "httpie": true, "htop": true, "tmux": true, "vim": true, "neovim": true, "zip-tools": true, "tree": true, "cmake": true,
+	"ripgrep": true, "fd": true, "bat": true, "ncdu": true, "sysstat": true, "dns-tools": true, "apache-utils": true, "zsh": true, "fish": true,
+}
 
 func (s *Server) installService(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -2781,6 +2809,8 @@ func (s *Server) retryInstance(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) WorkerHandler() http.Handler {
 	mux := http.NewServeMux()
+	// Public preflight: worker checks license capacity before enroll/connect.
+	mux.HandleFunc("GET /v1/worker-capacity", s.publicInstallationBootstrap)
 	mux.HandleFunc("POST /v1/enroll", s.enroll)
 	mux.HandleFunc("POST /v1/heartbeat", s.heartbeat)
 	s.databaseWorkerRoutes(mux)
@@ -2882,13 +2912,77 @@ func (s *Server) noteFail(ip string) {
 	s.failMu.Unlock()
 }
 
+func (s *Server) controllerInstallationID() string {
+	if s.license == nil {
+		return ""
+	}
+	s.license.Lock()
+	defer s.license.Unlock()
+	return strings.TrimSpace(s.license.InstallationID)
+}
+
+func (s *Server) matchWorkerInstallationID(got string) error {
+	want := s.controllerInstallationID()
+	got = strings.TrimSpace(got)
+	if want == "" {
+		return fmt.Errorf("controller Installation ID is not ready")
+	}
+	if got == "" {
+		return fmt.Errorf("worker Installation ID required (rebuild/enroll with ctl-… from Settings → License)")
+	}
+	if got != want {
+		return fmt.Errorf("worker Installation ID does not match this controller")
+	}
+	return nil
+}
+
+// workerCapacitySnapshot reports license worker slots for pre-connect checks.
+// admit is true only when a valid license allows at least one more non-revoked worker.
+func (s *Server) workerCapacitySnapshot() map[string]any {
+	used, _ := s.quotaUsed("workers")
+	out := map[string]any{
+		"used":      used,
+		"limit":     int64(0),
+		"available": int64(0),
+		"admit":     false,
+		"reason":    "",
+	}
+	p, err := s.licensedPlan()
+	if err != nil {
+		out["reason"] = err.Error()
+		return out
+	}
+	limit := quotaLimit(p, "workers")
+	out["limit"] = limit
+	if limit < 0 {
+		out["available"] = int64(-1)
+		out["admit"] = true
+		return out
+	}
+	avail := limit - used
+	if avail < 0 {
+		avail = 0
+	}
+	out["available"] = avail
+	if avail >= 1 {
+		out["admit"] = true
+	} else {
+		out["reason"] = fmt.Sprintf("license worker limit reached: used %d, limit %d", used, limit)
+	}
+	return out
+}
+
+func (s *Server) publicInstallationBootstrap(w http.ResponseWriter, r *http.Request) {
+	id := s.controllerInstallationID()
+	writeJSON(w, 200, map[string]any{
+		"installation_id": id,
+		"workers":         s.workerCapacitySnapshot(),
+	})
+}
+
 func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	s.quotaMu.Lock()
 	defer s.quotaMu.Unlock()
-	if e := s.checkQuota("workers", 1); e != nil {
-		fail(w, 403, e.Error())
-		return
-	}
 
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 	if s.rateLimited(ip) {
@@ -2898,6 +2992,18 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	var in proto.EnrollRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil {
 		fail(w, 400, "invalid json")
+		return
+	}
+	// Installation ID + worker license limit before consuming the one-time token.
+	if err := s.matchWorkerInstallationID(in.InstallationID); err != nil {
+		s.noteFail(ip)
+		s.Store.Audit("worker", "enroll", ip, "installation_mismatch")
+		fail(w, 403, err.Error())
+		return
+	}
+	if e := s.checkQuota("workers", 1); e != nil {
+		s.Store.Audit("worker", "enroll", ip, "quota_denied")
+		fail(w, 403, e.Error())
 		return
 	}
 	if err := s.Store.ConsumeToken(hashToken(in.Token), time.Now()); err != nil {
@@ -2912,9 +3018,10 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "bad CSR")
 		return
 	}
-	s.Store.UpsertWorker(store.Worker{ID: id, Hostname: in.Hostname, Status: "pending", Version: in.Version, Capacity: in.Capacity, LastHeartbeat: time.Now()})
+	installID := s.controllerInstallationID()
+	s.Store.UpsertWorker(store.Worker{ID: id, Hostname: in.Hostname, Status: "pending", Version: in.Version, InstallationID: installID, Capacity: in.Capacity, LastHeartbeat: time.Now()})
 	s.Store.Audit("worker", "enroll", id, "ok")
-	writeJSON(w, 201, proto.EnrollResponse{WorkerID: id, CertPEM: string(cert), CAPEM: string(s.CA.CertPEM), S3MasterAddress: s.S3MasterAddress})
+	writeJSON(w, 201, proto.EnrollResponse{WorkerID: id, CertPEM: string(cert), CAPEM: string(s.CA.CertPEM), S3MasterAddress: s.S3MasterAddress, InstallationID: installID})
 }
 
 func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
@@ -2933,7 +3040,13 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid json")
 		return
 	}
+	if err := s.matchWorkerInstallationID(hb.InstallationID); err != nil {
+		s.Store.Audit("worker", "heartbeat", id, "installation_mismatch")
+		fail(w, 403, err.Error())
+		return
+	}
 	wk.Capacity, wk.Version, wk.LastHeartbeat = hb.Capacity, hb.Version, time.Now()
+	wk.InstallationID = strings.TrimSpace(hb.InstallationID)
 	if wk.Status == "pending" {
 		wk.Status = "active" // TODO: gate on policy/health checks and optional admin approval
 	}
@@ -3081,6 +3194,8 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 				inst.Error = ""
 				_ = s.Store.SaveInstance(inst)
 			}
+		case parts[1] == proto.ActionConfigureClusterNode || parts[1] == proto.ActionJoinCluster:
+			s.completeClusterServiceOp(parts[0], parts[1], res)
 		case !res.OK:
 			if parts[1] == proto.ActionServiceControl {
 				inst.Error = "service action failed: " + res.Error

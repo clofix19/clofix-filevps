@@ -71,9 +71,10 @@ func TestLicenseExpiryBindingStalenessAndStorage(t *testing.T) {
 		t.Fatal("expired license accepted")
 	}
 	setTestLicense(s)
-	s.license.LastCheck = time.Now().Add(-11 * time.Minute)
-	if _, e := s.licensedPlan(); e == nil {
-		t.Fatal("stale license accepted")
+	// Offline / old LastCheck must still allow allocations while Expires is in the future.
+	s.license.LastCheck = time.Now().Add(-30 * 24 * time.Hour)
+	if _, e := s.licensedPlan(); e != nil {
+		t.Fatal("cached grant before expiry must work offline:", e)
 	}
 	setTestLicense(s)
 	cap := 1

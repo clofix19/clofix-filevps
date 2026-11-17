@@ -27,12 +27,13 @@ func removeString(list []string, target string) []string {
 }
 
 type Worker struct {
-	ID            string             `json:"id"`
-	Hostname      string             `json:"hostname"`
-	Status        string             `json:"status"` // pending|active|draining|revoked
-	Version       string             `json:"version"`
-	Capacity      scheduler.Capacity `json:"capacity"`
-	LastHeartbeat time.Time          `json:"last_heartbeat"`
+	ID             string             `json:"id"`
+	Hostname       string             `json:"hostname"`
+	Status         string             `json:"status"` // pending|active|draining|revoked
+	Version        string             `json:"version"`
+	InstallationID string             `json:"installation_id,omitempty"`
+	Capacity       scheduler.Capacity `json:"capacity"`
+	LastHeartbeat  time.Time          `json:"last_heartbeat"`
 }
 
 type Instance struct {
@@ -64,7 +65,8 @@ type Volume struct {
 type Account struct {
 	ID       string    `json:"id"`
 	Name     string    `json:"name"`
-	Kind     string    `json:"kind"` // platform|partner|client
+	Kind     string    `json:"kind"`   // platform|partner|client
+	Status   string    `json:"status"` // active|suspended
 	ParentID string    `json:"parent_id,omitempty"`
 	Created  time.Time `json:"created"`
 }
@@ -152,6 +154,7 @@ type Store interface {
 	SaveSession(session Session) error
 	GetSessionByHash(hash string) (Session, error)
 	DeleteSession(id string) error
+	DeleteSessionsForUser(userID string) error
 	ListIAMGroups() ([]IAMGroup, error)
 	GetIAMGroup(id string) (IAMGroup, error)
 	SaveIAMGroup(group IAMGroup) error

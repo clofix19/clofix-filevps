@@ -33,6 +33,8 @@ const (
 	ActionServiceControl         = "service-control"
 	ActionInstallService         = "install-service"
 	ActionUninstallService       = "uninstall-service"
+	ActionConfigureClusterNode   = "configure-cluster-node"
+	ActionJoinCluster            = "join-cluster"
 	ActionCreateBackup           = "create-backup"
 	ActionDeleteBackup           = "delete-backup"
 	ActionExportBackup           = "export-backup"
@@ -67,11 +69,12 @@ const (
 )
 
 type EnrollRequest struct {
-	Token    string             `json:"token"`
-	CSRPEM   string             `json:"csr_pem"`
-	Hostname string             `json:"hostname"`
-	Version  string             `json:"version"`
-	Capacity scheduler.Capacity `json:"capacity"`
+	Token          string             `json:"token"`
+	CSRPEM         string             `json:"csr_pem"`
+	Hostname       string             `json:"hostname"`
+	Version        string             `json:"version"`
+	InstallationID string             `json:"installation_id"`
+	Capacity       scheduler.Capacity `json:"capacity"`
 }
 
 type EnrollResponse struct {
@@ -79,6 +82,7 @@ type EnrollResponse struct {
 	CertPEM         string `json:"cert_pem"`
 	CAPEM           string `json:"ca_pem"`
 	S3MasterAddress string `json:"s3_master_address,omitempty"`
+	InstallationID  string `json:"installation_id,omitempty"`
 }
 
 // ImageRef points at a base image. URL is short-lived (presigned) and never contains long-term credentials.
@@ -109,6 +113,9 @@ type InstanceSpec struct {
 	PublishHTTP      *bool           `json:"publish_http,omitempty"`
 	PublishHTTPS     *bool           `json:"publish_https,omitempty"`
 	ProtectionMode   *bool           `json:"protection_mode,omitempty"`
+	// AllowVPCPeers disables bridge port isolation so this VPS can reach other
+	// guests on cfbr0 (needed for Redis/cluster east-west traffic).
+	AllowVPCPeers    *bool           `json:"allow_vpc_peers,omitempty"`
 	SSHLoginBlocked  *bool           `json:"ssh_login_blocked,omitempty"`
 	DeleteProtection bool            `json:"delete_protection,omitempty"`
 	OWASPProtection  map[string]bool   `json:"owasp_protection,omitempty"`
@@ -225,6 +232,20 @@ type Operation struct {
 	RootPassword    string             `json:"root_password,omitempty"`
 	Firewall        *FirewallSpec      `json:"firewall,omitempty"`
 	EFS             *EFSShare          `json:"efs,omitempty"`
+	ClusterNode     *ClusterNodeSpec   `json:"cluster_node,omitempty"`
+}
+
+// ClusterNodeSpec configures a FileVPS member of a Cluster Services app (Redis first).
+type ClusterNodeSpec struct {
+	App          string   `json:"app"`
+	ClusterID    string   `json:"cluster_id"`
+	NodeID       string   `json:"node_id"`
+	Topology     string   `json:"topology"` // master_master | master_slave
+	Role         string   `json:"role"`     // primary | replica | member
+	DataDir      string   `json:"data_dir"`
+	Persistent   bool     `json:"persistent"`
+	PrimaryAddr  string   `json:"primary_addr,omitempty"`
+	MemberAddrs  []string `json:"member_addrs,omitempty"`
 }
 
 type OpResult struct {
@@ -285,6 +306,7 @@ type Heartbeat struct {
 	ManagedApps        []ManagedStatus      `json:"managed_apps,omitempty"`
 	ExecutionProgress  []ExecutionProgress  `json:"execution_progress,omitempty"`
 	Version            string               `json:"version"`
+	InstallationID     string               `json:"installation_id,omitempty"`
 	Capacity           scheduler.Capacity   `json:"capacity"`
 	Instances          []InstanceStatus     `json:"instances"`
 	Volumes            []WorkerVolumeStatus `json:"volumes,omitempty"`

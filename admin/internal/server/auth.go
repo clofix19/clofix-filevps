@@ -170,7 +170,7 @@ func (s *Server) sessionPrincipal(r *http.Request) (iamPrincipal, bool) {
 		return iamPrincipal{}, false
 	}
 	user, err := s.Store.GetIAMUser(sess.UserID)
-	if err != nil || user.Status != "active" {
+	if err != nil || user.Status != "active" || s.accountIsSuspended(user.AccountID) {
 		return iamPrincipal{}, false
 	}
 	return s.principalFromUser(user), true
@@ -204,7 +204,7 @@ func (s *Server) registerAuth(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, "an account with this email already exists")
 		return
 	}
-	acc := store.Account{ID: "acc-" + randHex(8), Name: in.AccountName, Kind: "client", Created: time.Now().UTC()}
+	acc := store.Account{ID: "acc-" + randHex(8), Name: in.AccountName, Kind: "client", Status: "active", Created: time.Now().UTC()}
 	if err := s.Store.SaveAccount(acc); err != nil {
 		fail(w, 500, "could not create account")
 		return
@@ -264,6 +264,11 @@ func (s *Server) loginAuth(w http.ResponseWriter, r *http.Request) {
 	if err != nil || user.Status != "active" || !checkPassword(user.PasswordHash, in.Password) {
 		s.noteLoginFailure(ip, email)
 		fail(w, 401, "invalid email or password")
+		return
+	}
+	if s.accountIsSuspended(user.AccountID) {
+		s.noteLoginFailure(ip, email)
+		fail(w, 403, "account suspended")
 		return
 	}
 	if err := loginIPAllowed(user, ip); err != nil {

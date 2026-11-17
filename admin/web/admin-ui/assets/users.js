@@ -14,10 +14,11 @@
     const partners = list.filter((a) => a.kind === 'partner').length;
     const clients = list.filter((a) => a.kind === 'client').length;
     const admins = list.filter((a) => a.kind === 'admin').length;
+    const suspended = list.filter((a) => a.status === 'suspended').length;
     setCount('users-partner-count', partners, 'users-partner-note', partners === 1 ? '1 partner account' : partners + ' partner accounts');
     setCount('users-client-count', clients, 'users-client-note', clients === 1 ? '1 root client' : clients + ' root clients');
     setCount('users-admin-count', admins, 'users-admin-note', admins === 1 ? '1 platform admin' : admins + ' platform admins');
-    setCount('users-count', list.length, 'users-count-note', 'Visible to this login');
+    setCount('users-count', list.length, 'users-count-note', suspended ? `${suspended} suspended` : 'Visible to this login');
   }
 
   function canManage(acc) {
@@ -28,13 +29,17 @@
     return false;
   }
 
+  function canAdminSuspend(acc) {
+    return meCache?.kind === 'admin' && acc && acc.kind !== 'admin' && acc.id !== meCache.account_id;
+  }
+
   function openEdit(acc) {
     if (!canManage(acc)) return;
     $('users-edit-id').value = acc.id;
     $('users-edit-name').value = acc.name || '';
     $('users-edit-email').value = acc.email || '';
     $('users-edit-password').value = '';
-    $('users-edit-meta').textContent = `${acc.kind}${acc.user_kind ? ' · ' + acc.user_kind : ''} · ${acc.id}`;
+    $('users-edit-meta').textContent = `${acc.kind}${acc.user_kind ? ' · ' + acc.user_kind : ''} · ${acc.status || 'active'} · ${acc.id}`;
     $('users-edit-message').textContent = '';
     $('users-edit-dialog')?.showModal();
   }
@@ -57,11 +62,51 @@
     }
   }
 
+  async function suspendAccount(acc) {
+    if (!canAdminSuspend(acc)) return;
+    if (!window.confirm(`Suspend “${acc.name}”? Root and all IAM users under this account will be logged out and cannot sign in.`)) return;
+    $('users-message').textContent = 'Suspending…';
+    try {
+      await api('POST', `/api/accounts/${encodeURIComponent(acc.id)}/suspend`);
+      $('users-message').textContent = `Suspended ${acc.name}. IAM users under this account are inactive.`;
+      await refreshUsers();
+    } catch (e) {
+      $('users-message').textContent = e.message;
+    }
+  }
+
+  async function resumeAccount(acc) {
+    if (!canAdminSuspend(acc)) return;
+    if (!window.confirm(`Resume “${acc.name}”? The root login will be re-enabled; IAM users stay inactive until you enable them.`)) return;
+    $('users-message').textContent = 'Resuming…';
+    try {
+      await api('POST', `/api/accounts/${encodeURIComponent(acc.id)}/resume`);
+      $('users-message').textContent = `Resumed ${acc.name}. Re-enable IAM users from the IAM page if needed.`;
+      await refreshUsers();
+    } catch (e) {
+      $('users-message').textContent = e.message;
+    }
+  }
+
+  async function stopAccountServices(acc) {
+    if (!canAdminSuspend(acc) || acc.kind !== 'client') return;
+    if (!window.confirm(`Stop all running services for “${acc.name}” (unpaid / billing hold)? VPS, managed apps, and Docker for this account will be stopped.`)) return;
+    $('users-message').textContent = 'Stopping services…';
+    try {
+      const res = await api('POST', `/api/accounts/${encodeURIComponent(acc.id)}/stop-services`);
+      const stopped = res?.stopped || {};
+      $('users-message').textContent = `Stopped services for ${acc.name}: VPS ${stopped.vps || 0}, managed apps ${stopped.managed_apps || 0}, Docker ${stopped.docker || 0}.`;
+      await refreshUsers();
+    } catch (e) {
+      $('users-message').textContent = e.message;
+    }
+  }
+
   function renderTable(accounts) {
     const table = $('users-table');
-    row(table, ['Account', 'Account ID', 'Type', 'Email', 'Parent', 'Created', 'Actions'], true);
+    row(table, ['Account', 'Account ID', 'Type', 'Status', 'Email', 'Parent', 'Created', 'Actions'], true);
     if (!accounts.length) {
-      row(table, ['No accounts yet.', '', '', '', '', '', '']);
+      row(table, ['No accounts yet.', '', '', '', '', '', '', '']);
       return;
     }
     accounts.forEach((acc) => {
@@ -73,19 +118,47 @@
         edit.className = 'small-btn';
         edit.textContent = 'Edit';
         edit.onclick = () => openEdit(acc);
+        actions.append(edit);
+        if (canAdminSuspend(acc)) {
+          if (acc.status === 'suspended') {
+            const resume = document.createElement('button');
+            resume.type = 'button';
+            resume.className = 'small-btn';
+            resume.textContent = 'Resume';
+            resume.onclick = () => resumeAccount(acc);
+            actions.append(resume);
+          } else {
+            const suspend = document.createElement('button');
+            suspend.type = 'button';
+            suspend.className = 'danger small-btn';
+            suspend.textContent = 'Suspend';
+            suspend.onclick = () => suspendAccount(acc);
+            actions.append(suspend);
+          }
+          if (acc.kind === 'client') {
+            const stop = document.createElement('button');
+            stop.type = 'button';
+            stop.className = 'danger small-btn';
+            stop.textContent = 'Stop services';
+            stop.title = 'Stop all running workloads (e.g. unpaid bill)';
+            stop.onclick = () => stopAccountServices(acc);
+            actions.append(stop);
+          }
+        }
         const del = document.createElement('button');
         del.type = 'button';
         del.className = 'danger small-btn';
         del.textContent = 'Delete';
         del.onclick = () => deleteAccount(acc);
-        actions.append(edit, del);
+        actions.append(del);
       } else {
         const locked = document.createElement('span');
         locked.className = 'muted';
         locked.textContent = acc.kind === 'admin' ? 'Protected' : '—';
         actions.append(locked);
       }
-      row(table, [acc.name, acc.id, acc.kind + (acc.user_kind ? ' · ' + acc.user_kind : ''), acc.email || '—', acc.parent_id || '—', acc.created ? new Date(acc.created).toLocaleString() : '—', actions]);
+      const statusLabel = acc.status === 'suspended' ? 'suspended' : 'active';
+      row(table, [acc.name, acc.id, acc.kind + (acc.user_kind ? ' · ' + acc.user_kind : ''), badge(statusLabel), acc.email || '—', acc.parent_id || '—', acc.created ? new Date(acc.created).toLocaleString() : '—', actions]);
     });
   }
 
@@ -105,6 +178,9 @@
       kind.value = 'client';
       kind.querySelector('option[value="partner"]')?.remove();
       if ($('users-create-help')) $('users-create-help').textContent = 'Create a root user for a client account you manage.';
+    }
+    if (me.kind === 'admin' && $('users-lead')) {
+      $('users-lead').textContent = 'Suspend a root account to lock out all IAM users, or stop services when a bill is unpaid.';
     }
     const accounts = await api('GET', '/api/accounts');
     accountsCache = Array.isArray(accounts) ? accounts : [];

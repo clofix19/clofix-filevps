@@ -15,7 +15,7 @@ contents:
     file_info: { mode: 0755 }
   - src: ./packaging/systemd/clofix-worker.service
     dst: /lib/systemd/system/clofix-worker.service
-  - src: ./packaging/config/worker.json
+  - src: ./dist/worker.json
     dst: /etc/clofix-filevps/worker.json
     type: config|noreplace
   - src: ./scripts/build-managed-templates.sh

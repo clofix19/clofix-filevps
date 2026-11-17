@@ -1,0 +1,73 @@
+# Production-oriented customer controller: db + S3 master + admin.
+# Copied to the remote host under /opt/clofix-admin (build context = that directory).
+# Does NOT start a Compose worker — enroll Linux workers via deploy/worker.
+name: clofix-admin
+services:
+  s3pool:
+    image: chrislusf/seaweedfs:4.51
+    entrypoint: ["/bin/sh", "/opt/clofix/s3-entrypoint.sh"]
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+      S3_DEFAULT_REPLICATION: ${S3_DEFAULT_REPLICATION:-000}
+    volumes:
+      - s3masterdata:/data
+      - ./storage/s3-entrypoint.sh:/opt/clofix/s3-entrypoint.sh:ro
+    ports:
+      - "${S3_GATEWAY_BIND:-127.0.0.1}:8333:8333"
+      - "${S3_MASTER_BIND_IP:-0.0.0.0}:9333:9333"
+      - "${S3_MASTER_BIND_IP:-0.0.0.0}:19333:19333"
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: clofix
+      POSTGRES_USER: clofix
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./admin/db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clofix -d clofix"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  admin:
+    build:
+      context: .
+      dockerfile: admin/Dockerfile
+    environment:
+      CLOFIX_ADMIN_EMAIL: ${CLOFIX_ADMIN_EMAIL:?set CLOFIX_ADMIN_EMAIL}
+      CLOFIX_ADMIN_PASSWORD: ${CLOFIX_ADMIN_PASSWORD:?set CLOFIX_ADMIN_PASSWORD}
+      CLOFIX_DB_URL: postgres://clofix:${DB_PASSWORD}@db:5432/clofix?sslmode=disable
+      CLOFIX_DATA_DIR: /data
+      CLOFIX_LICENSE_SERVER_URL: ${CLOFIX_LICENSE_SERVER_URL:-}
+      CLOFIX_LICENSE_PUBLIC_URL: ${CLOFIX_LICENSE_PUBLIC_URL:-}
+      CLOFIX_TLS_NAMES: ${CLOFIX_TLS_NAMES:-localhost,127.0.0.1,admin}
+      CLOFIX_ACME_EMAIL: ${CLOFIX_ACME_EMAIL:-}
+      CLOFIX_S3_MASTER_ADDRESS: ${CLOFIX_S3_MASTER_ADDRESS:-s3pool:9333}
+      CLOFIX_K8S_E2E: ${CLOFIX_K8S_E2E:-}
+    ports:
+      - "${ADMIN_HTTP_BIND:-0.0.0.0}:8080:8080"
+      - "${ADMIN_MTLS_BIND:-0.0.0.0}:8443:8443"
+      - "${DNS_BIND:-127.0.0.1}:53:53/udp"
+      - "${DNS_BIND:-127.0.0.1}:53:53/tcp"
+      - "${HTTP_BIND:-127.0.0.1}:80:80"
+      - "${HTTPS_BIND:-127.0.0.1}:443:443"
+    volumes:
+      - ctldata:/data
+      - ./admin/web:/app/web:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      s3pool:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  s3masterdata:
+  dbdata:
+  ctldata:

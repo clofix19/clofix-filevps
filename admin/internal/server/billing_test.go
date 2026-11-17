@@ -34,7 +34,7 @@ func TestPricingAndBillingSeparation(t *testing.T) {
 	if err := json.Unmarshal(catalog.Body.Bytes(), &pricing); err != nil {
 		t.Fatal(err)
 	}
-	if len(pricing.Plans) != 0 || len(pricing.Resources) != 12 || pricing.Gateway["secret"] != nil || pricing.Gateway["charges_processed"] != false {
+	if len(pricing.Plans) != 0 || len(pricing.Resources) != 13 || pricing.Gateway["secret"] != nil || pricing.Gateway["charges_processed"] != false {
 		t.Fatalf("unexpected catalog: %s", catalog.Body.String())
 	}
 	created := do(h, "POST", "/api/pricing/plans", `{"product":"vps","name":"Starter","description":"1 vCPU","currency":"USD","monthly_cents":1000,"hourly_cents":2,"cpu":1,"ram_mb":1024,"disk_mb":20480,"visible":true,"enabled":true}`, tok)
@@ -108,13 +108,13 @@ func TestPricingAndBillingSeparation(t *testing.T) {
 	}
 	var drafted struct{ Invoice billingInvoice }
 	json.Unmarshal(inv.Body.Bytes(), &drafted)
-	if drafted.Invoice.AmountCents != 1000 || drafted.Invoice.Status != "draft" || drafted.Invoice.USDCents != 1000 || drafted.Invoice.BDTCents != 122000 || len(drafted.Invoice.Lines) == 0 {
+	if drafted.Invoice.AmountCents != 1000 || drafted.Invoice.Status != "draft" || drafted.Invoice.TaxCents != 150 || drafted.Invoice.USDCents != 1150 || drafted.Invoice.BDTCents != 140300 || len(drafted.Invoice.Lines) == 0 {
 		t.Fatal(inv.Body.String())
 	}
 	s.UIDir = "../../web/admin-ui"
 	pdf := do(h, "GET", "/api/billing/invoices/"+drafted.Invoice.ID+"/pdf", "", tok)
 	raw := pdf.Body.String()
-	if pdf.Code != 200 || !strings.HasPrefix(raw, "%PDF-1.4") || !strings.Contains(pdf.Header().Get("Content-Type"), "application/pdf") || !strings.Contains(pdf.Header().Get("Content-Disposition"), drafted.Invoice.ID+".pdf") || !strings.Contains(raw, drafted.Invoice.ID) || !strings.Contains(raw, "DRAFT") || !strings.Contains(raw, "INVOICE") || !strings.Contains(raw, "BILL TO") || !strings.Contains(raw, "DESCRIPTION") || !strings.Contains(raw, "Total") || !strings.Contains(raw, "USD") || !strings.Contains(raw, "BDT") || !strings.Contains(raw, "/Im1") {
+	if pdf.Code != 200 || !strings.HasPrefix(raw, "%PDF-1.4") || !strings.Contains(pdf.Header().Get("Content-Type"), "application/pdf") || !strings.Contains(pdf.Header().Get("Content-Disposition"), drafted.Invoice.ID+".pdf") || !strings.Contains(raw, drafted.Invoice.ID) || !strings.Contains(raw, "UNPAID") || !strings.Contains(raw, "INVOICE") || !strings.Contains(raw, "BILL TO") || !strings.Contains(raw, "DESCRIPTION") || !strings.Contains(raw, "Total due") || !strings.Contains(raw, "USD") || !strings.Contains(raw, "BDT") || !strings.Contains(raw, "/Im1") {
 		t.Fatal(pdf.Code, pdf.Header().Get("Content-Type"), raw)
 	}
 	if missing := do(h, "GET", "/api/billing/invoices/inv-missing/pdf", "", tok); missing.Code != 404 {
@@ -143,10 +143,10 @@ func TestPricingAndBillingSeparation(t *testing.T) {
 		BDTCents int64            `json:"bdt_cents"`
 		Months   []map[string]any `json:"months"`
 	}
-	if err := json.Unmarshal(report.Body.Bytes(), &totals); err != nil || len(totals.Currencies) != 1 || totals.Currencies[0].PaidCents != 1000 {
+	if err := json.Unmarshal(report.Body.Bytes(), &totals); err != nil || len(totals.Currencies) != 1 || totals.Currencies[0].PaidCents != 1150 {
 		t.Fatal(report.Body.String())
 	}
-	if totals.USDCents != 1000 || totals.BDTCents != 122000 || len(totals.Months) == 0 {
+	if totals.USDCents != 1150 || totals.BDTCents != 140300 || len(totals.Months) == 0 {
 		t.Fatal("monthly USD/BDT analysis missing", report.Body.String())
 	}
 }
@@ -190,15 +190,27 @@ func TestInvoicePDFProfessionalLayout(t *testing.T) {
 		ID: "inv-layoutcheck01", Owner: "acme", Description: "Starter monthly service",
 		Currency: "USD", AmountCents: 1000, TaxCents: 50, Status: "draft", Created: time.Unix(1_700_000_000, 0).UTC(),
 	}
-	plain := string(invoicePDF(inv, "VAT", 0, nil))
-	if !strings.HasPrefix(plain, "%PDF-1.4") || !strings.Contains(plain, "INVOICE") || !strings.Contains(plain, "BILL TO") || !strings.Contains(plain, "DESCRIPTION") || !strings.Contains(plain, "Total") || !strings.Contains(plain, "inv-layoutcheck01") || !strings.Contains(plain, "DRAFT") || !strings.Contains(plain, "acme") || strings.Contains(plain, "/Im1") {
+	plain := string(invoicePDF(inv, invoiceBrand{TaxName: "VAT", TaxPercent: 15, Company: "Acme Cloud", From: "Acme Ops", Footer: "Custom footer line", Notes: []string{"Custom note one."}}, 0))
+	if !strings.HasPrefix(plain, "%PDF-1.4") || !strings.Contains(plain, "INVOICE") || !strings.Contains(plain, "BILL TO") || !strings.Contains(plain, "DESCRIPTION") || !strings.Contains(plain, "Total due") || !strings.Contains(plain, "inv-layoutcheck01") || !strings.Contains(plain, "UNPAID") || !strings.Contains(plain, "acme") || !strings.Contains(plain, "Acme Ops") || !strings.Contains(plain, "Custom footer line") || !strings.Contains(plain, "Custom note one.") || !strings.Contains(plain, "VAT 15%") || !strings.Contains(plain, "USD 0.50") || strings.Contains(plain, "DRAFT") || strings.Contains(plain, "/Im1") {
 		t.Fatal(plain)
 	}
-	logo := loadInvoiceLogo("../../web/admin-ui")
+	missingTax := billingInvoice{
+		ID: "inv-taxfill01", Owner: "acme", Description: "Starter", Currency: "USD",
+		AmountCents: 1500, TaxCents: 0, Status: "draft", Created: time.Unix(1_700_000_000, 0).UTC(),
+	}
+	filled := string(invoicePDF(missingTax, invoiceBrand{TaxName: "VAT", TaxPercent: 15}, 0))
+	if !strings.Contains(filled, "VAT 15%") || !strings.Contains(filled, "USD 2.25") || !strings.Contains(filled, "USD 17.25") {
+		t.Fatal("expected VAT 15% applied on PDF", filled)
+	}
+	logo := loadInvoiceLogo("../../web/admin-ui", "", "")
 	if logo == nil || logo.Width != 400 || logo.Height != 149 {
 		t.Fatal("expected CloFix PNG logo")
 	}
-	branded := string(invoicePDF(inv, "VAT", 200, logo))
+	dw, dh, _, _ := pdfLogoPlacement(logo, 150, 44, 44, 738)
+	if dw <= 0 || dh <= 0 || dw > 150.01 || dh > 44.01 || (dw/dh) < 2.4 || (dw/dh) > 2.9 {
+		t.Fatalf("logo placement not aspect-fit: %.2fx%.2f", dw, dh)
+	}
+	branded := string(invoicePDF(inv, invoiceBrand{TaxName: "VAT", TaxPercent: 15, Logo: logo}, 200))
 	if !strings.Contains(branded, "/Im1") || !strings.Contains(branded, "/Subtype /Image") || !strings.Contains(branded, "Refunded") {
 		t.Fatal("logo or refund line missing")
 	}
@@ -210,7 +222,7 @@ func TestBillingInventoryStoppedVPSStorageOnly(t *testing.T) {
 	h := s.AdminHandler()
 	units := billingResourceUnits()
 	items := []map[string]any{}
-	rates := map[string]int64{"cpu": 100, "ram": 50, "ssd": 10, "volume": 25, "backup": 40, "lb": 300, "cks": 400, "efs": 15, "s3": 20, "app": 80, "ipv4": 5, "transfer": 1}
+	rates := map[string]int64{"cpu": 100, "ram": 50, "ssd": 10, "volume": 25, "backup": 40, "lb": 300, "cks": 400, "redis": 250, "efs": 15, "s3": 20, "app": 80, "ipv4": 5, "transfer": 1}
 	for _, name := range billingResources {
 		items = append(items, map[string]any{"resource": name, "unit": units[name], "monthly_cents": rates[name], "hourly_cents": 0, "currency": "USD", "enabled": true})
 	}
@@ -240,6 +252,13 @@ func TestBillingInventoryStoppedVPSStorageOnly(t *testing.T) {
 		NodePool: kubernetesState.NodePool{ID: "default", Count: 1, CPU: 1, RAMMB: 1024, DiskMB: 2048},
 	}
 	s.kubernetes.Unlock()
+	s.clusters.Lock()
+	s.clusters.Items["cs-aaaaaaaaaaaaaaaa"] = clusterService{
+		ID: "cs-aaaaaaaaaaaaaaaa", Name: "redis-lab", App: "redis", Topology: clusterTopoMasterMaster,
+		NodeCount: 3, Status: clusterStatusReady, AccountID: "acc-platform",
+		Nodes: []clusterServiceNode{{ID: "n1", InstanceID: "vps-run", Role: "member", Status: clusterNodeJoined}},
+	}
+	s.clusters.Unlock()
 	got := do(h, "GET", "/api/billing", "", tok)
 	var ledger struct {
 		Inventory []billingInventoryItem `json:"inventory"`
@@ -283,6 +302,10 @@ func TestBillingInventoryStoppedVPSStorageOnly(t *testing.T) {
 	cks, ok := byID["cks-edge"]
 	if !ok || cks.AmountCents != 570 || cks.Name != "eks-lab" || cks.Product != "cks" || cks.Kind != "cks" {
 		t.Fatalf("cks: %+v", cks)
+	}
+	redis, ok := byID["cs-aaaaaaaaaaaaaaaa"]
+	if !ok || redis.AmountCents != 250 || redis.Name != "redis-lab" || redis.Product != "redis" || redis.Kind != "redis" || redis.WorkerName != "edge-worker" {
+		t.Fatalf("redis cluster: %+v", redis)
 	}
 }
 

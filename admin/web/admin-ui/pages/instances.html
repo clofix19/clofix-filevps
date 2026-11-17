@@ -1,20 +1,142 @@
 {{define "content"}}
-<section class="page active" id="page-instances">
+<section class="page active instances-page" id="page-instances">
       <div class="section-head"><div><p class="eyebrow">Compute</p><h2>Your FileVPS instances</h2><p>Open an instance to view usage, metadata, logs, and port mappings.</p></div><button class="primary" id="instance-create-open" type="button">＋ Create FileVPS</button></div>
       <div class="settings-layout">
-        <nav class="settings-nav" aria-label="FileVPS sections">
-          <a href="#instances-overview" data-settings-link aria-controls="instances-overview" aria-current="location"><strong>Overview</strong><span>Usage cards and capacity charts</span></a>
-          <a href="#instances-list" data-settings-link aria-controls="instances-list"><strong>Instances</strong><span>Search FileVPS and CKS nodes</span></a>
-          <a href="#instances-keys" data-settings-link aria-controls="instances-keys"><strong>PEM keys</strong><span>Create and download SSH keys</span></a>
+        <nav class="settings-nav instances-nav" aria-label="FileVPS sections">
+          <a href="#instances-overview" data-settings-link aria-controls="instances-overview" aria-current="location" data-tone="cyan"><strong>Overview</strong><span>Usage cards and capacity charts</span></a>
+          <a href="#instances-list" data-settings-link aria-controls="instances-list" data-tone="violet"><strong>Instances</strong><span>Search FileVPS and CKS nodes</span></a>
+          <a href="#instances-keys" data-settings-link aria-controls="instances-keys" data-tone="amber"><strong>PEM keys</strong><span>Create and download SSH keys</span></a>
         </nav>
         <div class="settings-content">
-          <div class="settings-section" id="instances-overview" data-settings-panel aria-labelledby="instances-heading-overview">
+          <div class="settings-section home-usage-bit" id="instances-overview" data-settings-panel aria-labelledby="instances-heading-overview">
             <h2 id="instances-heading-overview" class="visually-hidden" tabindex="-1">Overview</h2>
-            <div class="cards"><div class="stat"><div class="stat-label">Total VPS</div><div class="stat-value" id="stat-total">—</div><div class="stat-note">All provisioned instances</div></div><div class="stat"><div class="stat-label">Running</div><div class="stat-value" id="stat-running">—</div><div class="stat-note">Currently active</div></div><div class="stat"><div class="stat-label">Memory (RAM)</div><div class="stat-value" id="stat-ram">—</div><div class="stat-note" id="stat-ram-note">Guest RAM in running VPS</div></div><div class="stat"><div class="stat-label">Swap</div><div class="stat-value" id="stat-swap">—</div><div class="stat-note" id="stat-swap-note">Guest swap in running VPS</div></div><div class="stat"><div class="stat-label">Disk (HDD)</div><div class="stat-value" id="stat-disk">—</div><div class="stat-note" id="stat-disk-note">Writable-layer usage</div></div><div class="stat"><div class="stat-label">CPU</div><div class="stat-value" id="stat-cpu">—</div><div class="stat-note">Average usage of running VPS</div></div><div class="stat"><div class="stat-label">Network IN</div><div class="stat-value" id="stat-net-in">—</div><div class="stat-note">Received by running guests</div></div><div class="stat"><div class="stat-label">Network OUT</div><div class="stat-value" id="stat-net-out">—</div><div class="stat-note">Sent by running guests</div></div><div class="stat"><div class="stat-label">Bandwidth</div><div class="stat-value" id="stat-net-bw">—</div><div class="stat-note">IN + OUT across running VPS</div></div></div>
-            <div class="chart-toolbar"><div class="chart-ranges" role="group" aria-label="Chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="6h" aria-pressed="false">6h</button><button type="button" data-chart-range="1d" aria-pressed="false">1d</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button><button type="button" data-chart-range="custom" aria-pressed="false">Custom</button></div><div class="chart-custom" hidden><label>From <input type="datetime-local" data-chart-from></label><label>To <input type="datetime-local" data-chart-to></label><button type="button" class="small-btn" data-chart-custom-apply>Apply</button></div></div>            <div class="chart-grid"><article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">CPU capacity</div><div class="chart-subtitle">Estimated usage and allocated capacity · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-cpu-current">—</div></div></div><svg id="chart-cpu" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live CPU usage and allocated capacity chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>Used vCPU</span><span><i class="legend-dot blue"></i>Allocated vCPU</span></div></article><article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Memory (RAM)</div><div class="chart-subtitle">Guest RAM usage against allocated limit · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-memory-current">—</div></div></div><svg id="chart-memory" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live memory usage and allocated capacity chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>Used RAM</span><span><i class="legend-dot blue"></i>Allocated RAM</span></div></article><article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Swap</div><div class="chart-subtitle">Guest swap usage against allocated limit · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-swap-current">—</div></div></div><svg id="chart-swap" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live swap usage and allocated capacity chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>Used swap</span><span><i class="legend-dot blue"></i>Allocated swap</span></div></article><article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Disk (HDD)</div><div class="chart-subtitle">Writable-layer usage vs placement allocation · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-disk-current">—</div></div></div><svg id="chart-disk" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live disk usage and allocated capacity chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>Used disk</span><span><i class="legend-dot blue"></i>Allocated disk</span></div></article><article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">VPS network</div><div class="chart-subtitle">Guest IN and OUT rates · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-net-current">—</div></div></div><svg id="chart-net" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS network IN and OUT chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>IN</span><span><i class="legend-dot amber"></i>OUT</span></div></article><article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">VPS bandwidth</div><div class="chart-subtitle">Combined guest IN + OUT · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-bw-current">—</div></div></div><svg id="chart-bw" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS bandwidth chart"></svg><div class="chart-legend"><span><i class="legend-dot blue"></i>Bandwidth</span></div></article></div>
+            <div class="ov-topbar">
+              <div class="bit-tile-row ov-summary">
+                <div class="bit-tile" data-bit="total"><div class="bit-kicker">VPS · TOTAL</div><div class="bit-value" id="stat-total">—</div><div class="bit-sub">All provisioned</div></div>
+                <div class="bit-tile" data-bit="filevps"><div class="bit-kicker">FileVPS</div><div class="bit-value" id="stat-filevps">—</div><div class="bit-sub">Guest instances</div></div>
+                <div class="bit-tile" data-bit="cks"><div class="bit-kicker">CKS</div><div class="bit-value" id="stat-cks">—</div><div class="bit-sub">Cluster nodes</div></div>
+                <div class="bit-tile" data-bit="run"><div class="bit-kicker">VPS · RUN</div><div class="bit-value" id="stat-running">—</div><div class="bit-sub">Currently active</div></div>
+                <div class="bit-tile" data-bit="stop"><div class="bit-kicker">VPS · STOP</div><div class="bit-value" id="stat-stopped">—</div><div class="bit-sub">Currently stopped</div></div>
+              </div>
+              <div class="chart-toolbar ov-toolbar"><div class="chart-ranges" role="group" aria-label="Chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="6h" aria-pressed="false">6h</button><button type="button" data-chart-range="1d" aria-pressed="false">1d</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button><button type="button" data-chart-range="custom" aria-pressed="false">Custom</button></div><div class="chart-custom" hidden><label>From <input type="datetime-local" data-chart-from></label><label>To <input type="datetime-local" data-chart-to></label><button type="button" class="small-btn" data-chart-custom-apply>Apply</button></div></div>
+            </div>
+
+            <section class="ov-board" aria-labelledby="ov-compute-heading">
+              <header class="ov-board-head"><h3 id="ov-compute-heading">Guest compute</h3><span class="ov-board-note">CPU and RAM across running FileVPS</span></header>
+              <div class="hard-bit-grid ov-graph-grid">
+                <section class="bit-card" data-bit="cpu">
+                  <div class="bit-side">
+                    <div class="bit-kicker">CPU · GUEST</div>
+                    <div class="bit-value" id="stat-cpu">—</div>
+                    <div class="bit-sub" id="chart-cpu-current">—</div>
+                    <div class="bit-pie-row">
+                      <svg class="bit-pie" id="pie-inst-cpu" viewBox="0 0 72 72" role="img" aria-label="Guest CPU pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-inst-cpu-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-inst-cpu-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                      <div class="bit-nums">
+                        <div><span>USED</span><strong id="pie-inst-cpu-used">—</strong></div>
+                        <div><span>FREE</span><strong id="pie-inst-cpu-free">—</strong></div>
+                        <div><span>AVG</span><strong id="pie-inst-cpu-alloc">—</strong></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="bit-graph"><div class="bit-graph-label">TREND</div><svg id="chart-cpu" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live CPU usage chart"></svg></div>
+                </section>
+                <section class="bit-card" data-bit="ram">
+                  <div class="bit-side">
+                    <div class="bit-kicker">RAM · GUEST</div>
+                    <div class="bit-value" id="stat-ram">—</div>
+                    <div class="bit-sub" id="stat-ram-note">Guest RAM in running VPS</div>
+                    <div class="bit-pie-row">
+                      <svg class="bit-pie" id="pie-inst-ram" viewBox="0 0 72 72" role="img" aria-label="Guest RAM pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-inst-ram-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-inst-ram-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                      <div class="bit-nums">
+                        <div><span>USED</span><strong id="pie-inst-ram-used">—</strong></div>
+                        <div><span>FREE</span><strong id="pie-inst-ram-free">—</strong></div>
+                        <div><span>ALLOC</span><strong id="pie-inst-ram-alloc">—</strong></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="bit-graph"><div class="bit-graph-label">TREND</div><svg id="chart-memory" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live memory usage chart"></svg><div class="bit-sub" id="chart-memory-current" hidden>—</div></div>
+                </section>
+              </div>
+            </section>
+
+            <section class="ov-board" aria-labelledby="ov-storage-heading">
+              <header class="ov-board-head"><h3 id="ov-storage-heading">Guest storage</h3><span class="ov-board-note">Swap and writable-layer disk</span></header>
+              <div class="hard-bit-grid ov-graph-grid">
+                <section class="bit-card" data-bit="swap">
+                  <div class="bit-side">
+                    <div class="bit-kicker">SWAP · GUEST</div>
+                    <div class="bit-value" id="stat-swap">—</div>
+                    <div class="bit-sub" id="stat-swap-note">Guest swap in running VPS</div>
+                    <div class="bit-pie-row">
+                      <svg class="bit-pie" id="pie-inst-swap" viewBox="0 0 72 72" role="img" aria-label="Guest swap pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-inst-swap-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-inst-swap-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                      <div class="bit-nums">
+                        <div><span>USED</span><strong id="pie-inst-swap-used">—</strong></div>
+                        <div><span>FREE</span><strong id="pie-inst-swap-free">—</strong></div>
+                        <div><span>ALLOC</span><strong id="pie-inst-swap-alloc">—</strong></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="bit-graph"><div class="bit-graph-label">TREND</div><svg id="chart-swap" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live swap usage chart"></svg><div class="bit-sub" id="chart-swap-current" hidden>—</div></div>
+                </section>
+                <section class="bit-card" data-bit="host-disk">
+                  <div class="bit-side">
+                    <div class="bit-kicker">DISK · GUEST</div>
+                    <div class="bit-value" id="stat-disk">—</div>
+                    <div class="bit-sub" id="stat-disk-note">Writable-layer usage</div>
+                    <div class="bit-pie-row">
+                      <svg class="bit-pie" id="pie-inst-disk" viewBox="0 0 72 72" role="img" aria-label="Guest disk pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-inst-disk-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-inst-disk-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                      <div class="bit-nums">
+                        <div><span>USED</span><strong id="pie-inst-disk-used">—</strong></div>
+                        <div><span>FREE</span><strong id="pie-inst-disk-free">—</strong></div>
+                        <div><span>ALLOC</span><strong id="pie-inst-disk-alloc">—</strong></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="bit-graph"><div class="bit-graph-label">TREND</div><svg id="chart-disk" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live disk usage chart"></svg><div class="bit-sub" id="chart-disk-current" hidden>—</div></div>
+                </section>
+              </div>
+            </section>
+
+            <section class="ov-board" aria-labelledby="ov-net-heading">
+              <header class="ov-board-head"><h3 id="ov-net-heading">Network</h3><span class="ov-board-note">Guest traffic and combined bandwidth</span></header>
+              <div class="hard-bit-grid ov-graph-grid">
+                <section class="bit-card" data-bit="vps-net">
+                  <div class="bit-side">
+                    <div class="bit-kicker">NET · VPS</div>
+                    <div class="bit-value" id="stat-net-bw">—</div>
+                    <div class="bit-sub" id="chart-net-current">—</div>
+                    <div class="bit-pie-row">
+                      <svg class="bit-pie" id="pie-inst-net" viewBox="0 0 72 72" role="img" aria-label="VPS IN share pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-inst-net-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-inst-net-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                      <div class="bit-nums">
+                        <div><span>IN</span><strong id="stat-net-in">—</strong></div>
+                        <div><span>OUT</span><strong id="stat-net-out">—</strong></div>
+                        <div><span>BW</span><strong id="pie-inst-net-alloc">—</strong></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="bit-graph"><div class="bit-graph-label">TREND</div><svg id="chart-net" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS network chart"></svg></div>
+                </section>
+                <section class="bit-card" data-bit="vps-bw">
+                  <div class="bit-side">
+                    <div class="bit-kicker">BW · VPS</div>
+                    <div class="bit-value" id="chart-bw-current">—</div>
+                    <div class="bit-sub">Combined throughput</div>
+                    <div class="bit-pie-row">
+                      <svg class="bit-pie" id="pie-inst-bw" viewBox="0 0 72 72" role="img" aria-label="VPS bandwidth pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-inst-bw-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-inst-bw-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                      <div class="bit-nums">
+                        <div><span>IN</span><strong id="pie-inst-bw-used">—</strong></div>
+                        <div><span>OUT</span><strong id="pie-inst-bw-free">—</strong></div>
+                        <div><span>SUM</span><strong id="pie-inst-bw-alloc">—</strong></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="bit-graph"><div class="bit-graph-label">TREND</div><svg id="chart-bw" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live VPS bandwidth chart"></svg></div>
+                </section>
+              </div>
+            </section>
           </div>
-          <div class="panel settings-section" id="instances-list" data-settings-panel aria-labelledby="instances-heading-list" hidden>
-            <div class="toolbar"><div><strong id="instances-heading-list">Instances</strong><div class="muted" style="font-size:11px;margin-top:3px">FileVPS guests and CKS nodes (EKS-style VPS groups) are listed together. CKS nodes run kubelet on dedicated workers, not FileVPS. Disk usage is measured from each FileVPS writable layer; CKS disk is the node allocation.</div></div><input class="field" id="instance-search" placeholder="Search FileVPS, CKS, EKS…"></div><div class="table-wrap"><table id="instances"></table></div>
+          <div class="panel settings-section instances-list-panel" id="instances-list" data-settings-panel aria-labelledby="instances-heading-list" hidden>
+            <div class="toolbar"><div><strong id="instances-heading-list">Instances</strong><div class="muted" style="font-size:11px;margin-top:3px">FileVPS guests and CKS nodes (EKS-style VPS groups) are listed together. CKS nodes run kubelet on dedicated workers, not FileVPS. Disk usage is measured from each FileVPS writable layer; CKS disk is the node allocation.</div></div><input class="field" id="instance-search" placeholder="Search FileVPS, CKS, EKS…"></div><div class="table-wrap instances-table-wrap"><table id="instances"></table></div>
           </div>
           <div class="panel settings-section" id="instances-keys" data-settings-panel aria-labelledby="pem-keys-heading" hidden>
             <div class="section-head"><div><p class="eyebrow">Access</p><h2 id="pem-keys-heading" tabindex="-1">PEM keys</h2><p>Create or delete saved SSH public keys. Generate a key to download the private PEM once.</p></div></div>

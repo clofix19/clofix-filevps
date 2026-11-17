@@ -150,6 +150,16 @@ func (m *MemoryStore) DeleteSession(id string) error {
 	delete(m.sessions, id)
 	return nil
 }
+func (m *MemoryStore) DeleteSessionsForUser(userID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, sess := range m.sessions {
+		if sess.UserID == userID {
+			delete(m.sessions, id)
+		}
+	}
+	return nil
+}
 func (m *MemoryStore) DeleteIAMUser(id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

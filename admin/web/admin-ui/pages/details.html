@@ -13,10 +13,139 @@
       <a href="#detail-ports" data-settings-link aria-controls="detail-ports"><strong>Networking</strong><span>Port maps and security group</span></a>
     </nav>
     <div class="settings-content">
-      <div class="settings-section" id="detail-overview" data-settings-panel aria-labelledby="detail-heading-overview">
+      <div class="settings-section home-usage-bit" id="detail-overview" data-settings-panel aria-labelledby="detail-heading-overview">
         <h2 id="detail-heading-overview" class="visually-hidden" tabindex="-1">Overview</h2>
-        <div class="cards"><div class="stat"><div class="stat-label">CPU usage</div><div class="stat-value" id="detail-cpu">—</div><div class="stat-note">Percent of allocated CPU</div><div class="meter"><div class="meter-fill" id="detail-cpu-bar"></div></div></div><div class="stat"><div class="stat-label">Memory (RAM)</div><div class="stat-value" id="detail-memory">—</div><div class="stat-note" id="detail-memory-note">Total guest memory, including processes, cache, and kernel</div><div class="meter"><div class="meter-fill" id="detail-memory-bar"></div></div></div><div class="stat"><div class="stat-label">Swap</div><div class="stat-value" id="detail-swap">—</div><div class="stat-note" id="detail-swap-note">Current / limit</div><div class="meter"><div class="meter-fill" id="detail-swap-bar"></div></div></div><div class="stat"><div class="stat-label">Disk (HDD)</div><div class="stat-value" id="detail-disk">—</div><div class="stat-note" id="detail-disk-note">Measured writable-layer usage</div><div class="meter"><div class="meter-fill" id="detail-disk-bar"></div></div></div><div class="stat"><div class="stat-label">CPU limit</div><div class="stat-value" id="detail-cpu-limit">—</div><div class="stat-note">Assigned virtual cores</div></div><div class="stat"><div class="stat-label">Memory limit</div><div class="stat-value" id="detail-memory-limit">—</div><div class="stat-note">Configured RAM</div></div><div class="stat"><div class="stat-label">Network IN</div><div class="stat-value" id="detail-net-in">—</div><div class="stat-note" id="detail-net-in-note">Received by this guest</div></div><div class="stat"><div class="stat-label">Network OUT</div><div class="stat-value" id="detail-net-out">—</div><div class="stat-note" id="detail-net-out-note">Sent by this guest</div></div><div class="stat"><div class="stat-label">Bandwidth</div><div class="stat-value" id="detail-net-bw">—</div><div class="stat-note" id="detail-net-bw-note">IN + OUT for this VPS</div></div></div>
-        <div class="chart-toolbar"><div class="chart-ranges" role="group" aria-label="Chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="6h" aria-pressed="false">6h</button><button type="button" data-chart-range="1d" aria-pressed="false">1d</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button><button type="button" data-chart-range="custom" aria-pressed="false">Custom</button></div><div class="chart-custom" hidden><label>From <input type="datetime-local" data-chart-from></label><label>To <input type="datetime-local" data-chart-to></label><button type="button" class="small-btn" data-chart-custom-apply>Apply</button></div></div><div class="chart-grid"><article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">VPS CPU</div><div class="chart-subtitle">This guest used and allocated cores · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-detail-cpu-current">—</div></div></div><svg id="chart-detail-cpu" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="This VPS CPU usage chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>Used vCPU</span><span><i class="legend-dot blue"></i>Allocated vCPU</span></div></article><article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Memory (RAM)</div><div class="chart-subtitle">This guest used and allocated memory · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-detail-memory-current">—</div></div></div><svg id="chart-detail-memory" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="This VPS memory usage chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>Used RAM</span><span><i class="legend-dot blue"></i>Allocated RAM</span></div></article><article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Swap</div><div class="chart-subtitle">This guest swap used and allocated · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-detail-swap-current">—</div></div></div><svg id="chart-detail-swap" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="This VPS swap usage chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>Used swap</span><span><i class="legend-dot blue"></i>Allocated swap</span></div></article><article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Disk (HDD)</div><div class="chart-subtitle">Writable-layer usage vs placement allocation · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-detail-disk-current">—</div></div></div><svg id="chart-detail-disk" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="This VPS disk usage chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>Used disk</span><span><i class="legend-dot blue"></i>Allocated disk</span></div></article><article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">VPS network</div><div class="chart-subtitle">This guest IN and OUT · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-detail-net-current">—</div></div></div><svg id="chart-detail-net" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="This VPS network IN and OUT chart"></svg><div class="chart-legend"><span><i class="legend-dot"></i>IN</span><span><i class="legend-dot amber"></i>OUT</span></div></article><article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">VPS bandwidth</div><div class="chart-subtitle">This guest IN + OUT · saved in this browser</div></div><div class="chart-tools"><div class="chart-current" id="chart-detail-bw-current">—</div></div></div><svg id="chart-detail-bw" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="This VPS bandwidth chart"></svg><div class="chart-legend"><span><i class="legend-dot blue"></i>Bandwidth</span></div></article></div>
+        <div class="ov-topbar">
+          <div class="bit-tile-row ov-summary">
+            <div class="bit-tile" data-bit="cpu"><div class="bit-kicker">CPU · LIMIT</div><div class="bit-value" id="detail-cpu-limit">—</div><div class="bit-sub">Assigned virtual cores</div></div>
+            <div class="bit-tile" data-bit="ram"><div class="bit-kicker">RAM · LIMIT</div><div class="bit-value" id="detail-memory-limit">—</div><div class="bit-sub">Configured memory</div></div>
+            <div class="bit-tile" data-bit="host-disk"><div class="bit-kicker">DISK · ALLOC</div><div class="bit-value" id="detail-disk-limit">—</div><div class="bit-sub">Placement allocation</div></div>
+            <div class="bit-tile" data-bit="run"><div class="bit-kicker">NET · BW</div><div class="bit-value" id="detail-net-bw">—</div><div class="bit-sub" id="detail-net-bw-note">IN + OUT</div></div>
+            <div class="bit-tile" data-bit="stop"><div class="bit-kicker">SWAP · LIMIT</div><div class="bit-value" id="detail-swap-limit">—</div><div class="bit-sub">Configured swap</div></div>
+          </div>
+          <div class="chart-toolbar ov-toolbar"><div class="chart-ranges" role="group" aria-label="Chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="6h" aria-pressed="false">6h</button><button type="button" data-chart-range="1d" aria-pressed="false">1d</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button><button type="button" data-chart-range="custom" aria-pressed="false">Custom</button></div><div class="chart-custom" hidden><label>From <input type="datetime-local" data-chart-from></label><label>To <input type="datetime-local" data-chart-to></label><button type="button" class="small-btn" data-chart-custom-apply>Apply</button></div></div>
+        </div>
+
+        <section class="ov-board" aria-labelledby="detail-ov-compute-heading">
+          <header class="ov-board-head"><h3 id="detail-ov-compute-heading">Guest compute</h3><span class="ov-board-note">Live CPU and RAM for this VPS</span></header>
+          <div class="hard-bit-grid ov-graph-grid">
+            <section class="bit-card" data-bit="cpu">
+              <div class="bit-side">
+                <div class="bit-kicker">CPU · GUEST</div>
+                <div class="bit-value" id="detail-cpu">—</div>
+                <div class="bit-sub" id="chart-detail-cpu-current">Percent of allocated CPU</div>
+                <div class="bit-pie-row">
+                  <svg class="bit-pie" id="pie-detail-cpu" viewBox="0 0 72 72" role="img" aria-label="Guest CPU pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-detail-cpu-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-detail-cpu-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                  <div class="bit-nums">
+                    <div><span>USED</span><strong id="pie-detail-cpu-used">—</strong></div>
+                    <div><span>FREE</span><strong id="pie-detail-cpu-free">—</strong></div>
+                    <div><span>ALLOC</span><strong id="pie-detail-cpu-alloc">—</strong></div>
+                  </div>
+                </div>
+                <div class="meter bit-meter" role="progressbar" aria-label="CPU usage" aria-valuemin="0" aria-valuemax="100"><div class="meter-fill" id="detail-cpu-bar"></div></div>
+              </div>
+              <div class="bit-graph"><div class="bit-graph-label">TREND</div><svg id="chart-detail-cpu" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="This VPS CPU usage chart"></svg></div>
+            </section>
+            <section class="bit-card" data-bit="ram">
+              <div class="bit-side">
+                <div class="bit-kicker">RAM · GUEST</div>
+                <div class="bit-value" id="detail-memory">—</div>
+                <div class="bit-sub" id="detail-memory-note">Guest memory including cache</div>
+                <div class="bit-pie-row">
+                  <svg class="bit-pie" id="pie-detail-ram" viewBox="0 0 72 72" role="img" aria-label="Guest RAM pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-detail-ram-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-detail-ram-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                  <div class="bit-nums">
+                    <div><span>USED</span><strong id="pie-detail-ram-used">—</strong></div>
+                    <div><span>FREE</span><strong id="pie-detail-ram-free">—</strong></div>
+                    <div><span>ALLOC</span><strong id="pie-detail-ram-alloc">—</strong></div>
+                  </div>
+                </div>
+                <div class="meter bit-meter" role="progressbar" aria-label="Memory usage" aria-valuemin="0" aria-valuemax="100"><div class="meter-fill" id="detail-memory-bar"></div></div>
+              </div>
+              <div class="bit-graph"><div class="bit-graph-label">TREND</div><svg id="chart-detail-memory" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="This VPS memory usage chart"></svg><div class="bit-sub" id="chart-detail-memory-current" hidden>—</div></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="ov-board" aria-labelledby="detail-ov-storage-heading">
+          <header class="ov-board-head"><h3 id="detail-ov-storage-heading">Guest storage</h3><span class="ov-board-note">Swap and writable-layer disk</span></header>
+          <div class="hard-bit-grid ov-graph-grid">
+            <section class="bit-card" data-bit="swap">
+              <div class="bit-side">
+                <div class="bit-kicker">SWAP · GUEST</div>
+                <div class="bit-value" id="detail-swap">—</div>
+                <div class="bit-sub" id="detail-swap-note">Current / limit</div>
+                <div class="bit-pie-row">
+                  <svg class="bit-pie" id="pie-detail-swap" viewBox="0 0 72 72" role="img" aria-label="Guest swap pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-detail-swap-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-detail-swap-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                  <div class="bit-nums">
+                    <div><span>USED</span><strong id="pie-detail-swap-used">—</strong></div>
+                    <div><span>FREE</span><strong id="pie-detail-swap-free">—</strong></div>
+                    <div><span>ALLOC</span><strong id="pie-detail-swap-alloc">—</strong></div>
+                  </div>
+                </div>
+                <div class="meter bit-meter" role="progressbar" aria-label="Swap usage" aria-valuemin="0" aria-valuemax="100"><div class="meter-fill" id="detail-swap-bar"></div></div>
+              </div>
+              <div class="bit-graph"><div class="bit-graph-label">TREND</div><svg id="chart-detail-swap" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="This VPS swap usage chart"></svg><div class="bit-sub" id="chart-detail-swap-current" hidden>—</div></div>
+            </section>
+            <section class="bit-card" data-bit="host-disk">
+              <div class="bit-side">
+                <div class="bit-kicker">DISK · GUEST</div>
+                <div class="bit-value" id="detail-disk">—</div>
+                <div class="bit-sub" id="detail-disk-note">Writable-layer usage</div>
+                <div class="bit-pie-row">
+                  <svg class="bit-pie" id="pie-detail-disk" viewBox="0 0 72 72" role="img" aria-label="Guest disk pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-detail-disk-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-detail-disk-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                  <div class="bit-nums">
+                    <div><span>USED</span><strong id="pie-detail-disk-used">—</strong></div>
+                    <div><span>FREE</span><strong id="pie-detail-disk-free">—</strong></div>
+                    <div><span>ALLOC</span><strong id="pie-detail-disk-alloc">—</strong></div>
+                  </div>
+                </div>
+                <div class="meter bit-meter" role="progressbar" aria-label="Disk usage" aria-valuemin="0" aria-valuemax="100"><div class="meter-fill" id="detail-disk-bar"></div></div>
+              </div>
+              <div class="bit-graph"><div class="bit-graph-label">TREND</div><svg id="chart-detail-disk" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="This VPS disk usage chart"></svg><div class="bit-sub" id="chart-detail-disk-current" hidden>—</div></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="ov-board" aria-labelledby="detail-ov-net-heading">
+          <header class="ov-board-head"><h3 id="detail-ov-net-heading">Network</h3><span class="ov-board-note">Guest traffic and combined bandwidth</span></header>
+          <div class="hard-bit-grid ov-graph-grid">
+            <section class="bit-card" data-bit="vps-net">
+              <div class="bit-side">
+                <div class="bit-kicker">NET · VPS</div>
+                <div class="bit-value" id="detail-net-sum">—</div>
+                <div class="bit-sub" id="chart-detail-net-current">Guest eth0 counters</div>
+                <div class="bit-pie-row">
+                  <svg class="bit-pie" id="pie-detail-net" viewBox="0 0 72 72" role="img" aria-label="VPS network pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-detail-net-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-detail-net-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                  <div class="bit-nums">
+                    <div><span>IN</span><strong id="detail-net-in">—</strong></div>
+                    <div><span>OUT</span><strong id="detail-net-out">—</strong></div>
+                    <div><span>BW</span><strong id="pie-detail-net-alloc">—</strong></div>
+                  </div>
+                </div>
+                <div class="bit-sub" id="detail-net-in-note" hidden>—</div>
+                <div class="bit-sub" id="detail-net-out-note" hidden>—</div>
+              </div>
+              <div class="bit-graph"><div class="bit-graph-label">TREND</div><svg id="chart-detail-net" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="This VPS network IN and OUT chart"></svg></div>
+            </section>
+            <section class="bit-card" data-bit="vps-bw">
+              <div class="bit-side">
+                <div class="bit-kicker">BW · VPS</div>
+                <div class="bit-value" id="chart-detail-bw-current">—</div>
+                <div class="bit-sub">Combined throughput</div>
+                <div class="bit-pie-row">
+                  <svg class="bit-pie" id="pie-detail-bw" viewBox="0 0 72 72" role="img" aria-label="VPS bandwidth pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-detail-bw-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-detail-bw-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                  <div class="bit-nums">
+                    <div><span>IN</span><strong id="pie-detail-bw-used">—</strong></div>
+                    <div><span>OUT</span><strong id="pie-detail-bw-free">—</strong></div>
+                    <div><span>SUM</span><strong id="pie-detail-bw-alloc">—</strong></div>
+                  </div>
+                </div>
+              </div>
+              <div class="bit-graph"><div class="bit-graph-label">TREND</div><svg id="chart-detail-bw" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="This VPS bandwidth chart"></svg></div>
+            </section>
+          </div>
+        </section>
+
         <div class="detail-layout"><div class="panel"><div class="section-head"><div><h2>VPS metadata</h2><p>Configuration and placement information.</p></div></div><div class="meta-grid" id="metadata"></div></div>
           <div class="panel"><div class="section-head"><div><h2>Instance actions</h2><p>Manage the selected VPS.</p></div></div><div class="inline-fields" id="detail-actions"></div><div class="message" id="detail-message"></div><button class="secondary" id="load-logs">View instance logs</button><pre id="detail-logs" class="log-view" style="display:none"></pre></div></div>
       </div>

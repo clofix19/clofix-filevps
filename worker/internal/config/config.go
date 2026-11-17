@@ -8,11 +8,16 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
+
+// BakedInstallationID is set at build time via -ldflags for a controller-bound worker package.
+var BakedInstallationID string
 
 type Config struct {
 	ControllerURL      string `json:"controller_url"`
 	WorkerID           string `json:"worker_id"`
+	InstallationID     string `json:"installation_id,omitempty"`
 	HostReserveMB      int64  `json:"host_reserve_mb"`
 	ZRAMMB             int64  `json:"zram_mb"` // 0 = disabled
 	HeartbeatSeconds   int    `json:"heartbeat_seconds"`
@@ -71,7 +76,19 @@ func Load() (Config, error) {
 	if v := os.Getenv("CLOFIX_S3_DATA_DIR"); v != "" {
 		c.S3DataDir = v
 	}
+	c.InstallationID = ResolveInstallationID(c)
 	return c, nil
+}
+
+// ResolveInstallationID prefers env, then worker.json, then the build-time baked ID.
+func ResolveInstallationID(c Config) string {
+	if v := strings.TrimSpace(os.Getenv("CLOFIX_INSTALLATION_ID")); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(c.InstallationID); v != "" {
+		return v
+	}
+	return strings.TrimSpace(BakedInstallationID)
 }
 
 func (c Config) Save() error {

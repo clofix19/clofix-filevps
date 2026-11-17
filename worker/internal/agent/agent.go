@@ -236,7 +236,7 @@ func (a *Agent) beat(ctx context.Context) error {
 		dockerStatus, _ = json.Marshal(a.dockerStatus)
 		a.mu.Unlock()
 	}
-	body, _ := json.Marshal(proto.Heartbeat{DatabaseResults: a.Database.Results(), DatabaseStatuses: statuses, KubernetesResults: kubeResults, KubernetesStatuses: kubeStatuses, DockerResults: dockerResults, DockerStatus: dockerStatus, ManagedApps: a.Managed.Statuses(), ExecutionProgress: progress, Version: Version, Capacity: a.capacity(), Instances: a.Engine.Statuses(), Volumes: a.Engine.VolumeStatuses(), Backups: a.Engine.BackupStatuses(), LogTails: a.collectLogTails(), Results: res})
+	body, _ := json.Marshal(proto.Heartbeat{DatabaseResults: a.Database.Results(), DatabaseStatuses: statuses, KubernetesResults: kubeResults, KubernetesStatuses: kubeStatuses, DockerResults: dockerResults, DockerStatus: dockerStatus, ManagedApps: a.Managed.Statuses(), ExecutionProgress: progress, Version: Version, InstallationID: a.Cfg.InstallationID, Capacity: a.capacity(), Instances: a.Engine.Statuses(), Volumes: a.Engine.VolumeStatuses(), Backups: a.Engine.BackupStatuses(), LogTails: a.collectLogTails(), Results: res})
 	resp, err := a.hc.Post(a.Cfg.ControllerURL+"/v1/heartbeat", "application/json", bytes.NewReader(body))
 	if err != nil {
 		a.requeue(res)
@@ -245,6 +245,9 @@ func (a *Agent) beat(ctx context.Context) error {
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		a.requeue(res)
+		if resp.StatusCode == 403 {
+			return fmt.Errorf("controller returned 403 (Installation ID mismatch or worker revoked)")
+		}
 		return fmt.Errorf("controller returned %d", resp.StatusCode)
 	}
 	var hr proto.HeartbeatResponse
