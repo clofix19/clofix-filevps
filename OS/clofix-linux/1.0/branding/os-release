@@ -1,0 +1,13 @@
+PRETTY_NAME="CloFix Linux 1.0"
+NAME="CloFix Linux"
+VERSION_ID="1.0"
+VERSION="1.0.0 (stable)"
+VERSION_CODENAME=clofix
+ID=clofix
+ID_LIKE="ubuntu debian"
+HOME_URL="https://clofix.com/"
+SUPPORT_URL="https://clofix.com/support"
+BUG_REPORT_URL="https://clofix.com/support"
+PRIVACY_POLICY_URL="https://clofix.com/privacy"
+UBUNTU_CODENAME=noble
+LOGO=clofix

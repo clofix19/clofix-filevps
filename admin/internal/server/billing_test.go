@@ -8,6 +8,7 @@ import (
 
 	kubernetesState "github.com/clofix/filevps/admin/internal/kubernetes"
 	"github.com/clofix/filevps/admin/internal/store"
+	dock "github.com/clofix/filevps/worker/pkg/docker"
 	"github.com/clofix/filevps/worker/pkg/proto"
 	"github.com/clofix/filevps/worker/pkg/scheduler"
 )
@@ -34,7 +35,7 @@ func TestPricingAndBillingSeparation(t *testing.T) {
 	if err := json.Unmarshal(catalog.Body.Bytes(), &pricing); err != nil {
 		t.Fatal(err)
 	}
-	if len(pricing.Plans) != 0 || len(pricing.Resources) != 13 || pricing.Gateway["secret"] != nil || pricing.Gateway["charges_processed"] != false {
+	if len(pricing.Plans) != 0 || len(pricing.Resources) != 14 || pricing.Gateway["secret"] != nil || pricing.Gateway["charges_processed"] != false {
 		t.Fatalf("unexpected catalog: %s", catalog.Body.String())
 	}
 	created := do(h, "POST", "/api/pricing/plans", `{"product":"vps","name":"Starter","description":"1 vCPU","currency":"USD","monthly_cents":1000,"hourly_cents":2,"cpu":1,"ram_mb":1024,"disk_mb":20480,"visible":true,"enabled":true}`, tok)
@@ -222,7 +223,7 @@ func TestBillingInventoryStoppedVPSStorageOnly(t *testing.T) {
 	h := s.AdminHandler()
 	units := billingResourceUnits()
 	items := []map[string]any{}
-	rates := map[string]int64{"cpu": 100, "ram": 50, "ssd": 10, "volume": 25, "backup": 40, "lb": 300, "cks": 400, "redis": 250, "efs": 15, "s3": 20, "app": 80, "ipv4": 5, "transfer": 1}
+	rates := map[string]int64{"cpu": 100, "ram": 50, "ssd": 10, "volume": 25, "backup": 40, "lb": 300, "cks": 400, "redis": 250, "docker": 180, "efs": 15, "s3": 20, "app": 80, "ipv4": 5, "transfer": 1}
 	for _, name := range billingResources {
 		items = append(items, map[string]any{"resource": name, "unit": units[name], "monthly_cents": rates[name], "hourly_cents": 0, "currency": "USD", "enabled": true})
 	}
@@ -306,6 +307,43 @@ func TestBillingInventoryStoppedVPSStorageOnly(t *testing.T) {
 	redis, ok := byID["cs-aaaaaaaaaaaaaaaa"]
 	if !ok || redis.AmountCents != 250 || redis.Name != "redis-lab" || redis.Product != "redis" || redis.Kind != "redis" || redis.WorkerName != "edge-worker" {
 		t.Fatalf("redis cluster: %+v", redis)
+	}
+	s.docker.mu.Lock()
+	s.docker.Applications["dca-lab"] = dockerApplication{
+		ID: "dca-lab", Name: "nginx-edge", Owner: "acc-platform", WorkerID: "w1", State: "running",
+		Method: "image", Spec: dock.ContainerSpec{RAMMB: 1024, CPU: 1},
+	}
+	s.docker.mu.Unlock()
+	got = do(h, "GET", "/api/billing", "", tok)
+	if err := json.Unmarshal(got.Body.Bytes(), &ledger); err != nil {
+		t.Fatal(err)
+	}
+	byID = map[string]billingInventoryItem{}
+	for _, item := range ledger.Inventory {
+		byID[item.ID] = item
+	}
+	// docker unit 180 + 1 vCPU 100 + 1GB RAM 50 = 330
+	dapp, ok := byID["dca-lab"]
+	if !ok || dapp.AmountCents != 330 || dapp.Name != "nginx-edge" || dapp.Product != "docker" || dapp.Kind != "docker" || dapp.WorkerName != "edge-worker" {
+		t.Fatalf("docker app: %+v", dapp)
+	}
+	s.docker.mu.Lock()
+	s.docker.Volumes["dcv-lab"] = dockerVolume{
+		ID: "dcv-lab", Name: "app-data", Owner: "acc-platform", WorkerID: "w1", QuotaMB: 2048, DeleteProtection: true,
+	}
+	s.docker.mu.Unlock()
+	got = do(h, "GET", "/api/billing", "", tok)
+	if err := json.Unmarshal(got.Body.Bytes(), &ledger); err != nil {
+		t.Fatal(err)
+	}
+	byID = map[string]billingInventoryItem{}
+	for _, item := range ledger.Inventory {
+		byID[item.ID] = item
+	}
+	// 2 GB volume @ 25 = 50
+	dvol, ok := byID["dcv-lab"]
+	if !ok || dvol.AmountCents != 50 || dvol.Name != "app-data" || dvol.Product != "docker" || dvol.Kind != "docker-volume" || dvol.WorkerName != "edge-worker" || !dvol.StorageOnly {
+		t.Fatalf("docker volume: %+v", dvol)
 	}
 }
 

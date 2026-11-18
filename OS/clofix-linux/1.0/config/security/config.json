@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "mode": "standard",
+  "data_dir": "/var/lib/clofix/guard",
+  "intervals": {
+    "fim_seconds": 300,
+    "process_seconds": 60,
+    "network_seconds": 60,
+    "auth_seconds": 30,
+    "vuln_hours": 24,
+    "score_seconds": 300
+  },
+  "fim": {
+    "enabled": true,
+    "paths": ["/etc", "/usr/bin", "/usr/sbin", "/boot", "/etc/ssh", "/etc/cron.d", "/etc/systemd/system", "/etc/sudoers", "/etc/sudoers.d"],
+    "exclude": ["/etc/mtab", "/etc/resolv.conf"]
+  },
+  "ssh": {
+    "enabled": true,
+    "config_path": "/etc/ssh/sshd_config",
+    "auth_log_paths": ["/var/log/auth.log", "/var/log/secure"],
+    "fail_threshold": 8,
+    "fail_window_seconds": 300,
+    "preserve_emergency_access": true
+  },
+  "firewall": {
+    "enabled": true,
+    "apply_default_rules": false,
+    "require_nft": true
+  },
+  "process": {
+    "enabled": true,
+    "allow_terminate": false,
+    "require_explicit_rule": true
+  },
+  "network": {
+    "enabled": true
+  },
+  "malware": {
+    "enabled": true,
+    "hash_db_path": "/etc/clofix/guard/malware-hashes.txt",
+    "allow_quarantine": false,
+    "quarantine_dir": "/var/lib/clofix/quarantine"
+  },
+  "vulnerability": {
+    "enabled": true,
+    "use_osv": false,
+    "use_offline": true
+  },
+  "autopilot": {
+    "enabled": false,
+    "allow_safe_mutation": false,
+    "allow_high_risk": false,
+    "allow_destructive": false
+  },
+  "host_api": {
+    "enabled": false,
+    "endpoint": "",
+    "token_path": "/etc/clofix/guard/host-token"
+  },
+  "allowlist_ips": []
+}

@@ -105,7 +105,10 @@
       <label>Redis clusters<input id="limit-redis-clusters" type="number" min="-1" max="1000000" value="5"></label>
       <label>Docker containers<input id="limit-docker-containers" type="number" min="-1" max="1000000" value="100"></label>
       <label>Docker applications<input id="limit-docker-applications" type="number" min="-1" max="1000000" value="50"></label>
+      <label>Docker Compose projects<input id="limit-docker-compose" type="number" min="-1" max="1000000" value="25"></label>
       <label>Docker workers<input id="limit-docker-workers" type="number" min="-1" max="1000000" value="10"></label>
+      <label>Docker volumes<input id="limit-docker-volumes" type="number" min="-1" max="1000000" value="50"></label>
+      <label>Docker volume backups<input id="limit-docker-backups" type="number" min="-1" max="1000000" value="100"></label>
     </div></fieldset>
     <fieldset><legend>Databases</legend>
       <p class="muted">MySQL, PostgreSQL, MongoDB and Redis on opted-in Linux workers.</p>
@@ -180,7 +183,10 @@ const extraLimits=[
   {key:"max_redis_clusters",id:"limit-redis-clusters",label:"Redis clusters"},
   {key:"max_docker_containers",id:"limit-docker-containers",label:"Docker containers"},
   {key:"max_docker_applications",id:"limit-docker-applications",label:"Docker applications"},
-  {key:"max_docker_workers",id:"limit-docker-workers",label:"Docker workers"}
+  {key:"max_docker_compose",id:"limit-docker-compose",label:"Docker Compose projects"},
+  {key:"max_docker_workers",id:"limit-docker-workers",label:"Docker workers"},
+  {key:"max_docker_volumes",id:"limit-docker-volumes",label:"Docker volumes"},
+  {key:"max_docker_backups",id:"limit-docker-backups",label:"Docker volume backups"}
 ];
 function extraPayload(){
   return Object.fromEntries(extraLimits.map(x=>[x.key,$(x.id).value.trim()===''?null:Number($(x.id).value)]));
@@ -201,7 +207,7 @@ function badge(text){
 function renderPlans(){
   const table=$('plans');
   table.replaceChildren();
-  row(table,['Plan','Licenses','VPS / workers / LBs / CKS / Redis','Entitlements','Issuance','Actions'],true);
+  row(table,['Plan','Licenses','VPS / workers / LBs / CKS / Redis / Docker','Entitlements','Issuance','Actions'],true);
   if(!plans.length){
     row(table,['No plans yet. Create your first plan.','','','','','']);
     return;
@@ -241,7 +247,7 @@ function renderPlans(){
     row(table,[
       p.name,
       count,
-      `${p.max_vps} / ${p.max_workers} / ${p.max_load_balancers} / ${formatLimit(p.max_kubernetes_clusters)} / ${formatLimit(p.max_redis_clusters)}`,
+      `${p.max_vps} / ${p.max_workers} / ${p.max_load_balancers} / ${formatLimit(p.max_kubernetes_clusters)} / ${formatLimit(p.max_redis_clusters)} / ${formatLimit(p.max_docker_applications)}`,
       limits,
       p.active?badge('Active'):badge('Disabled'),
       actions

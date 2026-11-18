@@ -5,3 +5,9 @@ deploy/worker/dist/
 
 # Worker / deploy build artifacts (SeaweedFS weed ~150MB)
 worker/dist/
+
+# FileVPS OS rootfs archives (multi‑GB; rebuild via Docker / OS/*/build-rootfs.sh)
+OS/**/rootfs.tar.gz
+OS/**/*.tar.gz
+OS/**/.build/
+OS/**/dist/

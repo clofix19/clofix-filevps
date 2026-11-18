@@ -264,9 +264,14 @@ func (m *Manager) Reserved() (uint64, float64, uint64) {
 	var ram, disk uint64
 	var cpu float64
 	for _, r := range m.records {
-		ram += uint64(r.Spec.RAMMB) << 20
-		cpu += r.Spec.CPU
+		// Disk stays reserved while the project exists; RAM/CPU only while the
+		// engine is expected to be live (not inspection / failed leftovers).
 		disk += uint64(r.Spec.DiskMB) << 20
+		switch r.State {
+		case "READY", "PROVISIONING", "UNHEALTHY":
+			ram += uint64(r.Spec.RAMMB) << 20
+			cpu += r.Spec.CPU
+		}
 	}
 	return ram, cpu, disk
 }

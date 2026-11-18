@@ -333,6 +333,8 @@ func (m *Manager) Run(ctx context.Context, op dock.Operation) {
 		logs, err = m.compose(ctx, op, "up", "-d", "--scale", fmt.Sprintf("%s=%d", op.ServiceName, op.Scale), "--no-recreate")
 	case "git-build":
 		logs, data, err = m.gitBuild(ctx, op)
+	case "git-compose":
+		logs, data, err = m.gitCompose(ctx, op)
 	case "volume-backup":
 		logs, err = m.volumeBackup(ctx, op)
 	case "volume-restore":
@@ -927,18 +929,18 @@ func validateComposeYAML(yaml string) error {
 	return nil
 }
 
-func (m *Manager) gitBuild(ctx context.Context, op dock.Operation) (string, any, error) {
+func (m *Manager) gitClone(ctx context.Context, op dock.Operation) (dir, cloneLogs string, err error) {
 	if op.GitURL == "" {
-		return "", nil, fmt.Errorf("git url required")
+		return "", "", fmt.Errorf("git url required")
 	}
-	dir := filepath.Join(m.stateDir, "builds", op.JobID)
+	dir = filepath.Join(m.stateDir, "builds", op.JobID)
 	_ = os.RemoveAll(dir)
-	if err := os.MkdirAll(dir, 0750); err != nil {
-		return "", nil, err
+	if err = os.MkdirAll(dir, 0750); err != nil {
+		return "", "", err
 	}
 	url := op.GitURL
 	if op.GitToken != "" {
-		url = injectGitToken(op.GitURL, op.GitToken)
+		url = injectGitToken(op.GitURL, op.GitToken, op.GitUsername)
 	}
 	branch := op.GitBranch
 	if branch == "" {
@@ -947,8 +949,37 @@ func (m *Manager) gitBuild(ctx context.Context, op dock.Operation) (string, any,
 	clone := exec.CommandContext(ctx, "git", "clone", "--depth", "1", "--branch", branch, url, dir)
 	var bout bytes.Buffer
 	clone.Stdout, clone.Stderr = &bout, &bout
-	if err := clone.Run(); err != nil {
-		return bout.String(), nil, fmt.Errorf("git clone failed")
+	if err = clone.Run(); err != nil {
+		return dir, bout.String(), fmt.Errorf("git clone failed (check git registration / private token)")
+	}
+	return dir, bout.String(), nil
+}
+
+func (m *Manager) registryLogin(ctx context.Context, reg *dock.RegistryAuth) error {
+	if reg == nil || reg.Username == "" {
+		return nil
+	}
+	server := reg.Server
+	if server == "" {
+		server = "https://index.docker.io/v1/"
+	}
+	login := m.cmd(ctx, "login", "--username", reg.Username, "--password-stdin", server)
+	login.Stdin = strings.NewReader(reg.Password)
+	var stderr bytes.Buffer
+	login.Stderr = &stderr
+	if err := login.Run(); err != nil {
+		return fmt.Errorf("registry login failed")
+	}
+	return nil
+}
+
+func (m *Manager) gitBuild(ctx context.Context, op dock.Operation) (string, any, error) {
+	dir, bout, err := m.gitClone(ctx, op)
+	if err != nil {
+		return bout, nil, err
+	}
+	if err := m.registryLogin(ctx, op.Registry); err != nil {
+		return bout, nil, err
 	}
 	df := op.Dockerfile
 	if df == "" {
@@ -964,14 +995,65 @@ func (m *Manager) gitBuild(ctx context.Context, op dock.Operation) (string, any,
 	}
 	args := []string{"build", "-f", filepath.Join(dir, df), "-t", tag, filepath.Join(dir, context)}
 	logs, err := m.run(ctx, args...)
-	return bout.String() + "\n" + logs, map[string]string{"image": tag}, err
+	return bout + "\n" + logs, map[string]string{"image": tag}, err
 }
 
-func injectGitToken(rawURL, token string) string {
-	if strings.HasPrefix(rawURL, "https://") {
-		return "https://oauth2:" + token + "@" + strings.TrimPrefix(rawURL, "https://")
+func (m *Manager) gitCompose(ctx context.Context, op dock.Operation) (string, any, error) {
+	dir, bout, err := m.gitClone(ctx, op)
+	if err != nil {
+		return bout, nil, err
 	}
-	return rawURL
+	if err := m.registryLogin(ctx, op.Registry); err != nil {
+		return bout, nil, err
+	}
+	cf := strings.TrimSpace(op.ComposeFile)
+	if cf == "" {
+		cf = "docker-compose.yml"
+	}
+	path := filepath.Join(dir, cf)
+	if _, err := os.Stat(path); err != nil {
+		alt := filepath.Join(dir, "compose.yaml")
+		if _, err2 := os.Stat(alt); err2 == nil {
+			path, cf = alt, "compose.yaml"
+		} else {
+			return bout, nil, fmt.Errorf("compose file not found: %s", cf)
+		}
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return bout, nil, err
+	}
+	if err := validateComposeYAML(string(raw)); err != nil {
+		return bout, nil, err
+	}
+	project := ""
+	if op.Compose != nil {
+		project = op.Compose.Project
+		if project == "" && op.Compose.ID != "" {
+			project = "clofix-" + op.Compose.ID
+		}
+		// Persist for later start/stop/restart via compose-* actions.
+		persistDir := filepath.Join(m.stateDir, "compose", op.Compose.ID)
+		_ = os.MkdirAll(persistDir, 0750)
+		_ = os.WriteFile(filepath.Join(persistDir, "compose.yaml"), raw, 0600)
+	}
+	if project == "" {
+		project = "clofix-" + op.JobID
+	}
+	cmdArgs := []string{"compose", "-f", path, "-p", project, "up", "-d", "--remove-orphans"}
+	logs, err := m.run(ctx, cmdArgs...)
+	return bout + "\n" + logs, map[string]string{"compose_yaml": string(raw), "compose_file": cf}, err
+}
+
+func injectGitToken(rawURL, token, username string) string {
+	if !strings.HasPrefix(rawURL, "https://") {
+		return rawURL
+	}
+	user := strings.TrimSpace(username)
+	if user == "" {
+		user = "oauth2"
+	}
+	return "https://" + user + ":" + token + "@" + strings.TrimPrefix(rawURL, "https://")
 }
 
 func (m *Manager) volumeBackup(ctx context.Context, op dock.Operation) (string, error) {

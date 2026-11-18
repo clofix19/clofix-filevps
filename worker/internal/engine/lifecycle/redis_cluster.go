@@ -20,6 +20,12 @@ func (e *Engine) ConfigureClusterNode(id string, spec proto.ClusterNodeSpec) err
 		return errors.New("VPS must be running to configure a cluster node")
 	}
 	// Cluster members must reach each other; default bridge ports are isolated.
+	// Persist AllowVPCPeers so Start/Setup does not re-isolate after worker restart.
+	peers := true
+	m.Spec.AllowVPCPeers = &peers
+	if err := e.save(m); err != nil {
+		return fmt.Errorf("persist VPC peer access: %w", err)
+	}
 	if e.Network != nil {
 		if err := e.Network.SetPortIsolated(id, false); err != nil {
 			return fmt.Errorf("enable VPC peer access: %w", err)
@@ -72,6 +78,9 @@ fi
 pkill -x redis-server >/dev/null 2>&1 || true
 sleep 1
 # Prefer direct start: service/systemctl restart can block forever in these guests.
+# Always force daemonize so configure never hangs on a foreground redis-server.
+sed -i 's/^daemonize .*/daemonize yes/' /etc/redis/redis.conf
+grep -q '^daemonize yes' /etc/redis/redis.conf || echo 'daemonize yes' >> /etc/redis/redis.conf
 redis-server /etc/redis/redis.conf
 for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
   redis-cli ping 2>/dev/null | grep -q PONG && exit 0
@@ -96,6 +105,12 @@ func (e *Engine) JoinCluster(id string, spec proto.ClusterNodeSpec) error {
 	}
 	if !e.CG.Alive(id) || m.Pid <= 0 {
 		return errors.New("VPS must be running to join a cluster")
+	}
+	peers := true
+	m.Spec.AllowVPCPeers = &peers
+	_ = e.save(m)
+	if e.Network != nil {
+		_ = e.Network.SetPortIsolated(id, false)
 	}
 	switch spec.Topology {
 	case "master_slave":

@@ -1,0 +1,8 @@
+/etc/clofix/upgrade-policy
+/etc/clofix/version
+/etc/issue
+/etc/issue.net
+/etc/motd
+/etc/lsb-release
+/etc/os-release
+/etc/profile.d/clofix-prompt.sh

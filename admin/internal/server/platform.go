@@ -53,7 +53,7 @@ func loadPlatform(dir string) *platformStore {
 		d.WhiteLabel.BrandName = "CloFix"
 	}
 	if d.WebConsole.Note == "" {
-		d.WebConsole.Note = "In-browser SSH uses the existing VPS SSH helper and gateway ports. Full web terminal remains optional."
+		d.WebConsole.Note = "In-browser Terminal on the VPS detail page opens a root shell over SSH using a private PEM key or PAM password."
 	}
 	return d
 }

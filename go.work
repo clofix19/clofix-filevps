@@ -1,6 +1,7 @@
-go 1.26.0
+go 1.27.2
 
 use (
+	./OS/clofix-linux/1.0
 	./admin
 	./license-server
 	./worker

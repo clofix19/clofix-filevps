@@ -7,8 +7,9 @@
   <title>CloFix · {{.Title}}</title>
   <link rel="icon" type="image/svg+xml" href="/clofix-mark.svg">
   <script>(function(){try{var ok={dark:1,light:1,midnight:1,slate:1,contrast:1,warm:1};var saved=localStorage.getItem('cf_theme');document.documentElement.dataset.theme=ok[saved]?saved:(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark')}catch(e){document.documentElement.dataset.theme='dark'}})();</script>
-  <link rel="stylesheet" href="/assets/app.css?v=20261104-mode-summaries">
+  <link rel="stylesheet" href="/assets/app.css?v=20261118-term-ui2">
   <link rel="stylesheet" href="/assets/refresh.css?v=20261117-users-nograph">
+  <link rel="stylesheet" href="/assets/vendor/xterm/xterm.css?v=5.5.0">
 </head>
 <body data-page="{{.Page}}" data-instance-id="{{.InstanceID}}">
   <header class="console-bar" role="banner">
@@ -105,18 +106,21 @@
       <time id="footer-clock">—</time>
     </div>
   </footer>
-  <dialog class="terminal-dialog" id="terminal-dialog"><div class="section-head"><div><p class="eyebrow">VPS Login Console</p><h2 id="terminal-title">Connect to VPS</h2></div><button type="button" class="secondary" id="terminal-close">Close</button></div><p class="muted">Open the Terminal app on your Mac and run this command. SSH will use your default private key. If your key is stored elsewhere, add <code>-i /path/to/private-key</code> after <code>ssh</code>.</p><code class="terminal-command" id="terminal-command"></code><div class="inline-fields"><button type="button" class="primary" id="terminal-copy">Copy SSH command</button><span class="message" id="terminal-message"></span></div><p class="muted">On the first connection, review the host fingerprint and type <code>yes</code> to continue. The VPS must be running and reachable at this Mac's localhost SSH port.</p></dialog>
+  <dialog class="terminal-dialog" id="terminal-dialog"><div class="section-head"><div><p class="eyebrow">VPS Login Console</p><h2 id="terminal-title">Connect to VPS</h2></div><button type="button" class="secondary" id="terminal-close">Close</button></div><p class="muted">Open the Terminal app on your Mac and run this command. For PAM password VPS, prefer <code>PreferredAuthentications=password</code> (your default Mac SSH key usually will not match). For PEM login, add <code>-i /path/to/private-key</code>.</p><code class="terminal-command" id="terminal-command"></code><div class="inline-fields"><button type="button" class="primary" id="terminal-copy">Copy SSH command</button><span class="message" id="terminal-message"></span></div><p class="muted">On the first connection, review the host fingerprint and type <code>yes</code> to continue. The VPS must be running and reachable at this Mac's localhost SSH port.</p></dialog>
   <dialog class="terminal-dialog" id="service-log-dialog"><div class="section-head"><div><p class="eyebrow">Live service log</p><h2 id="service-log-title">Service logs</h2></div><button type="button" class="secondary" id="service-log-close">Close</button></div><p class="muted">Log tail refreshed from the VPS worker heartbeat.</p><pre id="service-log-output" class="log-view"></pre></dialog>
   <dialog class="terminal-dialog" id="service-error-dialog"><div class="section-head"><div><p class="eyebrow">Application services</p><h2 id="service-error-title">Service error log</h2></div><button type="button" class="secondary" id="service-error-close">Close</button></div><p class="muted">Filtered <code>error.log</code> tail refreshed from the VPS worker heartbeat.</p><pre id="service-error-output" class="log-view"></pre></dialog>
   <dialog class="terminal-dialog" id="waf-log-dialog"><div class="section-head"><div><p class="eyebrow">CloFix Security · Nginx</p><h2>WAF error log</h2></div><button type="button" class="secondary" id="waf-log-close">Close</button></div><p class="muted">Recent Nginx error entries, including ModSecurity messages. Refreshed from the worker heartbeat.</p><pre id="waf-log-output" class="log-view"></pre></dialog>
-  <script src="/assets/app.js?v=20261117-users-nograph" defer></script>
+  <script src="/assets/vendor/xterm/xterm.js?v=5.5.0" defer></script>
+  <script src="/assets/vendor/xterm/addon-fit.js?v=0.10.0" defer></script>
+  <script src="/assets/app.js?v=20261118-host-ssh" defer></script>
+  <script src="/assets/vps-terminal.js?v=20261118-term-ui1" defer></script>
   <script src="/assets/qrcode-generator.min.js?v=1" defer></script>
   <script src="/assets/qr-mini.js?v=1" defer></script>
   <script src="/assets/profile.js?v=2" defer></script>
   <script src="/assets/users.js?v=20261104-users-edit" defer></script>
   <script src="/assets/managed-apps.js?v=12" defer></script>
   <script src="/assets/applications.js?v=4" defer></script>
-  <script src="/assets/docker.js?v=14-metrics-db" defer></script>
+  <script src="/assets/docker.js?v=20-backups-vols" defer></script>
   <script src="/assets/databases.js?v=10" defer></script>
   <script src="/assets/kubernetes.js?v=20261104-cks-fix" defer></script>
   <script src="/assets/redis-services.js?v=20261117-workers" defer></script>
@@ -124,10 +128,10 @@
   <script src="/assets/nlb-settings.js?v=6" defer></script>
   <script src="/assets/monitoring.js?v=8" defer></script>
   <script src="/assets/logs.js?v=3" defer></script>
-  <script src="/assets/license.js?v=14" defer></script>
+  <script src="/assets/license.js?v=20261117-organize" defer></script>
   <script src="/assets/license-status.js?v=20261117-expire" defer></script>
   <script src="/assets/settings-nav.js?v=11" defer></script>
-  <script src="/assets/billing.js?v=20261117-redis" defer></script>
+  <script src="/assets/billing.js?v=20261117-backups" defer></script>
   <script src="/assets/dns.js?v=20261104-certs" defer></script>
   <script src="/assets/vpc.js?v=3" defer></script>
   <script src="/assets/firewall.js?v=20261104-fw-layout" defer></script>

@@ -71,6 +71,7 @@ type dockerApplication struct {
 	Releases     []dockerRelease   `json:"releases,omitempty"`
 	GitURL       string            `json:"git_url,omitempty"`
 	GitBranch    string            `json:"git_branch,omitempty"`
+	Dockerfile   string            `json:"dockerfile,omitempty"`
 	WebhookSecret string           `json:"-"`
 	Domain       string            `json:"domain,omitempty"`
 	Events       []dockerEvent     `json:"events,omitempty"`
@@ -111,6 +112,7 @@ type dockerVolume struct {
 	Name             string    `json:"name"`
 	WorkerID         string    `json:"worker_id"`
 	DeleteProtection bool      `json:"delete_protection"`
+	QuotaMB          int64     `json:"quota_mb,omitempty"`
 	Created          time.Time `json:"created"`
 }
 
@@ -120,17 +122,31 @@ type dockerRegistry struct {
 	Name     string `json:"name"`
 	Server   string `json:"server"`
 	Username string `json:"username"`
-	Password string `json:"-"`
+	Password string `json:"password,omitempty"` // persisted; never returned by list APIs
+}
+
+// dockerGitCredential stores private Git repo access (GitHub/GitLab/Bitbucket token or password).
+type dockerGitCredential struct {
+	ID         string `json:"id"`
+	Owner      string `json:"owner"`
+	Name       string `json:"name"`
+	Host       string `json:"host"` // e.g. github.com, gitlab.com, or full base URL host
+	Username   string `json:"username"`
+	Token      string `json:"token,omitempty"` // persisted; never returned by list APIs
+	DefaultURL string `json:"default_url,omitempty"`
 }
 
 type dockerBackup struct {
 	ID            string    `json:"id"`
 	Owner         string    `json:"owner"`
+	Name          string    `json:"name,omitempty"`
 	Kind          string    `json:"kind"` // volume|compose|config
 	TargetID      string    `json:"target_id"`
 	WorkerID      string    `json:"worker_id"`
 	State         string    `json:"state"`
 	Error         string    `json:"error,omitempty"`
+	SizeBytes     int64     `json:"size_bytes,omitempty"`
+	QuotaMB       int64     `json:"quota_mb,omitempty"` // metering hint from source volume
 	RedeployAfter bool      `json:"redeploy_after,omitempty"`
 	Created       time.Time `json:"created"`
 }
@@ -144,6 +160,7 @@ type dockerStore struct {
 	Networks     map[string]dockerNetwork     `json:"networks"`
 	Volumes      map[string]dockerVolume      `json:"volumes"`
 	Registries   map[string]dockerRegistry    `json:"registries"`
+	GitCredentials map[string]dockerGitCredential `json:"git_credentials"`
 	Backups      map[string]dockerBackup      `json:"backups"`
 	Jobs         map[string]dockerJob         `json:"jobs"`
 	SecurityEvents []map[string]any           `json:"security_events,omitempty"`
@@ -159,6 +176,7 @@ func loadDocker(dir string) *dockerStore {
 		Networks: map[string]dockerNetwork{},
 		Volumes: map[string]dockerVolume{},
 		Registries: map[string]dockerRegistry{},
+		GitCredentials: map[string]dockerGitCredential{},
 		Backups: map[string]dockerBackup{},
 		Jobs: map[string]dockerJob{},
 		WorkerStatus: map[string]dock.Status{},
@@ -181,6 +199,9 @@ func loadDocker(dir string) *dockerStore {
 	}
 	if d.Registries == nil {
 		d.Registries = map[string]dockerRegistry{}
+	}
+	if d.GitCredentials == nil {
+		d.GitCredentials = map[string]dockerGitCredential{}
 	}
 	if d.Backups == nil {
 		d.Backups = map[string]dockerBackup{}
@@ -258,6 +279,7 @@ func (s *Server) dockerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/docker/networks/{id}", s.auth(s.dockerDeleteNetwork))
 	mux.HandleFunc("GET /api/docker/volumes", s.auth(s.dockerListVolumes))
 	mux.HandleFunc("POST /api/docker/volumes", s.auth(s.dockerCreateVolume))
+	mux.HandleFunc("PUT /api/docker/volumes/{id}", s.auth(s.dockerUpdateVolume))
 	mux.HandleFunc("DELETE /api/docker/volumes/{id}", s.auth(s.dockerDeleteVolume))
 	mux.HandleFunc("GET /api/docker/deployments", s.auth(s.dockerListDeployments))
 	mux.HandleFunc("GET /api/docker/deployments/{id}", s.auth(s.dockerGetDeployment))
@@ -278,7 +300,12 @@ func (s *Server) dockerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/docker/backups/{id}", s.auth(s.dockerDeleteBackup))
 	mux.HandleFunc("GET /api/docker/registries", s.auth(s.dockerListRegistries))
 	mux.HandleFunc("POST /api/docker/registries", s.auth(s.dockerCreateRegistry))
+	mux.HandleFunc("PUT /api/docker/registries/{id}", s.auth(s.dockerUpdateRegistry))
 	mux.HandleFunc("DELETE /api/docker/registries/{id}", s.auth(s.dockerDeleteRegistry))
+	mux.HandleFunc("GET /api/docker/git-credentials", s.auth(s.dockerListGitCredentials))
+	mux.HandleFunc("POST /api/docker/git-credentials", s.auth(s.dockerCreateGitCredential))
+	mux.HandleFunc("PUT /api/docker/git-credentials/{id}", s.auth(s.dockerUpdateGitCredential))
+	mux.HandleFunc("DELETE /api/docker/git-credentials/{id}", s.auth(s.dockerDeleteGitCredential))
 	mux.HandleFunc("POST /api/docker/settings", s.auth(s.dockerSaveSettings))
 	mux.HandleFunc("POST /hooks/docker/{id}", s.dockerWebhook)
 }
@@ -489,13 +516,13 @@ func (s *Server) applyDockerJobResultLocked(j dockerJob, res dock.Result) (redep
 				}
 			}
 		}
-	case j.Action == "compose-deploy", j.Action == "git-build":
+	case j.Action == "compose-deploy", j.Action == "git-build", j.Action == "git-compose":
 		composeID, imageHint := "", j.Op.Image
 		if j.Op.Compose != nil {
 			composeID = j.Op.Compose.ID
 		}
 		for id, a := range d.Applications {
-			match := (composeID != "" && a.ComposeID == composeID) || (imageHint != "" && strings.Contains(imageHint, a.ID)) || (j.Action == "git-build" && strings.Contains(imageHint, a.ID))
+			match := (composeID != "" && a.ComposeID == composeID) || (imageHint != "" && strings.Contains(imageHint, a.ID))
 			if !match {
 				continue
 			}
@@ -503,12 +530,47 @@ func (s *Server) applyDockerJobResultLocked(j dockerJob, res dock.Result) (redep
 				a.State = "Running"
 				a.Error = ""
 				a.Events = append(a.Events, dockerEvent{At: time.Now().UTC(), State: "Running", Message: j.Action + " succeeded"})
+				if j.Action == "git-compose" && len(res.Data) > 0 {
+					var data map[string]string
+					_ = json.Unmarshal(res.Data, &data)
+					if y := data["compose_yaml"]; y != "" {
+						a.ComposeYAML = y
+					}
+				}
 				if j.Action == "git-build" && len(res.Data) > 0 {
 					var data map[string]string
 					_ = json.Unmarshal(res.Data, &data)
 					if img := data["image"]; img != "" {
 						a.Image = img
 						a.Releases = append(a.Releases, dockerRelease{Number: len(a.Releases) + 1, Image: img, Created: time.Now().UTC()})
+						// Bring up container from Dockerfile build using reserved CloFix volumes.
+						cid := ""
+						if len(a.ContainerIDs) > 0 {
+							cid = a.ContainerIDs[0]
+						}
+						if cid == "" {
+							cid = dockerRandID("dck")
+							a.ContainerIDs = []string{cid}
+						}
+						spec := a.Spec
+						spec.ID, spec.Name, spec.Image, spec.Tag, spec.Owner = cid, a.Name, img, "", a.Owner
+						if spec.RAMMB <= 0 {
+							spec.RAMMB = 256
+						}
+						if spec.CPU <= 0 {
+							spec.CPU = 0.5
+						}
+						a.Spec = spec
+						c := dockerContainer{ID: cid, Owner: a.Owner, Name: a.Name, WorkerID: a.WorkerID, State: "Creating", Desired: "running", Created: time.Now().UTC(), Updated: time.Now().UTC(), Spec: spec, AppID: a.ID}
+						d.Containers[cid] = c
+						jobID := dockerRandID("dcj")
+						op := dock.Operation{JobID: jobID, Action: "container-create", Container: &spec}
+						raw, _ := json.Marshal(op)
+						dj := dockerJob{ID: jobID, Owner: a.Owner, WorkerID: a.WorkerID, Action: "container-create", State: "QUEUED", Created: time.Now().UTC(), Updated: time.Now().UTC(), Op: op, OpRaw: raw}
+						d.Jobs[jobID] = dj
+						_ = s.Store.QueueOp(a.WorkerID, proto.Operation{ID: jobID, Action: "docker-job", DockerJobID: jobID})
+						a.State = "Creating"
+						a.Events = append(a.Events, dockerEvent{At: time.Now().UTC(), State: "Creating", Message: "Dockerfile image built; container create queued with volumes"})
 					}
 				}
 			} else {
@@ -827,6 +889,7 @@ func (s *Server) dockerUpdateContainer(w http.ResponseWriter, r *http.Request) {
 		Digest        string             `json:"digest"`
 		Env           map[string]string  `json:"env"`
 		Ports         []dock.PortPublish `json:"ports"`
+		Volumes       []dock.VolumeMount `json:"volumes"`
 		RAMMB         int64              `json:"ram_mb"`
 		CPU           float64            `json:"cpu"`
 		RestartPolicy string             `json:"restart_policy"`
@@ -849,6 +912,9 @@ func (s *Server) dockerUpdateContainer(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.Tag != "" {
 		spec.Tag = in.Tag
+	}
+	if in.Volumes != nil {
+		spec.Volumes = in.Volumes
 	}
 	if in.Digest != "" {
 		spec.Digest = in.Digest
@@ -1133,6 +1199,38 @@ func (s *Server) dockerListApps(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, items)
 }
 
+func mergeComposeExternalVolumes(yaml string, mounts []dock.VolumeMount) string {
+	ids := []string{}
+	seen := map[string]bool{}
+	for _, m := range mounts {
+		id := strings.TrimSpace(m.VolumeID)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return yaml
+	}
+	var decls strings.Builder
+	for _, id := range ids {
+		key := "cf_" + strings.ReplaceAll(id, "-", "_")
+		decls.WriteString("  " + key + ":\n    external: true\n    name: clofix-vol-" + id + "\n")
+	}
+	lines := strings.Split(yaml, "\n")
+	for i, line := range lines {
+		trim := strings.TrimSpace(line)
+		if trim == "volumes:" || strings.HasPrefix(trim, "volumes:") {
+			insert := strings.Split(strings.TrimSuffix(decls.String(), "\n"), "\n")
+			out := append(append([]string{}, lines[:i+1]...), insert...)
+			out = append(out, lines[i+1:]...)
+			return strings.Join(out, "\n")
+		}
+	}
+	return strings.TrimRight(yaml, "\n") + "\n\n# CloFix Docker volumes (external named volumes for compose up)\nvolumes:\n" + decls.String()
+}
+
 func (s *Server) dockerCreateApp(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Name      string `json:"name"`
@@ -1145,10 +1243,16 @@ func (s *Server) dockerCreateApp(w http.ResponseWriter, r *http.Request) {
 		CPU       float64 `json:"cpu"`
 		Env       map[string]string `json:"env"`
 		Ports     []dock.PortPublish `json:"ports"`
+		Volumes   []dock.VolumeMount `json:"volumes"`
 		ComposeYAML string `json:"compose_yaml"`
 		GitURL    string `json:"git_url"`
 		GitBranch string `json:"git_branch"`
 		GitToken  string `json:"git_token"`
+		GitCredentialID string `json:"git_credential_id"`
+		GitMode   string `json:"git_mode"` // dockerfile|compose — how to bring the repo up (no raw docker run)
+		ComposeFile string `json:"compose_file"`
+		RegistryID string `json:"registry_id"`
+		Dockerfile string `json:"dockerfile"`
 		Domain    string `json:"domain"`
 		RestartPolicy string `json:"restart_policy"`
 	}
@@ -1192,18 +1296,25 @@ func (s *Server) dockerCreateApp(w http.ResponseWriter, r *http.Request) {
 	app := dockerApplication{
 		ID: appID, Owner: owner, Name: in.Name, Method: in.Method, Template: in.Template, WorkerID: workerID,
 		State: "Pending", Created: time.Now().UTC(), Updated: time.Now().UTC(), Domain: in.Domain,
-		GitURL: in.GitURL, GitBranch: in.GitBranch, ComposeYAML: in.ComposeYAML, Image: in.Image,
+		GitURL: in.GitURL, GitBranch: in.GitBranch, Dockerfile: strings.TrimSpace(in.Dockerfile), ComposeYAML: in.ComposeYAML, Image: in.Image,
 		Events: []dockerEvent{{At: time.Now().UTC(), State: "Pending", Message: "Deployment accepted"}},
 	}
 	var job dockerJob
 	switch in.Method {
 	case "compose":
-		if err := validateComposePolicy(in.ComposeYAML); err != nil {
+		if err := s.checkQuota("docker-compose", 1); err != nil {
+			fail(w, 403, err.Error())
+			return
+		}
+		yaml := mergeComposeExternalVolumes(in.ComposeYAML, in.Volumes)
+		if err := validateComposePolicy(yaml); err != nil {
 			fail(w, 400, err.Error())
 			return
 		}
 		cid := dockerRandID("dcp")
 		app.ComposeID = cid
+		app.ComposeYAML = yaml
+		app.Spec = dock.ContainerSpec{RAMMB: in.RAMMB, CPU: in.CPU, Volumes: in.Volumes}
 		app.State = "Validating"
 		app.Events = append(app.Events, dockerEvent{At: time.Now().UTC(), State: "Scheduling", Message: "Compose deploy queued"})
 		d := s.docker
@@ -1211,23 +1322,93 @@ func (s *Server) dockerCreateApp(w http.ResponseWriter, r *http.Request) {
 		d.Applications[appID] = app
 		_ = d.save()
 		d.mu.Unlock()
-		job, err = s.queueDockerJob(workerID, owner, "compose-deploy", dock.Operation{Action: "compose-deploy", Compose: &dock.ComposeSpec{ID: cid, Name: in.Name, Owner: owner, YAML: in.ComposeYAML, Project: "clofix-" + cid}})
+		job, err = s.queueDockerJob(workerID, owner, "compose-deploy", dock.Operation{Action: "compose-deploy", Compose: &dock.ComposeSpec{ID: cid, Name: in.Name, Owner: owner, YAML: yaml, Project: "clofix-" + cid}})
 	case "git":
-		app.State = "Pulling/Building"
+		gitURL := strings.TrimSpace(in.GitURL)
+		gitToken := in.GitToken
+		gitUser := ""
+		if in.GitCredentialID != "" {
+			d := s.docker
+			d.mu.Lock()
+			gc, ok := d.GitCredentials[in.GitCredentialID]
+			d.mu.Unlock()
+			if !ok || !canAccessDocker(r, gc.Owner) {
+				fail(w, 404, "git registration not found")
+				return
+			}
+			gitUser = gc.Username
+			if gitURL == "" {
+				gitURL = strings.TrimSpace(gc.DefaultURL)
+			}
+			if gitToken == "" {
+				gitToken = gc.Token
+			}
+		}
+		if gitURL == "" {
+			fail(w, 400, "git URL or git registration with default URL is required")
+			return
+		}
+		app.GitURL, app.GitBranch = gitURL, in.GitBranch
+		var reg *dock.RegistryAuth
+		if in.RegistryID != "" {
+			d := s.docker
+			d.mu.Lock()
+			rr, ok := d.Registries[in.RegistryID]
+			d.mu.Unlock()
+			if ok && canAccessDocker(r, rr.Owner) {
+				reg = &dock.RegistryAuth{Server: rr.Server, Username: rr.Username, Password: rr.Password}
+			}
+		}
+		gitMode := strings.ToLower(strings.TrimSpace(in.GitMode))
+		if gitMode == "" {
+			gitMode = "dockerfile"
+		}
+		app.Spec = dock.ContainerSpec{Name: in.Name, Owner: owner, Env: in.Env, Ports: in.Ports, Volumes: in.Volumes, RAMMB: in.RAMMB, CPU: in.CPU, RestartPolicy: in.RestartPolicy, Domain: in.Domain}
 		d := s.docker
-		d.mu.Lock()
-		d.Applications[appID] = app
-		_ = d.save()
-		d.mu.Unlock()
-		tag := "clofix-build/" + appID + ":latest"
-		job, err = s.queueDockerJob(workerID, owner, "git-build", dock.Operation{Action: "git-build", GitURL: in.GitURL, GitBranch: in.GitBranch, GitToken: in.GitToken, Image: tag})
+		if gitMode == "compose" {
+			if err := s.checkQuota("docker-compose", 1); err != nil {
+				fail(w, 403, err.Error())
+				return
+			}
+			cid := dockerRandID("dcp")
+			app.Method = "compose"
+			app.ComposeID = cid
+			app.Dockerfile = strings.TrimSpace(in.ComposeFile)
+			if app.Dockerfile == "" {
+				app.Dockerfile = "docker-compose.yml"
+			}
+			app.State = "Pulling/Building"
+			app.Events = append(app.Events, dockerEvent{At: time.Now().UTC(), State: "Scheduling", Message: "Git Compose deploy queued (private repo via registration)"})
+			d.mu.Lock()
+			d.Applications[appID] = app
+			_ = d.save()
+			d.mu.Unlock()
+			job, err = s.queueDockerJob(workerID, owner, "git-compose", dock.Operation{
+				Action: "git-compose", GitURL: gitURL, GitBranch: in.GitBranch, GitToken: gitToken, GitUsername: gitUser,
+				ComposeFile: app.Dockerfile, Registry: reg,
+				Compose: &dock.ComposeSpec{ID: cid, Name: in.Name, Owner: owner, Project: "clofix-" + cid},
+			})
+		} else {
+			app.State = "Pulling/Building"
+			app.Events = append(app.Events, dockerEvent{At: time.Now().UTC(), State: "Scheduling", Message: "Git Dockerfile build queued"})
+			d.mu.Lock()
+			d.Applications[appID] = app
+			_ = d.save()
+			d.mu.Unlock()
+			tag := "clofix-build/" + appID + ":latest"
+			df := strings.TrimSpace(in.Dockerfile)
+			if df == "" {
+				df = "Dockerfile"
+			}
+			job, err = s.queueDockerJob(workerID, owner, "git-build", dock.Operation{Action: "git-build", GitURL: gitURL, GitBranch: in.GitBranch, GitToken: gitToken, GitUsername: gitUser, Image: tag, Dockerfile: df, Registry: reg})
+		}
 	default:
 		if in.Image == "" {
 			fail(w, 400, "image required")
 			return
 		}
 		cid := dockerRandID("dck")
-		spec := dock.ContainerSpec{ID: cid, Name: in.Name, Image: in.Image, Tag: in.Tag, Owner: owner, Env: in.Env, Ports: in.Ports, RAMMB: in.RAMMB, CPU: in.CPU, RestartPolicy: in.RestartPolicy, Domain: in.Domain}
+		spec := dock.ContainerSpec{ID: cid, Name: in.Name, Image: in.Image, Tag: in.Tag, Owner: owner, Env: in.Env, Ports: in.Ports, Volumes: in.Volumes, RAMMB: in.RAMMB, CPU: in.CPU, RestartPolicy: in.RestartPolicy, Domain: in.Domain}
 		if err := spec.Validate(); err != nil {
 			fail(w, 400, err.Error())
 			return
@@ -1300,11 +1481,13 @@ func (s *Server) dockerUpdateApp(w http.ResponseWriter, r *http.Request) {
 		Tag         string             `json:"tag"`
 		Env         map[string]string  `json:"env"`
 		Ports       []dock.PortPublish `json:"ports"`
+		Volumes     []dock.VolumeMount `json:"volumes"`
 		RAMMB       int64              `json:"ram_mb"`
 		CPU         float64            `json:"cpu"`
 		Domain      string             `json:"domain"`
 		GitURL      string             `json:"git_url"`
 		GitBranch   string             `json:"git_branch"`
+		Dockerfile  string             `json:"dockerfile"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		fail(w, 400, "invalid json")
@@ -1323,11 +1506,21 @@ func (s *Server) dockerUpdateApp(w http.ResponseWriter, r *http.Request) {
 		if yaml == "" {
 			yaml = a.ComposeYAML
 		}
+		if in.Volumes != nil {
+			a.Spec.Volumes = in.Volumes
+			yaml = mergeComposeExternalVolumes(yaml, in.Volumes)
+		}
 		if err := validateComposePolicy(yaml); err != nil {
 			fail(w, 400, err.Error())
 			return
 		}
 		a.ComposeYAML = yaml
+		if in.RAMMB > 0 {
+			a.Spec.RAMMB = in.RAMMB
+		}
+		if in.CPU > 0 {
+			a.Spec.CPU = in.CPU
+		}
 		a.State = "Updating"
 		a.Updated = now
 		a.Events = append(a.Events, dockerEvent{At: now, State: "Updating", Message: "Compose edit queued"})
@@ -1522,11 +1715,12 @@ func (s *Server) dockerListCompose(w http.ResponseWriter, r *http.Request) {
 func (s *Server) dockerDeployCompose(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
 	var in struct {
-		Name     string  `json:"name"`
-		YAML     string  `json:"yaml"`
-		WorkerID string  `json:"worker_id"`
-		RAMMB    int64   `json:"ram_mb"`
-		CPU      float64 `json:"cpu"`
+		Name     string             `json:"name"`
+		YAML     string             `json:"yaml"`
+		WorkerID string             `json:"worker_id"`
+		RAMMB    int64              `json:"ram_mb"`
+		CPU      float64            `json:"cpu"`
+		Volumes  []dock.VolumeMount `json:"volumes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		fail(w, 400, "invalid json")
@@ -1540,7 +1734,7 @@ func (s *Server) dockerDeployCompose(w http.ResponseWriter, r *http.Request) {
 	if in.CPU <= 0 {
 		in.CPU = 0.25
 	}
-	body, _ := json.Marshal(map[string]any{"name": in.Name, "method": "compose", "compose_yaml": in.YAML, "worker_id": in.WorkerID, "ram_mb": in.RAMMB, "cpu": in.CPU})
+	body, _ := json.Marshal(map[string]any{"name": in.Name, "method": "compose", "compose_yaml": in.YAML, "worker_id": in.WorkerID, "ram_mb": in.RAMMB, "cpu": in.CPU, "volumes": in.Volumes})
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, "/api/docker/applications", strings.NewReader(string(body)))
 	if err != nil {
 		fail(w, 500, err.Error())
@@ -1669,26 +1863,83 @@ func (s *Server) dockerCreateVolume(w http.ResponseWriter, r *http.Request) {
 		Name             string `json:"name"`
 		WorkerID         string `json:"worker_id"`
 		DeleteProtection bool   `json:"delete_protection"`
+		QuotaMB          int64  `json:"quota_mb"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&in)
-	workerID, err := s.dockerPlace(32, 0.1, 1024, in.WorkerID)
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&in)
+	name := strings.TrimSpace(in.Name)
+	if name == "" || len(name) > 80 {
+		fail(w, 400, "volume name is required")
+		return
+	}
+	if in.QuotaMB < 0 || in.QuotaMB > 1048576 {
+		fail(w, 400, "quota_mb must be 0–1048576")
+		return
+	}
+	if err := s.checkQuota("docker-volumes", 1); err != nil {
+		fail(w, 403, err.Error())
+		return
+	}
+	diskMB := in.QuotaMB
+	if diskMB <= 0 {
+		diskMB = 1024
+	}
+	workerID, err := s.dockerPlace(32, 0.1, diskMB, in.WorkerID)
 	if err != nil {
 		fail(w, 409, err.Error())
 		return
 	}
 	id := dockerRandID("dcv")
-	v := dockerVolume{ID: id, Owner: accountID(r), Name: in.Name, WorkerID: workerID, DeleteProtection: in.DeleteProtection, Created: time.Now().UTC()}
+	v := dockerVolume{ID: id, Owner: accountID(r), Name: name, WorkerID: workerID, DeleteProtection: in.DeleteProtection, QuotaMB: in.QuotaMB, Created: time.Now().UTC()}
 	d := s.docker
 	d.mu.Lock()
 	d.Volumes[id] = v
 	_ = d.save()
 	d.mu.Unlock()
-	j, err := s.queueDockerJob(workerID, v.Owner, "volume-create", dock.Operation{Action: "volume-create", Volume: &dock.VolumeSpec{ID: id, Name: in.Name, Owner: v.Owner, DeleteProtection: in.DeleteProtection}})
+	s.Store.Audit(actorID(r), "docker.volume.create", id, "ok")
+	j, err := s.queueDockerJob(workerID, v.Owner, "volume-create", dock.Operation{Action: "volume-create", Volume: &dock.VolumeSpec{ID: id, Name: name, Owner: v.Owner, DeleteProtection: in.DeleteProtection, QuotaMB: in.QuotaMB}})
 	if err != nil {
 		fail(w, 500, err.Error())
 		return
 	}
 	writeJSON(w, 202, map[string]any{"volume": v, "job": j})
+}
+
+func (s *Server) dockerUpdateVolume(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name             string `json:"name"`
+		DeleteProtection *bool  `json:"delete_protection"`
+		QuotaMB          *int64 `json:"quota_mb"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&in)
+	name := strings.TrimSpace(in.Name)
+	if name == "" || len(name) > 80 {
+		fail(w, 400, "volume name is required")
+		return
+	}
+	if in.QuotaMB != nil && (*in.QuotaMB < 0 || *in.QuotaMB > 1048576) {
+		fail(w, 400, "quota_mb must be 0–1048576")
+		return
+	}
+	d := s.docker
+	d.mu.Lock()
+	v, ok := d.Volumes[r.PathValue("id")]
+	if !ok || !canAccessDocker(r, v.Owner) {
+		d.mu.Unlock()
+		fail(w, 404, "volume not found")
+		return
+	}
+	v.Name = name
+	if in.DeleteProtection != nil {
+		v.DeleteProtection = *in.DeleteProtection
+	}
+	if in.QuotaMB != nil {
+		v.QuotaMB = *in.QuotaMB
+	}
+	d.Volumes[v.ID] = v
+	_ = d.save()
+	d.mu.Unlock()
+	s.Store.Audit(actorID(r), "docker.volume.update", v.ID, "ok")
+	writeJSON(w, 200, v)
 }
 
 func (s *Server) dockerDeleteVolume(w http.ResponseWriter, r *http.Request) {
@@ -1713,6 +1964,7 @@ func (s *Server) dockerDeleteVolume(w http.ResponseWriter, r *http.Request) {
 	delete(d.Volumes, v.ID)
 	_ = d.save()
 	d.mu.Unlock()
+	s.Store.Audit(actorID(r), "docker.volume.delete", v.ID, "ok")
 	writeJSON(w, 202, j)
 }
 
@@ -2296,8 +2548,13 @@ func (s *Server) dockerCreateBackup(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Kind     string `json:"kind"`
 		TargetID string `json:"target_id"`
+		Name     string `json:"name"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&in)
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&in)
+	if err := s.checkQuota("docker-backups", 1); err != nil {
+		fail(w, 403, err.Error())
+		return
+	}
 	d := s.docker
 	d.mu.Lock()
 	v, ok := d.Volumes[in.TargetID]
@@ -2306,12 +2563,21 @@ func (s *Server) dockerCreateBackup(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "volume not found")
 		return
 	}
+	name := strings.TrimSpace(in.Name)
+	if name == "" {
+		name = v.Name + " backup"
+	}
+	if len(name) > 80 {
+		fail(w, 400, "backup name too long")
+		return
+	}
 	id := dockerRandID("dcb")
-	b := dockerBackup{ID: id, Owner: v.Owner, Kind: "volume", TargetID: v.ID, WorkerID: v.WorkerID, State: "RUNNING", Created: time.Now().UTC()}
+	b := dockerBackup{ID: id, Owner: v.Owner, Name: name, Kind: "volume", TargetID: v.ID, WorkerID: v.WorkerID, State: "RUNNING", QuotaMB: v.QuotaMB, Created: time.Now().UTC()}
 	d.mu.Lock()
 	d.Backups[id] = b
 	_ = d.save()
 	d.mu.Unlock()
+	s.Store.Audit(actorID(r), "docker.backup.create", id, v.ID)
 	j, err := s.queueDockerJob(v.WorkerID, v.Owner, "volume-backup", dock.Operation{Action: "volume-backup", Volume: &dock.VolumeSpec{ID: v.ID}, BackupID: id})
 	if err != nil {
 		fail(w, 500, err.Error())
@@ -2490,16 +2756,57 @@ func (s *Server) dockerCreateRegistry(w http.ResponseWriter, r *http.Request) {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&in)
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&in)
+	name := strings.TrimSpace(in.Name)
+	server := strings.TrimSpace(in.Server)
+	username := strings.TrimSpace(in.Username)
+	if name == "" || len(name) > 80 || server == "" || len(server) > 255 || len(username) > 128 || len(in.Password) > 512 {
+		fail(w, 400, "name, server, and optional credentials are required")
+		return
+	}
 	id := dockerRandID("dcr")
-	reg := dockerRegistry{ID: id, Owner: accountID(r), Name: in.Name, Server: in.Server, Username: in.Username, Password: in.Password}
+	reg := dockerRegistry{ID: id, Owner: accountID(r), Name: name, Server: server, Username: username, Password: in.Password}
 	d := s.docker
 	d.mu.Lock()
 	d.Registries[id] = reg
 	_ = d.save()
 	d.mu.Unlock()
 	s.Store.Audit(actorID(r), "docker.registry.create", id, "ok")
-	writeJSON(w, 201, map[string]any{"id": id, "name": in.Name, "server": in.Server, "username": in.Username})
+	writeJSON(w, 201, map[string]any{"id": id, "name": name, "server": server, "username": username})
+}
+
+func (s *Server) dockerUpdateRegistry(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name     string `json:"name"`
+		Server   string `json:"server"`
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&in)
+	name := strings.TrimSpace(in.Name)
+	server := strings.TrimSpace(in.Server)
+	username := strings.TrimSpace(in.Username)
+	if name == "" || len(name) > 80 || server == "" || len(server) > 255 || len(username) > 128 || len(in.Password) > 512 {
+		fail(w, 400, "name, server, and optional credentials are required")
+		return
+	}
+	d := s.docker
+	d.mu.Lock()
+	reg, ok := d.Registries[r.PathValue("id")]
+	if !ok || !canAccessDocker(r, reg.Owner) {
+		d.mu.Unlock()
+		fail(w, 404, "registry not found")
+		return
+	}
+	reg.Name, reg.Server, reg.Username = name, server, username
+	if in.Password != "" {
+		reg.Password = in.Password
+	}
+	d.Registries[reg.ID] = reg
+	_ = d.save()
+	d.mu.Unlock()
+	s.Store.Audit(actorID(r), "docker.registry.update", reg.ID, "ok")
+	writeJSON(w, 200, map[string]any{"id": reg.ID, "name": reg.Name, "server": reg.Server, "username": reg.Username})
 }
 
 func (s *Server) dockerDeleteRegistry(w http.ResponseWriter, r *http.Request) {
@@ -2514,6 +2821,101 @@ func (s *Server) dockerDeleteRegistry(w http.ResponseWriter, r *http.Request) {
 	delete(d.Registries, reg.ID)
 	_ = d.save()
 	d.mu.Unlock()
+	s.Store.Audit(actorID(r), "docker.registry.delete", reg.ID, "ok")
+	writeJSON(w, 200, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) dockerListGitCredentials(w http.ResponseWriter, r *http.Request) {
+	d := s.docker
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	items := []map[string]any{}
+	for _, g := range d.GitCredentials {
+		if canAccessDocker(r, g.Owner) {
+			items = append(items, map[string]any{
+				"id": g.ID, "name": g.Name, "host": g.Host, "username": g.Username, "default_url": g.DefaultURL,
+			})
+		}
+	}
+	writeJSON(w, 200, items)
+}
+
+func (s *Server) dockerCreateGitCredential(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name       string `json:"name"`
+		Host       string `json:"host"`
+		Username   string `json:"username"`
+		Token      string `json:"token"`
+		DefaultURL string `json:"default_url"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&in)
+	name := strings.TrimSpace(in.Name)
+	host := strings.TrimSpace(in.Host)
+	username := strings.TrimSpace(in.Username)
+	token := strings.TrimSpace(in.Token)
+	if name == "" || len(name) > 80 || host == "" || len(host) > 255 || len(username) > 128 || token == "" || len(token) > 512 {
+		fail(w, 400, "name, host, and token are required")
+		return
+	}
+	id := dockerRandID("dcg")
+	g := dockerGitCredential{ID: id, Owner: accountID(r), Name: name, Host: host, Username: username, Token: token, DefaultURL: strings.TrimSpace(in.DefaultURL)}
+	d := s.docker
+	d.mu.Lock()
+	d.GitCredentials[id] = g
+	_ = d.save()
+	d.mu.Unlock()
+	s.Store.Audit(actorID(r), "docker.git_credential.create", id, "ok")
+	writeJSON(w, 201, map[string]any{"id": id, "name": name, "host": host, "username": username, "default_url": g.DefaultURL})
+}
+
+func (s *Server) dockerUpdateGitCredential(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name       string `json:"name"`
+		Host       string `json:"host"`
+		Username   string `json:"username"`
+		Token      string `json:"token"`
+		DefaultURL string `json:"default_url"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&in)
+	name := strings.TrimSpace(in.Name)
+	host := strings.TrimSpace(in.Host)
+	username := strings.TrimSpace(in.Username)
+	if name == "" || len(name) > 80 || host == "" || len(host) > 255 || len(username) > 128 || len(in.Token) > 512 {
+		fail(w, 400, "name and host are required")
+		return
+	}
+	d := s.docker
+	d.mu.Lock()
+	g, ok := d.GitCredentials[r.PathValue("id")]
+	if !ok || !canAccessDocker(r, g.Owner) {
+		d.mu.Unlock()
+		fail(w, 404, "git registration not found")
+		return
+	}
+	g.Name, g.Host, g.Username, g.DefaultURL = name, host, username, strings.TrimSpace(in.DefaultURL)
+	if strings.TrimSpace(in.Token) != "" {
+		g.Token = strings.TrimSpace(in.Token)
+	}
+	d.GitCredentials[g.ID] = g
+	_ = d.save()
+	d.mu.Unlock()
+	s.Store.Audit(actorID(r), "docker.git_credential.update", g.ID, "ok")
+	writeJSON(w, 200, map[string]any{"id": g.ID, "name": g.Name, "host": g.Host, "username": g.Username, "default_url": g.DefaultURL})
+}
+
+func (s *Server) dockerDeleteGitCredential(w http.ResponseWriter, r *http.Request) {
+	d := s.docker
+	d.mu.Lock()
+	g, ok := d.GitCredentials[r.PathValue("id")]
+	if !ok || !canAccessDocker(r, g.Owner) {
+		d.mu.Unlock()
+		fail(w, 404, "git registration not found")
+		return
+	}
+	delete(d.GitCredentials, g.ID)
+	_ = d.save()
+	d.mu.Unlock()
+	s.Store.Audit(actorID(r), "docker.git_credential.delete", g.ID, "ok")
 	writeJSON(w, 200, map[string]string{"status": "deleted"})
 }
 

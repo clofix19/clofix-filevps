@@ -104,6 +104,7 @@ func (m *Manager) Ensure(ref proto.ImageRef) (string, error) {
 			if err := EnsureStickyTmp(root); err != nil {
 				return "", err
 			}
+			_ = StripDefaultCloudUser(root, ref.Name)
 			return root, nil // cache hit
 		}
 	}
@@ -163,7 +164,47 @@ func (m *Manager) Ensure(ref proto.ImageRef) (string, error) {
 	if err := EnsureStickyTmp(root); err != nil {
 		return "", err
 	}
+	_ = StripDefaultCloudUser(root, ref.Name)
 	return root, nil
+}
+
+// StripDefaultCloudUser removes the distro cloud login account from Ubuntu / CloFix Linux
+// rootfs trees so FileVPS is root-only. Safe to call repeatedly; no-op for other images.
+func StripDefaultCloudUser(root, imageName string) error {
+	name := strings.ToLower(strings.TrimSpace(imageName))
+	if name != "ubuntu" && name != "clofix-linux" {
+		return nil
+	}
+	users := []string{"ubuntu"}
+	for _, u := range users {
+		for _, rel := range []string{"etc/passwd", "etc/shadow", "etc/group", "etc/gshadow", "etc/subuid", "etc/subgid"} {
+			path := filepath.Join(root, filepath.FromSlash(rel))
+			st, err := os.Stat(path)
+			if err != nil {
+				continue
+			}
+			b, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			var out []string
+			changed := false
+			for _, line := range strings.Split(string(b), "\n") {
+				if line != "" && strings.HasPrefix(line, u+":") {
+					changed = true
+					continue
+				}
+				out = append(out, line)
+			}
+			if !changed {
+				continue
+			}
+			mode := st.Mode().Perm()
+			_ = os.WriteFile(path, []byte(strings.Join(out, "\n")), mode)
+		}
+		_ = os.RemoveAll(filepath.Join(root, "home", u))
+	}
+	return nil
 }
 
 // EnsureStickyTmp sets 1777 on /tmp and /var/tmp so unprivileged guest users can

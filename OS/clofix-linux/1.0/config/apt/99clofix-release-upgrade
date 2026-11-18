@@ -1,0 +1,4 @@
+# Disable Ubuntu release-upgrade prompts; CloFix controls major bumps.
+DPkg::Post-Invoke { "test -x /usr/lib/ubuntu-release-upgrader/check-new-release-gtk || true"; };
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";

@@ -1,0 +1,9 @@
+# CloFix Linux upgrade policy (1.0)
+# - Package source: official Ubuntu repositories for UBUNTU_CODENAME only
+# - Allow: apt update / apt upgrade / security updates within that codename
+# - Deny by default: do-release-upgrade to a newer Ubuntu codename
+# - Major OS bumps are CloFix-controlled (new CloFix Linux rootfs / image release)
+allow_security_updates=yes
+allow_same_release_upgrade=yes
+allow_do_release_upgrade=no
+notify_ubuntu_release_upgrades=no

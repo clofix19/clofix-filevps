@@ -1,0 +1,25 @@
+[Unit]
+Description=CloFix Guard security agent
+Documentation=https://clofix.com
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/clofix-guard -config /etc/clofix/guard/config.json
+Restart=on-failure
+RestartSec=5
+Nice=10
+# Bound resources
+MemoryMax=256M
+CPUQuota=25%
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/clofix /var/log
+ConfigurationDirectory=clofix/guard
+StateDirectory=clofix/guard
+LogsDirectory=clofix
+
+[Install]
+WantedBy=multi-user.target

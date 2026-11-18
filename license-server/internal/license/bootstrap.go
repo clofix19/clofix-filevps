@@ -42,7 +42,10 @@ func defaultPlan() Plan {
 		MaxAccessKeys:           intPtr(50),
 		MaxDockerContainers:     intPtr(100),
 		MaxDockerApplications:   intPtr(50),
+		MaxDockerCompose:        intPtr(25),
 		MaxDockerWorkers:        intPtr(10),
+		MaxDockerVolumes:        intPtr(50),
+		MaxDockerBackups:        intPtr(100),
 		MaxRedisClusters:        intPtr(5),
 	}
 }

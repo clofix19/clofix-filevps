@@ -84,6 +84,7 @@ func (s *Server) scanBillingInventory() []billingInventoryItem {
 	items = append(items, s.inventoryDatabases(catalog, currency, rate, owners, workers)...)
 	items = append(items, s.inventoryKubernetes(catalog, currency, rate, owners, workers)...)
 	items = append(items, s.inventoryRedisClusters(catalog, currency, rate, owners, workers)...)
+	items = append(items, s.inventoryDocker(catalog, currency, rate, owners, workers)...)
 	items = append(items, s.inventoryLoadBalancers(catalog, currency, rate, owners, workers)...)
 	items = append(items, s.inventoryApps(catalog, currency, rate, owners, workers)...)
 	items = append(items, s.inventoryEFS(catalog, currency, rate, owners, workers)...)
@@ -467,6 +468,180 @@ func (s *Server) inventoryRedisClusters(catalog []billingResource, currency stri
 		lines := []billingInvoiceLine{inventoryLine("redis", c.ID, name, workerID, worker, "redis", "Redis Cluster topology", "Redis-cluster-month", currency, 1, resourceCharge(catalog, 1, "redis"), rate)}
 		note := fmt.Sprintf("Redis Cluster (%s, %d nodes). Member FileVPS instances bill CPU/RAM/disk on the VPS rows; EFS persistence bills on EFS when attached.", topo, c.NodeCount)
 		out = append(out, finishInventoryItem("redis", "redis", c.ID, name, workerID, worker, owner, c.Status, note, currency, false, lines, rate))
+	}
+	return out
+}
+
+func (s *Server) inventoryDocker(catalog []billingResource, currency string, rate float64, owners, workers map[string]string) []billingInventoryItem {
+	if s.docker == nil {
+		return nil
+	}
+	s.docker.mu.Lock()
+	apps := make([]dockerApplication, 0, len(s.docker.Applications))
+	for _, a := range s.docker.Applications {
+		apps = append(apps, a)
+	}
+	containers := make([]dockerContainer, 0, len(s.docker.Containers))
+	for _, c := range s.docker.Containers {
+		if strings.TrimSpace(c.AppID) != "" {
+			continue
+		}
+		containers = append(containers, c)
+	}
+	vols := make([]dockerVolume, 0, len(s.docker.Volumes))
+	for _, v := range s.docker.Volumes {
+		vols = append(vols, v)
+	}
+	backups := make([]dockerBackup, 0, len(s.docker.Backups))
+	for _, b := range s.docker.Backups {
+		if b.State == "DELETING" {
+			continue
+		}
+		backups = append(backups, b)
+	}
+	s.docker.mu.Unlock()
+	out := make([]billingInventoryItem, 0, len(apps)+len(containers)+len(vols)+len(backups))
+	for _, a := range apps {
+		name := strings.TrimSpace(a.Name)
+		if name == "" {
+			name = a.ID
+		}
+		worker := workers[a.WorkerID]
+		owner := a.Owner
+		if owner == "" {
+			owner = owners[a.ID]
+		}
+		stopped := strings.EqualFold(a.State, "stopped") || strings.EqualFold(a.State, "exited") || strings.EqualFold(a.State, "removed")
+		kind := "docker"
+		usageLabel := "Docker application"
+		note := "Docker application (image / Git / Quick App). Host Docker on the worker; not FileVPS guest compute."
+		if a.Method == "compose" {
+			kind = "docker-compose"
+			usageLabel = "Docker Compose project"
+			note = "Docker Compose multi-service stack on host engine. Bills the Docker unit plus reserved CPU/RAM."
+		}
+		lines := []billingInvoiceLine{}
+		if stopped {
+			if a.Method == "compose" {
+				note = "Stopped Docker Compose project has no compute charge"
+			} else {
+				note = "Stopped Docker application has no compute charge"
+			}
+		} else {
+			lines = append(lines, inventoryLine("docker", a.ID, name, a.WorkerID, worker, "docker", usageLabel, "Docker-app-month", currency, 1, resourceCharge(catalog, 1, "docker"), rate))
+			cpu := a.Spec.CPU
+			ramMB := a.Spec.RAMMB
+			if a.Method == "compose" {
+				if cpu <= 0 {
+					cpu = 0.25
+				}
+				if ramMB <= 0 {
+					ramMB = 128
+				}
+			}
+			if cpu > 0 {
+				if c := resourceCharge(catalog, cpu, "cpu"); c > 0 {
+					lines = append(lines, inventoryLine("docker", a.ID, name, a.WorkerID, worker, "cpu", usageLabel+" vCPU", "vCPU-month", currency, cpu, c, rate))
+				}
+			}
+			if ramQty := billingGBFromMB(ramMB); ramQty > 0 {
+				if c := resourceCharge(catalog, ramQty, "ram"); c > 0 {
+					lines = append(lines, inventoryLine("docker", a.ID, name, a.WorkerID, worker, "ram", usageLabel+" RAM", "GB-month", currency, ramQty, c, rate))
+				}
+			}
+		}
+		state := a.State
+		if state == "" {
+			state = "ACTIVE"
+		}
+		out = append(out, finishInventoryItem(kind, "docker", a.ID, name, a.WorkerID, worker, owner, state, note, currency, stopped, lines, rate))
+	}
+	for _, c := range containers {
+		name := strings.TrimSpace(c.Name)
+		if name == "" {
+			name = c.ID
+		}
+		worker := workers[c.WorkerID]
+		owner := c.Owner
+		if owner == "" {
+			owner = owners[c.ID]
+		}
+		stopped := strings.EqualFold(c.Desired, "stopped") || strings.EqualFold(c.State, "exited") || strings.EqualFold(c.State, "stopped") || strings.EqualFold(c.State, "removed")
+		note := "Standalone Docker container on host engine."
+		lines := []billingInvoiceLine{}
+		if stopped {
+			note = "Stopped Docker container has no compute charge"
+		} else {
+			lines = append(lines, inventoryLine("docker", c.ID, name, c.WorkerID, worker, "docker", "Docker container", "Docker-app-month", currency, 1, resourceCharge(catalog, 1, "docker"), rate))
+			cpuQty := c.Spec.CPU
+			if cpuQty <= 0 {
+				cpuQty = 0
+			}
+			if cpuQty > 0 {
+				if charge := resourceCharge(catalog, cpuQty, "cpu"); charge > 0 {
+					lines = append(lines, inventoryLine("docker", c.ID, name, c.WorkerID, worker, "cpu", "Docker container vCPU", "vCPU-month", currency, cpuQty, charge, rate))
+				}
+			}
+			if ramQty := billingGBFromMB(c.Spec.RAMMB); ramQty > 0 {
+				if charge := resourceCharge(catalog, ramQty, "ram"); charge > 0 {
+					lines = append(lines, inventoryLine("docker", c.ID, name, c.WorkerID, worker, "ram", "Docker container RAM", "GB-month", currency, ramQty, charge, rate))
+				}
+			}
+		}
+		state := c.State
+		if state == "" {
+			state = c.Desired
+		}
+		if state == "" {
+			state = "ACTIVE"
+		}
+		out = append(out, finishInventoryItem("docker", "docker", c.ID, name, c.WorkerID, worker, owner, state, note, currency, stopped, lines, rate))
+	}
+	for _, v := range vols {
+		name := strings.TrimSpace(v.Name)
+		if name == "" {
+			name = v.ID
+		}
+		worker := workers[v.WorkerID]
+		owner := v.Owner
+		if owner == "" {
+			owner = owners[v.ID]
+		}
+		qty := billingGBFromMB(v.QuotaMB)
+		if qty == 0 {
+			qty = 1
+		}
+		lines := []billingInvoiceLine{inventoryLine("docker", v.ID, name, v.WorkerID, worker, "volume", "Docker named volume", "GB-month", currency, qty, resourceCharge(catalog, qty, "volume", "ssd"), rate)}
+		note := "Host Docker named volume. Uses Volume/SSD unit prices; separate from FileVPS block volumes."
+		if v.DeleteProtection {
+			note += " Delete protection enabled."
+		}
+		out = append(out, finishInventoryItem("docker-volume", "docker", v.ID, name, v.WorkerID, worker, owner, "READY", note, currency, true, lines, rate))
+	}
+	for _, b := range backups {
+		name := strings.TrimSpace(b.Name)
+		if name == "" {
+			name = b.ID
+		}
+		worker := workers[b.WorkerID]
+		owner := b.Owner
+		if owner == "" {
+			owner = owners[b.ID]
+		}
+		qty := billingGBFromBytes(b.SizeBytes)
+		if qty == 0 {
+			qty = billingGBFromMB(b.QuotaMB)
+		}
+		if qty == 0 {
+			qty = 1
+		}
+		lines := []billingInvoiceLine{inventoryLine("docker", b.ID, name, b.WorkerID, worker, "backup", "Docker volume backup", "GB-month", currency, qty, resourceCharge(catalog, qty, "backup", "ssd"), rate)}
+		note := "Host Docker volume archive. Uses Backup/SSD unit prices; separate from FileVPS backups."
+		state := b.State
+		if state == "" {
+			state = "READY"
+		}
+		out = append(out, finishInventoryItem("docker-backup", "docker", b.ID, name, b.WorkerID, worker, owner, state, note, currency, true, lines, rate))
 	}
 	return out
 }

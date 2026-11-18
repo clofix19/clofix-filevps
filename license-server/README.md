@@ -74,7 +74,7 @@ Optional limits (`-1` unlimited, `0` not included, omitted unspecified):
 | `max_kubernetes_nodes` | CKS nodes across all pools |
 | `max_kubernetes_node_pools` | CKS node pools |
 | `max_redis_clusters` | Multi-VPS Redis Cluster topologies (unspecified stays unlimited) |
-| `max_docker_containers` / `max_docker_applications` / `max_docker_workers` | Docker runtime entitlements |
+| `max_docker_containers` / `max_docker_applications` / `max_docker_compose` / `max_docker_workers` / `max_docker_volumes` / `max_docker_backups` | Docker runtime entitlements |
 | `max_health_checks` | Custom health-check endpoints (not derived worker/LB checks) |
 | `max_notification_channels` | Alert channels |
 | `max_iam_users` / `max_iam_groups` / `max_iam_policies` / `max_access_keys` | IAM |

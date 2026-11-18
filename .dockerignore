@@ -1,0 +1,10 @@
+.git
+**/.git
+OS/**/rootfs.tar.gz
+OS/**/*.tar.gz
+OS/**/.build
+OS/**/dist
+worker/dist
+deploy/**/dist
+.env
+**/node_modules

@@ -36,10 +36,20 @@ func loadImageCatalog(dir string) *imageCatalog {
 	if c.Items == nil {
 		c.Items = map[string]imageEntry{}
 	}
+	now := time.Now().UTC()
 	if len(c.Items) == 0 {
-		now := time.Now().UTC()
-		c.Items["ubuntu-24.04"] = imageEntry{ID: "ubuntu-24.04", Name: "ubuntu", Version: "24.04", Description: "Default CloFix Ubuntu 24.04 rootfs", Enabled: true, Created: now}
-		c.Items["ubuntu-22.04"] = imageEntry{ID: "ubuntu-22.04", Name: "ubuntu", Version: "22.04", Description: "Ubuntu 22.04 (requires bundled or custom rootfs URL)", Enabled: true, Created: now}
+		c.Items["ubuntu-24.04"] = imageEntry{ID: "ubuntu-24.04", Name: "ubuntu", Version: "24.04", Description: "Bundled Ubuntu 24.04 · root-only", Enabled: true, Created: now}
+		c.Items["ubuntu-22.04"] = imageEntry{ID: "ubuntu-22.04", Name: "ubuntu", Version: "22.04", Description: "Bundled Ubuntu 22.04 · root-only", Enabled: true, Created: now}
+		c.Items["clofix-linux-1.0"] = imageEntry{ID: "clofix-linux-1.0", Name: "clofix-linux", Version: "1.0", Description: "CloFix Linux 1.0 · branded Ubuntu base · root-only", Enabled: true, Created: now}
+	} else {
+		// Keep catalog current when upgrading older controllers that already have image-catalog.json.
+		if e, ok := c.Items["ubuntu-22.04"]; ok && strings.Contains(e.Description, "requires bundled or custom") {
+			e.Description = "Bundled Ubuntu 22.04 · root-only"
+			c.Items["ubuntu-22.04"] = e
+		}
+		if _, ok := c.Items["clofix-linux-1.0"]; !ok {
+			c.Items["clofix-linux-1.0"] = imageEntry{ID: "clofix-linux-1.0", Name: "clofix-linux", Version: "1.0", Description: "CloFix Linux 1.0 · branded Ubuntu base · root-only", Enabled: true, Created: now}
+		}
 	}
 	return c
 }

@@ -153,8 +153,11 @@
     <dialog class="terminal-dialog form-dialog" id="create-vps-dialog" aria-labelledby="create-vps-title">
       <div class="section-head"><div><p class="eyebrow">VPS management</p><h2 id="create-vps-title">Create FileVPS</h2><p>Deploy a Linux VPS on an enrolled worker.</p></div><button class="secondary" id="create-vps-close" type="button">Close</button></div>
       <div class="form-grid">
-        <div class="form-field"><label for="img">Image</label><input id="img" value="ubuntu" placeholder="image name"></div>
-        <div class="form-field"><label for="ver">Image version</label><input id="ver" value="24.04" placeholder="version"></div>
+        <div class="form-field"><label for="img-preset">OS image</label><select id="img-preset"><option value="ubuntu:24.04">Ubuntu 24.04</option><option value="ubuntu:22.04">Ubuntu 22.04</option><option value="clofix-linux:1.0">CloFix Linux 1.0</option><option value="custom">Custom (name + version)</option></select></div>
+        <div class="form-field" id="img-custom-wrap" hidden><label for="img">Image name</label><input id="img" value="ubuntu" placeholder="ubuntu or clofix-linux"></div>
+        <div class="form-field" id="ver-custom-wrap" hidden><label for="ver">Image version</label><input id="ver" value="24.04" placeholder="24.04"></div>
+        <input type="hidden" id="img-name" value="ubuntu"><input type="hidden" id="img-version" value="24.04">
+        <p class="muted form-span" id="img-preset-note" style="margin:0">Bundled images are root-only. CloFix Linux is Ubuntu-based with CloFix branding.</p>
         <div class="form-field form-span"><label for="auth-method">Login method</label><select id="auth-method"><option value="key">SSH key (PEM)</option><option value="pam">Password (PAM)</option><option value="both">SSH key and PAM password</option></select><small class="muted">PAM enables root password login. PEM is an SSH key you can generate and download after create.</small></div>
         <div class="form-field form-span" id="pem-fields"><label for="ssh-key-id">Saved PEM key</label><select id="ssh-key-id"><option value="">Paste a public key or generate a new PEM</option></select></div>
         <div class="form-field form-span" id="sshkey-wrap"><label for="sshkey">SSH public key</label><textarea id="sshkey" placeholder="Paste ~/.ssh/id_ed25519.pub or leave blank to generate a PEM" rows="2"></textarea><label class="check-row" for="generate-pem"><input id="generate-pem" type="checkbox" checked> Generate a new PEM and download it after create</label></div>

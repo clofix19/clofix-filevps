@@ -87,6 +87,13 @@ func RunInit(args []string) error {
 			return err
 		}
 	}
+	// Builtin rootfs tarballs exclude live /proc contents; ensure the mountpoint exists
+	// (also covers older/broken lowers missing empty proc/sys/dev/run dirs).
+	for _, d := range []string{"proc", "sys", "dev", "run"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			return fmt.Errorf("prepare /%s: %w", d, err)
+		}
+	}
 	if err := syscall.Mount("proc", filepath.Join(root, "proc"), "proc", syscall.MS_NOSUID|syscall.MS_NODEV|syscall.MS_NOEXEC, ""); err != nil {
 		return fmt.Errorf("mount /proc: %w", err)
 	}

@@ -346,3 +346,28 @@ body{display:flex;flex-direction:column;min-height:100vh}
 :root[data-theme="light"] .console-result-icon{background:#e7f2ee;color:#087f72}
 :root[data-theme="light"] .console-result:hover .console-result-icon,:root[data-theme="light"] .console-result.is-active .console-result-icon{background:#d5ebe5}
 :root[data-theme="light"] .console-result-label,:root[data-theme="light"] .console-more-panel p{color:#4c625f}
+
+/* VPS in-browser terminal */
+.vps-term-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:nowrap}
+.vps-term-head>div:first-child{min-width:0;flex:1 1 auto}
+.vps-term-head p{overflow-wrap:anywhere}
+.vps-term-head-actions{display:inline-flex;margin-left:auto;flex:0 0 auto;flex-wrap:nowrap;align-items:center;justify-content:flex-end;gap:8px}
+.vps-term-head-actions .badge{white-space:nowrap}
+.vps-term-head-actions .danger{padding:8px 14px;white-space:nowrap}
+.vps-term-login{display:grid;gap:14px;margin-top:6px;max-width:720px}
+.vps-term-login[hidden],.vps-term-screen[hidden],.vps-term-card[hidden]{display:none!important}
+.vps-term-method{display:inline-flex;gap:4px;padding:4px;border:1px solid #2b3d4d;border-radius:10px;background:#0e151e;width:fit-content}
+.vps-term-method-btn{border:0;border-radius:7px;padding:8px 14px;background:transparent;color:#9eb0c0;font-weight:650;cursor:pointer}
+.vps-term-method-btn:hover{color:#e8f2f8;background:#172330}
+.vps-term-method-btn.is-active{background:#17423d;color:#8bf0e0}
+.vps-term-method-btn:disabled{opacity:.45;cursor:not-allowed}
+.vps-term-hint{margin:0;font-size:12px}
+.vps-term-card{display:grid;gap:12px;padding:14px;border:1px solid #2b3d4d;border-radius:12px;background:#0e151e}
+.vps-term-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.vps-term-screen{margin-top:8px;min-width:0}
+/* Let xterm size its own viewport/screen — do not force height:100% on those nodes (clips the last row). */
+.vps-term-xterm{box-sizing:border-box;height:min(72vh,680px);min-height:420px;border:1px solid #273646;border-radius:12px;background:#0a1119;padding:0;overflow:hidden}
+.vps-term-xterm .xterm{padding:6px 8px 10px}
+.vps-term-xterm .xterm-viewport{right:0}
+#vps-term-pem{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;min-height:140px}
+#vps-term-password{max-width:360px}

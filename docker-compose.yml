@@ -46,6 +46,8 @@ services:
       CLOFIX_LICENSE_PUBLIC_URL: ${CLOFIX_LICENSE_PUBLIC_URL:-}
       CLOFIX_LOG_DIR: /worker-logs/instances
       CLOFIX_LB_WORKER_HOST: worker # Docker service DNS for the local single worker
+      # Web Terminal SSHes to published FileVPS ports (127.0.0.1:22000+ on the Mac).
+      CLOFIX_SSH_WORKER_HOST: host.docker.internal
       CLOFIX_NLB_LISTEN_MAP: '{"127.0.0.1:18080":"0.0.0.0:18080"}' # Explicit local NAT mapping; public deployments bind their assigned IPs directly
       CLOFIX_TLS_NAMES: localhost,127.0.0.1,admin
       CLOFIX_ACME_EMAIL: ${CLOFIX_ACME_EMAIL:-}
@@ -71,7 +73,11 @@ services:
         condition: service_started
 
   worker:
-    build: ./worker
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+      args:
+        CLOFIX_INSTALLATION_ID: ${CLOFIX_INSTALLATION_ID:-}
     hostname: clofix-local-worker
     restart: unless-stopped
     # DEV ONLY: fx needs namespaces, cgroups v2, overlayfs and mounts

@@ -176,7 +176,9 @@ type Operation struct {
 	GitURL        string            `json:"git_url,omitempty"`
 	GitBranch     string            `json:"git_branch,omitempty"`
 	GitToken      string            `json:"git_token,omitempty"`
+	GitUsername   string            `json:"git_username,omitempty"`
 	Dockerfile    string            `json:"dockerfile,omitempty"`
+	ComposeFile   string            `json:"compose_file,omitempty"` // for git-compose: docker-compose.yml
 	BuildContext  string            `json:"build_context,omitempty"`
 	BackupID      string            `json:"backup_id,omitempty"`
 	BackupDest    string            `json:"backup_dest,omitempty"`

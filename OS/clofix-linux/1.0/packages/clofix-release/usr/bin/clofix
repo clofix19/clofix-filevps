@@ -1,0 +1,155 @@
+#!/bin/sh
+# CloFix Linux system CLI — real commands, not placeholders.
+set -eu
+
+VERSION_FILE=/etc/clofix/version
+OS_RELEASE=/etc/os-release
+SUPPORT_URL=https://clofix.com/support
+
+# Parse KEY=value from os-release without executing unquoted tokens
+os_get() {
+  key=$1
+  [ -r "$OS_RELEASE" ] || return 0
+  # Prefer last matching line; strip optional quotes
+  sed -n "s/^${key}=//p" "$OS_RELEASE" | tail -n 1 | sed 's/^"//;s/"$//'
+}
+
+read_kv() {
+  ID=$(os_get ID)
+  PRETTY_NAME=$(os_get PRETTY_NAME)
+  HOME_URL=$(os_get HOME_URL)
+  SUPPORT_URL_VAL=$(os_get SUPPORT_URL)
+  UBUNTU_CODENAME=$(os_get UBUNTU_CODENAME)
+  VERSION_ID=$(os_get VERSION_ID)
+}
+
+cmd_version() {
+  if [ -r "$VERSION_FILE" ]; then
+    cat "$VERSION_FILE"
+  else
+    echo "CloFix Linux 1.0"
+  fi
+  read_kv
+  echo "ID=${ID:-clofix-linux}"
+  echo "UBUNTU_CODENAME=${UBUNTU_CODENAME:-unknown}"
+}
+
+cmd_info() {
+  read_kv
+  echo "Distribution: ${PRETTY_NAME:-CloFix Linux}"
+  echo "Website:      ${HOME_URL:-https://clofix.com/}"
+  echo "Support:      ${SUPPORT_URL_VAL:-$SUPPORT_URL}"
+  echo "Kernel:       $(uname -sr 2>/dev/null || echo unknown)"
+  echo "Arch:         $(uname -m 2>/dev/null || echo unknown)"
+  if [ -r /etc/debian_version ]; then
+    echo "Debian:       $(cat /etc/debian_version)"
+  fi
+  echo "Package base: Ubuntu ${UBUNTU_CODENAME:-?} (apt)"
+  if command -v dpkg >/dev/null 2>&1; then
+    echo "dpkg:         $(dpkg --print-architecture 2>/dev/null || echo unknown)"
+  fi
+}
+
+cmd_status() {
+  echo "== Services =="
+  if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+    systemctl is-system-running 2>/dev/null || true
+    for s in ssh sshd networking systemd-resolved; do
+      if systemctl list-unit-files "${s}.service" >/dev/null 2>&1; then
+        st=$(systemctl is-active "$s" 2>/dev/null || echo n/a)
+        echo "  $s: $st"
+      fi
+    done
+  else
+    echo "  systemd not active in this environment (FileVPS / chroot OK)"
+  fi
+  echo "== Disk =="
+  df -h / 2>/dev/null | tail -n +2 || true
+  echo "== Memory =="
+  if [ -r /proc/meminfo ]; then
+    awk '/MemTotal|MemAvailable|MemFree/{printf "  %s\n",$0}' /proc/meminfo
+  fi
+  echo "== Network =="
+  hostname -I 2>/dev/null || ip -br addr 2>/dev/null || true
+}
+
+cmd_update() {
+  if ! command -v apt-get >/dev/null 2>&1; then
+    echo "apt-get not available" >&2
+    exit 1
+  fi
+  export DEBIAN_FRONTEND=noninteractive
+  echo "Refreshing package indexes (Ubuntu ${UBUNTU_CODENAME:-repos})..."
+  apt-get update
+  echo "Applying security and package updates within the current release..."
+  apt-get -y upgrade
+  echo "Done. Release upgrades are disabled; use CloFix policy for major bumps."
+}
+
+cmd_security() {
+  echo "== CloFix security posture =="
+  if [ -r /proc/1/root/etc/clofix/upgrade-policy ]; then
+    :
+  fi
+  if [ -r /etc/clofix/upgrade-policy ]; then
+    echo "Upgrade policy:"
+    sed 's/^/  /' /etc/clofix/upgrade-policy
+  else
+    echo "  Policy file missing (/etc/clofix/upgrade-policy)"
+  fi
+  echo "SSH:"
+  if [ -r /etc/ssh/sshd_config ]; then
+    grep -E '^(PermitRootLogin|PasswordAuthentication|PubkeyAuthentication)\b' /etc/ssh/sshd_config 2>/dev/null | sed 's/^/  /' || echo "  (defaults)"
+  else
+    echo "  sshd_config not present"
+  fi
+  echo "Pending security updates (if apt-get available):"
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get -s upgrade 2>/dev/null | awk '/^Inst /{c++} END{print "  simulated upgrades:", c+0}'
+  else
+    echo "  apt-get unavailable"
+  fi
+}
+
+cmd_support() {
+  cat <<EOF
+CloFix Linux support
+  Web:     https://clofix.com/support
+  Docs:    https://clofix.com
+  CLI:     clofix info | status | security
+  Updates: clofix update   (same Ubuntu release only)
+EOF
+}
+
+usage() {
+  cat <<EOF
+Usage: clofix <command>
+
+Commands:
+  version   Show CloFix Linux version and Ubuntu codename
+  info      Distribution and hardware summary
+  status    Services, disk, memory, network
+  update    apt update + upgrade within current Ubuntu release
+  security  Upgrade policy and SSH/security hints
+  support   Support URLs and help
+EOF
+}
+
+main() {
+  cmd=${1:-}
+  [ -n "$cmd" ] || { usage; exit 1; }
+  shift || true
+  case "$cmd" in
+    version) cmd_version "$@" ;;
+    info) cmd_info "$@" ;;
+    status) cmd_status "$@" ;;
+    update) cmd_update "$@" ;;
+    security) cmd_security "$@" ;;
+    support) cmd_support "$@" ;;
+    -h|--help|help) usage ;;
+    *) echo "Unknown command: $cmd" >&2; usage; exit 1 ;;
+  esac
+}
+
+main "$@"

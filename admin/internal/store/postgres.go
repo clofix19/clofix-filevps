@@ -51,6 +51,7 @@ func (p *Postgres) EnsureSchema() error {
 		`ALTER TABLE cf_instances ADD COLUMN IF NOT EXISTS account_id TEXT`,
 		`ALTER TABLE cf_volumes ADD COLUMN IF NOT EXISTS account_id TEXT`,
 		`ALTER TABLE cf_volumes ADD COLUMN IF NOT EXISTS delete_protection BOOLEAN NOT NULL DEFAULT FALSE`,
+		`ALTER TABLE cf_workers ADD COLUMN IF NOT EXISTS installation_id TEXT NOT NULL DEFAULT ''`,
 		`CREATE TABLE IF NOT EXISTS cf_metrics_samples (
 			id BIGSERIAL PRIMARY KEY,
 			series TEXT NOT NULL,
@@ -86,9 +87,9 @@ func (p *Postgres) ConsumeToken(hash string, now time.Time) error {
 
 func (p *Postgres) UpsertWorker(w Worker) error {
 	c, _ := json.Marshal(w.Capacity)
-	_, err := p.db.Exec(`INSERT INTO cf_workers(id,hostname,status,version,capacity,last_heartbeat) VALUES($1,$2,$3,$4,$5,$6)
-		ON CONFLICT (id) DO UPDATE SET hostname=$2,status=$3,version=$4,capacity=$5,last_heartbeat=$6`,
-		w.ID, w.Hostname, w.Status, w.Version, c, w.LastHeartbeat)
+	_, err := p.db.Exec(`INSERT INTO cf_workers(id,hostname,status,version,capacity,last_heartbeat,installation_id) VALUES($1,$2,$3,$4,$5,$6,$7)
+		ON CONFLICT (id) DO UPDATE SET hostname=$2,status=$3,version=$4,capacity=$5,last_heartbeat=$6,installation_id=$7`,
+		w.ID, w.Hostname, w.Status, w.Version, c, w.LastHeartbeat, w.InstallationID)
 	return err
 }
 
@@ -98,16 +99,16 @@ func scanWorker(s scanner) (Worker, error) {
 	var w Worker
 	var c []byte
 	var hb sql.NullTime
-	var host, ver sql.NullString
-	if err := s.Scan(&w.ID, &host, &w.Status, &ver, &c, &hb); err != nil {
+	var host, ver, install sql.NullString
+	if err := s.Scan(&w.ID, &host, &w.Status, &ver, &c, &hb, &install); err != nil {
 		return w, err
 	}
-	w.Hostname, w.Version, w.LastHeartbeat = host.String, ver.String, hb.Time
+	w.Hostname, w.Version, w.LastHeartbeat, w.InstallationID = host.String, ver.String, hb.Time, install.String
 	json.Unmarshal(c, &w.Capacity)
 	return w, nil
 }
 
-const workerCols = `id,hostname,status,version,capacity,last_heartbeat`
+const workerCols = `id,hostname,status,version,capacity,last_heartbeat,COALESCE(installation_id,'')`
 
 func (p *Postgres) GetWorker(id string) (Worker, error) {
 	w, err := scanWorker(p.db.QueryRow(`SELECT `+workerCols+` FROM cf_workers WHERE id=$1`, id))

@@ -1,0 +1,4 @@
+#!/bin/sh
+# CloFix dynamic MOTD header (runs once; other Ubuntu MOTD fragments disabled by brand script)
+[ -r /etc/motd ] && cat /etc/motd
+exit 0

@@ -1,0 +1,11 @@
+#!/usr/sbin/nft -f
+# CloFix baseline — additive table only. Do NOT flush foreign rulesets.
+# Apply only on hosts with CAP_NET_ADMIN; never from unprivileged shared-kernel guests blindly.
+table inet clofix_guard {
+  chain input {
+    type filter hook input priority 0; policy accept;
+    ct state established,related accept
+    iif "lo" accept
+    tcp dport 22 ct state new limit rate 20/minute accept
+  }
+}

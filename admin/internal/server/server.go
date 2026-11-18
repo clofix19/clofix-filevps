@@ -243,6 +243,7 @@ func (s *Server) AdminHandler() http.Handler {
 	mux.HandleFunc("DELETE /api/instances/{id}/ports/{hostPort}", s.auth(s.deletePortMapping))
 	mux.HandleFunc("GET /api/instances/{id}/logs", s.auth(s.instanceLogs))
 	mux.HandleFunc("GET /api/instances/{id}/waf/logs", s.auth(s.wafErrorLogs))
+	mux.HandleFunc("GET /api/instances/{id}/terminal", s.auth(s.instanceTerminal))
 	mux.HandleFunc("POST /api/instances", s.auth(s.createInstance))
 	mux.HandleFunc("POST /api/instances/{id}/retry", s.auth(s.retryInstance))
 	mux.HandleFunc("POST /api/instances/{id}/start", s.auth(s.instanceOp(proto.ActionStart)))

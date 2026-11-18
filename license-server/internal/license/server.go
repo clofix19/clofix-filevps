@@ -48,7 +48,10 @@ type Plan struct {
 	MaxKubernetesNodePools  *int `json:"max_kubernetes_node_pools,omitempty"`
 	MaxDockerContainers     *int `json:"max_docker_containers,omitempty"`
 	MaxDockerApplications   *int `json:"max_docker_applications,omitempty"`
+	MaxDockerCompose        *int `json:"max_docker_compose,omitempty"`
 	MaxDockerWorkers        *int `json:"max_docker_workers,omitempty"`
+	MaxDockerVolumes        *int `json:"max_docker_volumes,omitempty"`
+	MaxDockerBackups        *int `json:"max_docker_backups,omitempty"`
 	MaxRedisClusters        *int `json:"max_redis_clusters,omitempty"`
 
 	ID             string `json:"id"`
@@ -462,7 +465,7 @@ func (s *Service) savePlan(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "valid name, positive resource limits, exactly one installation required")
 		return
 	}
-	for _, limit := range []*int{p.MaxDatabaseProjects, p.MaxDatabases, p.MaxDatabaseUsers, p.MaxDatabaseSchedules, p.MaxHealthChecks, p.MaxBackups, p.MaxVolumes, p.MaxStorageGB, p.MaxS3Connections, p.MaxApplications, p.MaxManagedApps, p.MaxNotificationChannels, p.MaxIAMUsers, p.MaxIAMGroups, p.MaxIAMPolicies, p.MaxAccessKeys, p.MaxDNSZones, p.MaxDNSRecords, p.MaxKubernetesClusters, p.MaxKubernetesNodes, p.MaxKubernetesNodePools, p.MaxDockerContainers, p.MaxDockerApplications, p.MaxDockerWorkers, p.MaxRedisClusters} {
+	for _, limit := range []*int{p.MaxDatabaseProjects, p.MaxDatabases, p.MaxDatabaseUsers, p.MaxDatabaseSchedules, p.MaxHealthChecks, p.MaxBackups, p.MaxVolumes, p.MaxStorageGB, p.MaxS3Connections, p.MaxApplications, p.MaxManagedApps, p.MaxNotificationChannels, p.MaxIAMUsers, p.MaxIAMGroups, p.MaxIAMPolicies, p.MaxAccessKeys, p.MaxDNSZones, p.MaxDNSRecords, p.MaxKubernetesClusters, p.MaxKubernetesNodes, p.MaxKubernetesNodePools, p.MaxDockerContainers, p.MaxDockerApplications, p.MaxDockerCompose, p.MaxDockerWorkers, p.MaxDockerVolumes, p.MaxDockerBackups, p.MaxRedisClusters} {
 		if limit != nil && (*limit < -1 || *limit > 1000000) {
 			problem(w, 400, "optional resource limits must be -1 (unlimited), 0 (not included), or up to 1000000; omit for unspecified")
 			return

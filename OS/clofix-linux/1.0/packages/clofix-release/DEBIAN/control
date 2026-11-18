@@ -1,0 +1,12 @@
+Package: clofix-release
+Version: 1.0.0-1
+Section: admin
+Priority: optional
+Architecture: all
+Maintainer: CloFix <support@clofix.com>
+Depends: base-files
+Description: CloFix Linux release branding and CLI
+ Owns CloFix-managed branding files and the clofix(1) CLI so Ubuntu
+ package upgrades do not silently replace CloFix identity without
+ this package.
+Homepage: https://clofix.com/

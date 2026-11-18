@@ -5,6 +5,7 @@
   <div class="settings-layout">
     <nav class="settings-nav" aria-label="VPS sections">
       <a href="#detail-overview" data-settings-link aria-controls="detail-overview" aria-current="location"><strong>Overview</strong><span>Usage, metadata and actions</span></a>
+      <a href="#detail-terminal" data-settings-link aria-controls="detail-terminal"><strong>Terminal</strong><span>In-browser shell (PEM or PAM)</span></a>
       <a href="#detail-resources" data-settings-link aria-controls="detail-resources"><strong>Resources</strong><span>RAM, CPU, disk and swap</span></a>
       <a href="#detail-access" data-settings-link aria-controls="detail-access"><strong>Access</strong><span>SSH login and root password</span></a>
       <a href="#detail-services" data-settings-link aria-controls="detail-services"><strong>Services</strong><span>Installed application processes</span></a>
@@ -149,6 +150,53 @@
         <div class="detail-layout"><div class="panel"><div class="section-head"><div><h2>VPS metadata</h2><p>Configuration and placement information.</p></div></div><div class="meta-grid" id="metadata"></div></div>
           <div class="panel"><div class="section-head"><div><h2>Instance actions</h2><p>Manage the selected VPS.</p></div></div><div class="inline-fields" id="detail-actions"></div><div class="message" id="detail-message"></div><button class="secondary" id="load-logs">View instance logs</button><pre id="detail-logs" class="log-view" style="display:none"></pre></div></div>
       </div>
+      <div class="panel settings-section" id="detail-terminal" data-settings-panel aria-labelledby="detail-heading-terminal" hidden>
+        <div class="section-head vps-term-head">
+          <div>
+            <p class="eyebrow">VPS Shell</p>
+            <h2 id="detail-heading-terminal" tabindex="-1">Terminal</h2>
+            <p id="vps-term-sub">Interactive root shell in the browser (PEM or PAM).</p>
+          </div>
+          <div class="inline-fields vps-term-head-actions">
+            <span class="badge" id="vps-term-auth-badge">Auth</span>
+            <span class="badge RUNNING" id="vps-term-live-badge" hidden>Live</span>
+            <button class="danger" id="vps-term-exit" type="button" hidden title="Close the shell session">Exit</button>
+          </div>
+        </div>
+        <div id="vps-term-login" class="vps-term-login">
+          <div class="vps-term-method" role="group" aria-label="Login method">
+            <button type="button" class="vps-term-method-btn is-active" id="vps-term-method-pem" data-method="pem" aria-pressed="true">PEM key</button>
+            <button type="button" class="vps-term-method-btn" id="vps-term-method-password" data-method="password" aria-pressed="false">PAM password</button>
+            <input type="hidden" id="vps-term-method" value="pem">
+          </div>
+          <p class="muted vps-term-hint" id="vps-term-hint">Use the private PEM downloaded when this VPS was created.</p>
+          <div class="vps-term-card" id="vps-term-pem-wrap">
+            <div class="form-field">
+              <label for="vps-term-pem-file">Private key file</label>
+              <input id="vps-term-pem-file" type="file" accept=".pem,.key,.txt,text/plain" autocomplete="off">
+            </div>
+            <div class="form-field">
+              <label for="vps-term-pem">Paste private PEM</label>
+              <textarea id="vps-term-pem" rows="6" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" autocomplete="off" spellcheck="false"></textarea>
+            </div>
+            <p class="muted">Encrypted PEMs are not supported here. CloFix never stores the private key.</p>
+          </div>
+          <div class="vps-term-card" id="vps-term-password-wrap" hidden>
+            <div class="form-field">
+              <label for="vps-term-password">Root password</label>
+              <input id="vps-term-password" type="password" name="vps-term-root-password" autocomplete="off" minlength="8" maxlength="128" placeholder="Root PAM password">
+            </div>
+            <p class="muted">PAM password auth must be enabled on this VPS (Access → Root password).</p>
+          </div>
+          <div class="vps-term-actions">
+            <button class="primary" id="vps-term-connect" type="button">Connect</button>
+            <span class="message" id="vps-term-message" role="status"></span>
+          </div>
+        </div>
+        <div id="vps-term-screen" class="vps-term-screen" hidden>
+          <div id="vps-term-xterm" class="vps-term-xterm" role="application" aria-label="VPS terminal"></div>
+        </div>
+      </div>
       <div class="panel settings-section" id="detail-resources" data-settings-panel aria-labelledby="detail-heading-resources" hidden>
         <h2 id="detail-heading-resources" tabindex="-1">Resources</h2>
         <p>RAM, CPU, and swap limits apply after the worker restarts the VPS. Disk is a placement allocation; hard disk quotas are not enforced.</p>
@@ -157,9 +205,13 @@
       </div>
       <div class="panel settings-section" id="detail-access" data-settings-panel aria-labelledby="detail-heading-access" hidden>
         <h2 id="detail-heading-access" tabindex="-1">Access</h2>
-        <div class="section-head"><div><p class="eyebrow">VPS Login Console</p><h2>SSH login</h2><p>Connect securely from your Mac Terminal while the VPS is running.</p></div><button class="primary" id="terminal-open-details" type="button">Open login console</button></div>
+        <div class="section-head"><div><p class="eyebrow">VPS Login Console</p><h2>SSH login</h2><p>Connect from your Mac Terminal while the VPS is running. Browser Terminal is under the Terminal menu.</p></div><button class="primary" id="terminal-open-details" type="button">Open browser Terminal</button></div>
+        <p class="muted" id="terminal-inline-label">Host SSH (password)</p>
         <code class="terminal-command" id="terminal-inline-command">ssh -p PORT root@localhost</code>
-        <p class="muted">The VPS uses the private key matching the public key you added when creating it. For a non-default key, add <code>-i ~/.ssh/your-private-key</code>.</p>
+        <p class="muted" id="terminal-inline-pem-label" hidden>Host SSH (PEM)</p>
+        <code class="terminal-command" id="terminal-inline-pem-command" hidden></code>
+        <p class="muted" id="terminal-inline-help">For PAM password login, Mac Terminal must disable your default SSH keys or it will fail publickey first. Use the password command above, then enter the root password from Access.</p>
+        <div class="inline-fields" style="margin-top:8px"><button class="secondary" id="terminal-inline-copy" type="button">Copy password SSH command</button></div>
         <div class="message" id="terminal-inline-message"></div>
         <div class="security-setting"><div class="section-head"><div><h3>Root password</h3><p id="password-auth-status">PAM password login is off unless enabled at create or here.</p></div></div><form class="inline-fields" id="password-form"><label>New root password<input class="field" id="detail-root-password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required></label><button class="secondary" id="password-save" type="submit">Update password</button></form><div class="message" id="password-message"></div></div>
       </div>

@@ -87,8 +87,14 @@ func quotaLimit(p licensePlan, resource string) int64 {
 		optional = p.MaxDockerContainers
 	case "docker-applications":
 		optional = p.MaxDockerApplications
+	case "docker-compose":
+		optional = p.MaxDockerCompose
 	case "docker-workers":
 		optional = p.MaxDockerWorkers
+	case "docker-volumes":
+		optional = p.MaxDockerVolumes
+	case "docker-backups":
+		optional = p.MaxDockerBackups
 	case "redis-clusters":
 		optional = p.MaxRedisClusters
 	default:
@@ -97,7 +103,7 @@ func quotaLimit(p licensePlan, resource string) int64 {
 	if optional == nil {
 		// DNS, CKS, Docker and Redis Cluster shipped after existing plans. Unspecified
 		// values stay unlimited so current controllers keep operating until CloFix sets a limit.
-		if resource == "dns-zones" || resource == "dns-records" || resource == "kubernetes-clusters" || resource == "kubernetes-nodes" || resource == "kubernetes-node-pools" || resource == "docker-containers" || resource == "docker-applications" || resource == "docker-workers" || resource == "redis-clusters" {
+		if resource == "dns-zones" || resource == "dns-records" || resource == "kubernetes-clusters" || resource == "kubernetes-nodes" || resource == "kubernetes-node-pools" || resource == "docker-containers" || resource == "docker-applications" || resource == "docker-compose" || resource == "docker-workers" || resource == "docker-volumes" || resource == "docker-backups" || resource == "redis-clusters" {
 			return -1
 		}
 		return 0
@@ -184,7 +190,7 @@ func (s *Server) quotaUsed(resource string) (int64, error) {
 		return int64(len(s.dns.Records)), nil
 	case "kubernetes-clusters", "kubernetes-nodes", "kubernetes-node-pools":
 		return s.kubernetesQuotaUsed(resource), nil
-	case "docker-containers", "docker-applications", "docker-workers":
+	case "docker-containers", "docker-applications", "docker-compose", "docker-workers", "docker-volumes", "docker-backups":
 		return s.dockerQuotaUsed(resource), nil
 	case "redis-clusters":
 		return s.redisClusterQuotaUsed(), nil
@@ -218,7 +224,25 @@ func (s *Server) dockerQuotaUsed(resource string) int64 {
 	case "docker-containers":
 		return int64(len(s.docker.Containers))
 	case "docker-applications":
-		return int64(len(s.docker.Applications))
+		n := int64(0)
+		for _, a := range s.docker.Applications {
+			if a.Method != "compose" {
+				n++
+			}
+		}
+		return n
+	case "docker-compose":
+		n := int64(0)
+		for _, a := range s.docker.Applications {
+			if a.Method == "compose" {
+				n++
+			}
+		}
+		return n
+	case "docker-volumes":
+		return int64(len(s.docker.Volumes))
+	case "docker-backups":
+		return int64(len(s.docker.Backups))
 	case "docker-workers":
 		n := int64(0)
 		for _, st := range s.docker.WorkerStatus {
@@ -390,8 +414,14 @@ func quotaCreation(r *http.Request) string {
 		return "managed-apps"
 	case "/api/docker/containers":
 		return "docker-containers"
-	case "/api/docker/applications", "/api/docker/compose/deploy":
+	case "/api/docker/applications":
 		return "docker-applications"
+	case "/api/docker/compose/deploy":
+		return "docker-compose"
+	case "/api/docker/volumes":
+		return "docker-volumes"
+	case "/api/docker/backups":
+		return "docker-backups"
 	case "/api/monitoring/monitors":
 		return "health-checks"
 	case "/api/monitoring/channels":
@@ -508,7 +538,7 @@ func (s *Server) licenseUsage(w http.ResponseWriter, r *http.Request) {
 	defer s.quotaMu.Unlock()
 	p, e := s.licensedPlan()
 	out := map[string]quotaEntry{}
-	resources := []string{"database-projects", "databases", "database-users", "database-schedules", "instances", "workers", "load-balancers", "dns-zones", "dns-records", "health-checks", "backups", "volumes", "s3-connections", "applications", "managed-apps", "notification-channels", "iam-users", "iam-groups", "iam-policies", "access-keys", "kubernetes-clusters", "kubernetes-nodes", "kubernetes-node-pools", "redis-clusters", "docker-containers", "docker-applications", "docker-workers"}
+	resources := []string{"database-projects", "databases", "database-users", "database-schedules", "instances", "workers", "load-balancers", "dns-zones", "dns-records", "health-checks", "backups", "volumes", "s3-connections", "applications", "managed-apps", "notification-channels", "iam-users", "iam-groups", "iam-policies", "access-keys", "kubernetes-clusters", "kubernetes-nodes", "kubernetes-node-pools", "redis-clusters", "docker-containers", "docker-applications", "docker-compose", "docker-workers", "docker-volumes", "docker-backups"}
 	for _, resource := range resources {
 		used, err := s.quotaUsed(resource)
 		if err != nil {

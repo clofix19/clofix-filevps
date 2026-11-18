@@ -113,6 +113,11 @@ func (m *Manager) Inventory() (bool, []string, []string, string) {
 func (m *Manager) Reserved() (uint64, float64, uint64) {
 	m.Lock()
 	defer m.Unlock()
+	// Fake CKS does not create real kubeadm cgroup budgets; counting Spec.RAMMB
+	// as host commit blocks FileVPS placement on small lab hosts (e.g. 8 GiB).
+	if m.Fake {
+		return 0, 0, 0
+	}
 	var ram, disk uint64
 	var cpu float64
 	for _, rec := range m.records {

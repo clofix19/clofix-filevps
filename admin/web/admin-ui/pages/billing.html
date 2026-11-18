@@ -23,7 +23,7 @@
       </div>
       <div class="panel settings-section" id="billing-resources" data-settings-panel aria-labelledby="billing-heading-resources" hidden>
         <h2 id="billing-heading-resources" tabindex="-1">Live resources</h2>
-        <p class="muted">Scanned VPS, CKS clusters, Redis clusters, load balancers, databases, deployed applications, volumes, backups, S3 and EFS. CKS bills a control-plane unit plus node CPU/RAM/disk; Redis Cluster bills the topology unit while member VPS stay on the FileVPS rows; attached LBs stay on the Load Balancer row. Amounts are the current monthly estimate from <a href="/settings#settings-resource-pricing">Settings → Resource Pricing</a>. A stopped VPS or database is billed for storage only. Hourly usage is tracked on Due bill.</p>
+        <p class="muted">Scanned VPS, CKS clusters, Redis clusters, Docker apps/Compose/containers/volumes/backups, load balancers, databases, deployed applications, volumes, backups, S3 and EFS. CKS bills a control-plane unit plus node CPU/RAM/disk; Redis Cluster bills the topology unit while member VPS stay on the FileVPS rows; Docker and Compose bill a Docker unit plus reserved CPU/RAM on host engine; Docker named volumes and volume backups bill Volume/Backup GB; attached LBs stay on the Load Balancer row. Amounts are the current monthly estimate from <a href="/settings#settings-resource-pricing">Settings → Resource Pricing</a>. A stopped VPS, database or Docker app is billed for storage only (or zero for Docker compute). Hourly usage is tracked on Due bill.</p>
         <p class="message" id="billing-inventory-message" role="status" aria-live="polite"></p>
         <div class="table-wrap"><table id="billing-inventory-table"></table></div>
       </div>

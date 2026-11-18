@@ -25,8 +25,9 @@ var billingProducts = map[string]string{
 	"application":    "Application",
 	"cks":            "CKS",
 	"redis":          "Redis Cluster",
+	"docker":         "Docker",
 }
-var billingResources = []string{"cpu", "ram", "ssd", "cks", "redis", "lb", "transfer", "backup", "ipv4", "volume", "efs", "s3", "app"}
+var billingResources = []string{"cpu", "ram", "ssd", "cks", "redis", "docker", "lb", "transfer", "backup", "ipv4", "volume", "efs", "s3", "app"}
 var billingGateways = map[string]bool{
 	"none": true, "manual": true, "stripe": true, "sslcommerz": true,
 	"bkash": true, "nagad": true,
@@ -277,6 +278,8 @@ func billingProductID(id string) string {
 		return "cks"
 	case "redis-cluster", "redis-clusters", "cluster-services":
 		return "redis"
+	case "docker-app", "docker-application", "docker-applications", "docker-container", "docker-containers":
+		return "docker"
 	default:
 		return strings.TrimSpace(id)
 	}
@@ -289,10 +292,10 @@ func billingProductLabel(id string) string {
 	return id
 }
 func billingResourceLabels() map[string]string {
-	return map[string]string{"cpu": "vCPU", "ram": "RAM", "ssd": "SSD", "transfer": "Transfer", "backup": "Backup", "ipv4": "IPv4", "volume": "Volume", "efs": "EFS", "s3": "S3", "lb": "Load balancer", "cks": "CKS", "redis": "Redis Cluster", "app": "Application"}
+	return map[string]string{"cpu": "vCPU", "ram": "RAM", "ssd": "SSD", "transfer": "Transfer", "backup": "Backup", "ipv4": "IPv4", "volume": "Volume", "efs": "EFS", "s3": "S3", "lb": "Load balancer", "cks": "CKS", "redis": "Redis Cluster", "docker": "Docker", "app": "Application"}
 }
 func billingResourceUnits() map[string]string {
-	return map[string]string{"cpu": "vCPU", "ram": "GB", "ssd": "GB", "transfer": "GB", "backup": "GB", "ipv4": "address", "volume": "GB", "efs": "GB", "s3": "GB", "lb": "balancer", "cks": "CKS cluster", "redis": "Redis cluster", "app": "app"}
+	return map[string]string{"cpu": "vCPU", "ram": "GB", "ssd": "GB", "transfer": "GB", "backup": "GB", "ipv4": "address", "volume": "GB", "efs": "GB", "s3": "GB", "lb": "balancer", "cks": "CKS cluster", "redis": "Redis cluster", "docker": "Docker app", "app": "app"}
 }
 func defaultBillingResources(currency string) []billingResource {
 	units := billingResourceUnits()
@@ -316,8 +319,8 @@ func mergeBillingResources(existing []billingResource, currency string) []billin
 	out := make([]billingResource, 0, len(billingResources))
 	for _, item := range defaultBillingResources(currency) {
 		if old, ok := byName[item.Resource]; ok {
-			if old.Resource == "cks" || old.Resource == "redis" {
-				if old.Unit == "" || old.Unit == "cluster" {
+			if old.Resource == "cks" || old.Resource == "redis" || old.Resource == "docker" {
+				if old.Unit == "" || old.Unit == "cluster" || old.Unit == "app" {
 					old.Unit = item.Unit
 				}
 				if !old.Enabled && old.MonthlyCents == 0 && old.HourlyCents == 0 {
@@ -327,7 +330,7 @@ func mergeBillingResources(existing []billingResource, currency string) []billin
 			out = append(out, old)
 			continue
 		}
-		if item.Resource == "cks" || item.Resource == "redis" {
+		if item.Resource == "cks" || item.Resource == "redis" || item.Resource == "docker" {
 			item.Enabled = true
 		}
 		out = append(out, item)
@@ -833,6 +836,9 @@ func (s *Server) savePricingResources(w http.ResponseWriter, r *http.Request) {
 		}
 		if item.Resource == "redis-cluster" {
 			item.Resource = "redis"
+		}
+		if item.Resource == "docker-app" || item.Resource == "docker-application" {
+			item.Resource = "docker"
 		}
 		item.Unit = strings.TrimSpace(item.Unit)
 		item.Currency = strings.ToUpper(strings.TrimSpace(item.Currency))

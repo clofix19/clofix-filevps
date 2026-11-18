@@ -43,7 +43,10 @@ type licensePlan struct {
 	MaxKubernetesNodePools  *int `json:"max_kubernetes_node_pools,omitempty"`
 	MaxDockerContainers     *int `json:"max_docker_containers,omitempty"`
 	MaxDockerApplications   *int `json:"max_docker_applications,omitempty"`
+	MaxDockerCompose        *int `json:"max_docker_compose,omitempty"`
 	MaxDockerWorkers        *int `json:"max_docker_workers,omitempty"`
+	MaxDockerVolumes        *int `json:"max_docker_volumes,omitempty"`
+	MaxDockerBackups        *int `json:"max_docker_backups,omitempty"`
 	MaxRedisClusters        *int `json:"max_redis_clusters,omitempty"`
 
 	ID             string `json:"id"`

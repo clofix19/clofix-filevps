@@ -155,13 +155,49 @@ func envOr(k, d string) string {
 
 const legacyDefaultGuestInit = "mkdir -p /run/sshd && ssh-keygen -A && exec /usr/sbin/sshd -D -e"
 
+// defaultGuestInit brings up sshd as PID 1. Guest SysV scripts (especially
+// redis-server) can block forever in these namespaces, so application services
+// are started in the background and never delay SSH.
 func defaultGuestInit() []string {
-	boot := "mkdir -p /run/sshd /run/nginx /run/modsecurity /var/log/nginx /var/cache/nginx; chown www-data:www-data /run/modsecurity 2>/dev/null || true; " +
+	// redis-server SysV scripts hang in these guests; start redis from conf with
+	// daemonize yes instead. Other services keep a short timeout wrapper.
+	boot := "mkdir -p /run/sshd /run/nginx /run/modsecurity /run/redis /var/log/nginx /var/cache/nginx /var/log/redis; chown www-data:www-data /run/modsecurity 2>/dev/null || true; " +
 		"ssh-keygen -A; " +
-		"for svc in nginx apache2 mysql mariadb postgresql redis-server haproxy memcached supervisor tomcat10 wildfly; do if [ -x /etc/init.d/$svc ]; then service $svc start || true; fi; done; " +
-		"for f in /etc/init.d/php*-fpm; do [ -x $f ] && service ${f##*/} start || true; done; " +
+		"( " +
+		"if [ -f /etc/redis/redis.conf ]; then " +
+		"sed -i 's/^daemonize .*/daemonize yes/' /etc/redis/redis.conf; " +
+		"grep -q '^daemonize yes' /etc/redis/redis.conf || echo 'daemonize yes' >> /etc/redis/redis.conf; " +
+		"redis-server /etc/redis/redis.conf || true; " +
+		"fi; " +
+		"for svc in nginx apache2 mysql mariadb postgresql haproxy memcached supervisor tomcat10 wildfly; do " +
+		"if [ -x /etc/init.d/$svc ]; then timeout 20 service $svc start || true; fi; done; " +
+		"for f in /etc/init.d/php*-fpm; do [ -x \"$f\" ] && timeout 20 service ${f##*/} start || true; done " +
+		") >/tmp/clofix-boot-services.log 2>&1 & " +
 		"exec /usr/sbin/sshd -D -e"
 	return []string{"/bin/sh", "-c", boot}
+}
+
+func guestInitNeedsUpgrade(init []string) bool {
+	if len(init) != 3 || init[0] != "/bin/sh" || init[1] != "-c" {
+		return false
+	}
+	cur := init[2]
+	if cur == legacyDefaultGuestInit {
+		return true
+	}
+	// Old blocking boot: service starts ran synchronously before exec sshd.
+	if strings.Contains(cur, "exec /usr/sbin/sshd") &&
+		strings.Contains(cur, "service $svc start") &&
+		!strings.Contains(cur, "timeout 20 service") {
+		return true
+	}
+	// Older boot still starts redis via SysV (hangs / leaves redis down).
+	if strings.Contains(cur, "exec /usr/sbin/sshd") &&
+		strings.Contains(cur, "redis-server haproxy") &&
+		!strings.Contains(cur, "redis-server /etc/redis/redis.conf") {
+		return true
+	}
+	return false
 }
 
 func (e *Engine) idir(id string) string { return filepath.Join(e.StateDir, "instances", id) }
@@ -278,15 +314,24 @@ func (e *Engine) configureSSHFiles(id string, spec proto.InstanceSpec, owner int
 	if err := os.MkdirAll(sshdConfigDir, 0o755); err != nil {
 		return err
 	}
-	sshdConfig := filepath.Join(sshdConfigDir, "00-clofix.conf")
 	configBody := sshdAuthConfig(spec)
 	if sshLoginBlocked(spec) {
 		configBody += "DenyUsers *\n"
 	}
-	if err := os.WriteFile(sshdConfig, []byte(configBody), 0o644); err != nil {
-		return err
+	// Keep 00- and 99- in sync. OpenSSH applies drop-ins in lexical order, so a
+	// stale 99-clofix.conf (AuthenticationMethods publickey) would override a
+	// newer password-enabled 00-clofix.conf and break PAM login.
+	written := make([]string, 0, 2)
+	for _, name := range []string{"00-clofix.conf", "99-clofix.conf"} {
+		sshdConfig := filepath.Join(sshdConfigDir, name)
+		if err := os.WriteFile(sshdConfig, []byte(configBody), 0o644); err != nil {
+			return err
+		}
+		written = append(written, sshdConfig)
 	}
-	for _, p := range []string{filepath.Join(upper, "etc"), filepath.Join(upper, "etc", "ssh"), sshdConfigDir, sshdConfig} {
+	paths := []string{filepath.Join(upper, "etc"), filepath.Join(upper, "etc", "ssh"), sshdConfigDir}
+	paths = append(paths, written...)
+	for _, p := range paths {
 		if err := os.Lchown(p, owner, owner); err != nil {
 			return err
 		}
@@ -300,11 +345,16 @@ func sshdAuthConfig(spec proto.InstanceSpec) string {
 		brand += "ForceCommand /etc/clofix-protected-shell\n"
 	}
 	if spec.PasswordAuth {
-		body := "UsePAM yes\nPermitRootLogin yes\nPasswordAuthentication yes\nKbdInteractiveAuthentication yes\n"
+		// Prefer sshd's own password check; PAM session modules (loginuid) often
+		// fail inside FileVPS namespaces and reject an otherwise-valid password.
+		// AuthenticationMethods: comma = AND (required together), space = OR.
+		// So "publickey password" allows either method; "publickey,password"
+		// would require both and hide password until a key succeeds.
+		body := "UsePAM no\nPermitRootLogin yes\nPasswordAuthentication yes\nKbdInteractiveAuthentication no\n"
 		if spec.SSHAuthorizedKey != "" {
-			body += "PubkeyAuthentication yes\n"
+			body += "PubkeyAuthentication yes\nAuthenticationMethods publickey password\n"
 		} else {
-			body += "PubkeyAuthentication no\n"
+			body += "PubkeyAuthentication no\nAuthenticationMethods password\n"
 		}
 		return body + brand
 	}
@@ -320,7 +370,11 @@ func (e *Engine) updatePasswordAuth(id string, enabled bool) error {
 	if err := e.configureSSHFiles(id, m.Spec, e.guestOwner(m)); err != nil {
 		return err
 	}
-	return e.save(m)
+	if err := e.save(m); err != nil {
+		return err
+	}
+	e.reloadGuestSSHD(id, m)
+	return nil
 }
 
 func (e *Engine) setRootPassword(id, password string) error {
@@ -339,10 +393,25 @@ func (e *Engine) setRootPassword(id, password string) error {
 		return err
 	}
 	if e.CG.Alive(id) && m.Pid > 0 {
-		script := "usermod -p '" + strings.ReplaceAll(hash, "'", "") + "' root; kill -HUP 1 2>/dev/null || true"
-		_ = e.guestExec(id, m.Pid, "/bin/sh", []string{"-c", script})
+		// Apply the exact crypt hash inside the guest. usermod -p is easy to
+		// mishandle with $6$ hashes; rewriting the root shadow line is reliable.
+		safeHash := strings.ReplaceAll(hash, "'", `'"'"'`)
+		script := "hash='" + safeHash + "'\n" +
+			"awk -F: -v h=\"$hash\" 'BEGIN{OFS=FS} $1==\"root\"{$2=h} {print}' /etc/shadow > /etc/shadow.clofix && " +
+			"cat /etc/shadow.clofix > /etc/shadow && rm -f /etc/shadow.clofix && chmod 640 /etc/shadow && " +
+			"kill -HUP 1 2>/dev/null || true\n"
+		if err := e.guestExec(id, m.Pid, "/bin/sh", []string{"-c", script}); err != nil {
+			return fmt.Errorf("apply root password in guest: %w", err)
+		}
 	}
 	return nil
+}
+
+func (e *Engine) reloadGuestSSHD(id string, m *Meta) {
+	if m == nil || !e.CG.Alive(id) || m.Pid <= 0 {
+		return
+	}
+	_ = e.guestExec(id, m.Pid, "/bin/sh", []string{"-c", "kill -HUP 1 2>/dev/null || true"})
 }
 
 func cryptSHA512(password string) (string, error) {
@@ -450,8 +519,10 @@ func (e *Engine) Create(id string, spec proto.InstanceSpec) error {
 	if spec.SSHAuthorizedKey == "" && !spec.PasswordAuth {
 		return errors.New("SSH public key or PAM password auth is required")
 	}
-	if _, err := e.Images.Ensure(spec.Image); err != nil {
+	if root, err := e.Images.Ensure(spec.Image); err != nil {
 		return fmt.Errorf("image: %w", err)
+	} else {
+		_ = image.StripDefaultCloudUser(root, spec.Image.Name)
 	}
 	if len(spec.Init) == 0 {
 		spec.Init = defaultGuestInit()
@@ -639,6 +710,59 @@ func (e *Engine) configureGuestBrand(m *Meta) error {
 	return nil
 }
 
+// configureGuestShellHistory installs bash settings so command history is written
+// after every command (not only on clean logout). Applies to all guest images.
+func (e *Engine) configureGuestShellHistory(m *Meta) error {
+	if protectionEnabled(m.Spec) {
+		return nil
+	}
+	root := e.merged(m.ID)
+	owner := e.guestOwner(m)
+	dir := filepath.Join(root, "etc", "profile.d")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	body := `# CloFix FileVPS — persist bash history after every command.
+# Abrupt SSH disconnect / VPS stop otherwise loses in-memory history.
+if [ -n "${BASH_VERSION:-}" ]; then
+  HISTFILE="${HISTFILE:-$HOME/.bash_history}"
+  HISTSIZE="${HISTSIZE:-1000}"
+  HISTFILESIZE="${HISTFILESIZE:-2000}"
+  HISTCONTROL="${HISTCONTROL:-ignoreboth}"
+  export HISTFILE HISTSIZE HISTFILESIZE HISTCONTROL
+  shopt -s histappend 2>/dev/null || true
+  case ${PROMPT_COMMAND:-} in
+    *history\ -a*) ;;
+    *) PROMPT_COMMAND="history -a${PROMPT_COMMAND:+; $PROMPT_COMMAND}" ;;
+  esac
+fi
+`
+	path := filepath.Join(dir, "99-clofix-history.sh")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		return fmt.Errorf("write profile.d history: %w", err)
+	}
+	if err := os.Lchown(path, owner, owner); err != nil {
+		return fmt.Errorf("chown profile.d history: %w", err)
+	}
+	// Ensure root interactive non-login shells also append history.
+	bashrc := filepath.Join(root, "root", ".bashrc")
+	if data, err := os.ReadFile(bashrc); err == nil {
+		text := string(data)
+		if !strings.Contains(text, "history -a") {
+			snippet := "\n# CloFix: persist history after every command\n" +
+				"HISTFILE=\"${HISTFILE:-$HOME/.bash_history}\"\n" +
+				"export HISTFILE HISTSIZE=${HISTSIZE:-1000} HISTFILESIZE=${HISTFILESIZE:-2000}\n" +
+				"shopt -s histappend 2>/dev/null || true\n" +
+				"case ${PROMPT_COMMAND:-} in *history\\ -a*) ;; *) PROMPT_COMMAND=\"history -a${PROMPT_COMMAND:+; $PROMPT_COMMAND}\" ;; esac\n"
+			if err := os.WriteFile(bashrc, []byte(text+snippet), 0o644); err != nil {
+				return fmt.Errorf("update root bashrc history: %w", err)
+			}
+			_ = os.Lchown(bashrc, owner, owner)
+		}
+	}
+	return nil
+}
+
 func (e *Engine) configureDNS(m *Meta) error {
 	if m.Spec.IPAddress == "" {
 		return nil
@@ -648,6 +772,73 @@ func (e *Engine) configureDNS(m *Meta) error {
 		return err
 	}
 	return os.WriteFile(p, []byte("nameserver 1.1.1.1\nnameserver 8.8.8.8\n"), 0o644)
+}
+
+// ensureGuestSSHD starts sshd inside a running guest when port 22 is not listening.
+// Redis/SysV boot hangs previously prevented exec sshd, leaving DNAT SSH ports dead.
+func (e *Engine) ensureGuestSSHD(id string) {
+	m, err := e.get(id)
+	if err != nil || protectionEnabled(m.Spec) {
+		return
+	}
+	if !e.CG.Alive(id) || m.Pid <= 0 {
+		return
+	}
+	check := "ss -lnt 2>/dev/null | grep -qE '[:.]22[[:space:]]' || netstat -lnt 2>/dev/null | grep -qE '[:.]22[[:space:]]'"
+	if e.guestShell(id, m.Pid, check) == nil {
+		e.ensureGuestRedis(id, m)
+		return
+	}
+	script := "set -eu; mkdir -p /run/sshd; ssh-keygen -A >/dev/null 2>&1 || true; " +
+		"if ! pgrep -x sshd >/dev/null 2>&1; then /usr/sbin/sshd; fi"
+	if err := e.guestShell(id, m.Pid, script); err != nil {
+		log.Printf("instance %s: sshd auto-start failed: %v", id, err)
+	}
+	e.ensureGuestRedis(id, m)
+}
+
+// ensureGuestRedis starts redis-server from /etc/redis/redis.conf when the
+// cluster config exists but nothing is listening on :6379.
+func (e *Engine) ensureGuestRedis(id string, m *Meta) {
+	if m == nil || !e.CG.Alive(id) || m.Pid <= 0 {
+		return
+	}
+	check := "test -f /etc/redis/redis.conf && (ss -lnt 2>/dev/null | grep -qE '[:.]6379[[:space:]]' || netstat -lnt 2>/dev/null | grep -qE '[:.]6379[[:space:]]')"
+	if e.guestShell(id, m.Pid, check) == nil {
+		return
+	}
+	hasConf := "test -f /etc/redis/redis.conf"
+	if e.guestShell(id, m.Pid, hasConf) != nil {
+		return
+	}
+	script := "set -eu; mkdir -p /run/redis /var/log/redis; " +
+		"sed -i 's/^daemonize .*/daemonize yes/' /etc/redis/redis.conf; " +
+		"grep -q '^daemonize yes' /etc/redis/redis.conf || echo 'daemonize yes' >> /etc/redis/redis.conf; " +
+		"if ! pgrep -x redis-server >/dev/null 2>&1; then redis-server /etc/redis/redis.conf; fi"
+	if err := e.guestShell(id, m.Pid, script); err != nil {
+		log.Printf("instance %s: redis auto-start failed: %v", id, err)
+	}
+}
+
+// ensureGuestSystemd installs systemd (provides systemctl) if missing.
+// Builtin images bake systemd into the rootfs; this covers older layers and custom images.
+// FileVPS still boots with fx-init as PID 1 — systemctl is for CLI/package compatibility.
+func (e *Engine) ensureGuestSystemd(id string) {
+	m, err := e.get(id)
+	if err != nil || protectionEnabled(m.Spec) {
+		return
+	}
+	if !e.CG.Alive(id) || m.Pid <= 0 {
+		return
+	}
+	if e.guestShell(id, m.Pid, "command -v systemctl >/dev/null 2>&1") == nil {
+		return
+	}
+	script := "export DEBIAN_FRONTEND=noninteractive; " +
+		"apt-get update -qq && apt-get install -y --no-install-recommends systemd"
+	if err := e.guestShell(id, m.Pid, script); err != nil {
+		log.Printf("instance %s: systemd auto-install failed: %v", id, err)
+	}
 }
 
 // ensureSSHHostKeys creates persistent per-guest SSH host keys before the guest
@@ -694,18 +885,11 @@ func (e *Engine) ensureSSHHostKeys(m *Meta) error {
 		}
 	}
 	// Unique uid ranges leave the shared OverlayFS lower as overflowuid for
-	// later guests. sshd+PAM then denies root before pubkey auth. Pubkey-only
-	// without PAM still reads /root/.ssh/authorized_keys from the upper layer.
-	dropInDir := filepath.Join(root, "etc/ssh/sshd_config.d")
-	if err := os.MkdirAll(dropInDir, 0o755); err != nil {
+	// later guests. sshd+PAM then denies root before pubkey auth. Password and
+	// pubkey auth both use UsePAM no so shadow/authorized_keys come from the
+	// upper layer without PAM account modules seeing overflow UIDs.
+	if err := e.configureSSHFiles(m.ID, m.Spec, owner); err != nil {
 		return fmt.Errorf("prepare sshd drop-in: %w", err)
-	}
-	dropIn := filepath.Join(dropInDir, "99-clofix.conf")
-	if err := os.WriteFile(dropIn, []byte(sshdAuthConfig(m.Spec)), 0o644); err != nil {
-		return fmt.Errorf("write sshd drop-in: %w", err)
-	}
-	if err := os.Chown(dropIn, owner, owner); err != nil {
-		return fmt.Errorf("set sshd drop-in ownership: %w", err)
 	}
 	return nil
 }
@@ -716,13 +900,14 @@ func (e *Engine) Start(id string) error {
 	if err != nil {
 		return err
 	}
-	if len(m.Spec.Init) == 3 && m.Spec.Init[0] == "/bin/sh" && m.Spec.Init[1] == "-c" && m.Spec.Init[2] == legacyDefaultGuestInit {
+	if guestInitNeedsUpgrade(m.Spec.Init) {
 		m.Spec.Init = defaultGuestInit()
 		if err := e.save(m); err != nil {
 			return fmt.Errorf("upgrade guest boot command: %w", err)
 		}
 	}
 	if e.CG.Alive(id) {
+		go e.ensureGuestSSHD(id)
 		return nil
 	}
 	e.setState(m, proto.StateStarting, "")
@@ -759,6 +944,9 @@ func (e *Engine) Start(id string) error {
 	}
 	if err := e.configureGuestBrand(m); err != nil {
 		return fail(fmt.Errorf("configure guest brand: %w", err))
+	}
+	if err := e.configureGuestShellHistory(m); err != nil {
+		return fail(fmt.Errorf("configure shell history: %w", err))
 	}
 	if err := e.configureDNS(m); err != nil {
 		return fail(fmt.Errorf("configure DNS: %w", err))
@@ -892,6 +1080,8 @@ func (e *Engine) Start(id string) error {
 	case <-time.After(1500 * time.Millisecond):
 	}
 	e.setState(m, proto.StateRunning, "")
+	go e.ensureGuestSystemd(id)
+	go e.ensureGuestSSHD(id)
 	go func() { // reap and record exit
 		<-done
 		e.mu.Lock()
