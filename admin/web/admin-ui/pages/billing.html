@@ -1,6 +1,6 @@
 {{define "content"}}
 <section class="page active" id="page-billing">
-  <div class="section-head"><div><p class="eyebrow">Platform</p><h2>Billing &amp; Payments</h2><p>Customer invoices, wallets, recorded payments and subscriptions. Product prices are configured in <a href="/settings#settings-pricing">Settings → Pricing &amp; Plans</a>.</p></div></div>
+  <div class="section-head"><div><p class="eyebrow">Platform</p><h2>Billing &amp; Payments</h2><p id="billing-lead">Admin and partners create invoices for client accounts. Clients see their own due bill and invoices. Product prices are configured in <a href="/settings#settings-pricing">Settings → Pricing &amp; Plans</a>.</p></div></div>
   <div class="settings-layout">
     <nav class="settings-nav" aria-label="Billing sections">
       <a href="#billing-overview" data-settings-link aria-controls="billing-overview" aria-current="location"><strong>Billing Overview</strong><span>Totals from recorded activity</span></a>
@@ -18,7 +18,7 @@
       <div class="panel settings-section" id="billing-overview" data-settings-panel aria-labelledby="billing-heading-overview">
         <h2 id="billing-heading-overview" tabindex="-1">Billing Overview</h2>
         <p id="billing-overview-note" class="muted">Financial lists stay empty until a subscription, invoice or manual payment is recorded.</p>
-        <div class="form-field" style="max-width:280px"><label for="billing-owner-filter">Client / owner</label><select id="billing-owner-filter"><option value="">All clients</option></select></div>
+        <div class="form-field" style="max-width:360px" data-billing-manage><label for="billing-owner-filter">Client account</label><select id="billing-owner-filter"><option value="">All clients</option></select></div>
         <div class="database-stats" id="billing-overview-stats"></div>
       </div>
       <div class="panel settings-section" id="billing-resources" data-settings-panel aria-labelledby="billing-heading-resources" hidden>
@@ -31,7 +31,7 @@
         <h2 id="billing-heading-due" tabindex="-1">Due bill</h2>
         <p class="muted" id="billing-due-note">Hourly Standard or Low cost usage. Deleted resources stay here until invoiced. A 5 or 10 minute run is billed for those minutes, not a full hour.</p>
         <div class="database-stats" id="billing-due-stats"></div>
-        <div class="inline-fields"><button class="primary" id="billing-due-invoice" type="button">Invoice due bill</button></div>
+        <div class="inline-fields" data-billing-manage><button class="primary" id="billing-due-invoice" type="button">Invoice due bill</button></div>
         <p class="message" id="billing-due-message" role="status" aria-live="polite"></p>
         <div class="table-wrap"><table id="billing-due-table"></table></div>
       </div>
@@ -40,19 +40,19 @@
         <p class="muted">Paid invoices only. Amounts are shown in invoice currency plus USD and BDT using the snapshot FX rate.</p>
         <div class="chart-toolbar"><div class="chart-ranges" role="group" aria-label="Billing time range"><button type="button" data-billing-range="30d" aria-pressed="true">30d</button><button type="button" data-billing-range="3m" aria-pressed="false">3m</button><button type="button" data-billing-range="6m" aria-pressed="false">6m</button><button type="button" data-billing-range="12m" aria-pressed="false">12m</button><button type="button" data-billing-range="custom" aria-pressed="false">Custom</button></div><div class="billing-chart-custom" id="billing-chart-custom" hidden><label>From <input type="datetime-local" id="billing-chart-from"></label><label>To <input type="datetime-local" id="billing-chart-to"></label><button type="button" class="small-btn" id="billing-chart-apply">Apply</button></div></div>
         <div class="chart-grid">
-          <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Monthly spend</div><div class="chart-subtitle">Paid totals by month · USD</div></div><div class="chart-tools"><div class="chart-current" id="chart-billing-month-current">—</div></div></div><svg id="chart-billing-month" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Monthly billing bar chart"></svg></article>
-          <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">By resource</div><div class="chart-subtitle">Which VPS, database or service was billed · USD</div></div><div class="chart-tools"><div class="chart-current" id="chart-billing-resource-current">—</div></div></div><svg id="chart-billing-resource" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Resource billing bar chart"></svg></article>
+          <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">Monthly spend</div><div class="chart-subtitle">Paid totals by month · USD</div></div><div class="chart-tools"><div class="chart-current" id="chart-billing-month-current">-</div></div></div><svg id="chart-billing-month" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Monthly billing bar chart"></svg></article>
+          <article class="panel chart-panel"><div class="chart-head"><div><div class="chart-title">By resource</div><div class="chart-subtitle">Which VPS, database or service was billed · USD</div></div><div class="chart-tools"><div class="chart-current" id="chart-billing-resource-current">-</div></div></div><svg id="chart-billing-resource" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Resource billing bar chart"></svg></article>
         </div>
         <div class="table-wrap"><table id="billing-resource-table"></table></div>
       </div>
       <div class="panel settings-section" id="billing-invoices" data-settings-panel aria-labelledby="billing-heading-invoices" hidden>
         <h2 id="billing-heading-invoices" tabindex="-1">Invoices</h2>
-        <p class="muted">Standard smart invoices. Unpaid invoices can be paid manually; paid invoices keep the PDF record.</p>
-        <form id="billing-invoice-form">
+        <p class="muted" id="billing-invoices-note">Admin creates unpaid invoices for a client account. Clients see invoices billed to their account. Paid invoices keep the PDF record.</p>
+        <form id="billing-invoice-form" data-billing-manage>
           <div class="form-grid">
+            <div class="form-field"><label for="billing-invoice-owner">Client account</label><select id="billing-invoice-owner" required><option value="">Select client…</option></select></div>
             <div class="form-field"><label for="billing-invoice-subscription">From subscription</label><select id="billing-invoice-subscription"><option value="">Manual amount</option></select></div>
-            <div class="form-field"><label for="billing-invoice-owner">Owner</label><input id="billing-invoice-owner" maxlength="64"></div>
-            <div class="form-field"><label for="billing-invoice-description">Description</label><input id="billing-invoice-description" maxlength="160"></div>
+            <div class="form-field"><label for="billing-invoice-description">Description</label><input id="billing-invoice-description" maxlength="160" required></div>
             <div class="form-field"><label for="billing-invoice-amount">Amount</label><input id="billing-invoice-amount" type="number" min="0" step="0.01" value="0"></div>
           </div>
           <button class="primary" id="billing-invoice-save" type="submit">Create invoice</button>
@@ -74,10 +74,10 @@
             <div>
               <p class="smart-invoice-kicker">Invoice</p>
               <h3 id="billing-invoice-detail-title">Invoice</h3>
-              <p class="smart-invoice-sub" id="billing-invoice-detail-sub">—</p>
+              <p class="smart-invoice-sub" id="billing-invoice-detail-sub">-</p>
             </div>
             <div class="smart-invoice-status-wrap">
-              <span class="smart-invoice-status" id="billing-invoice-detail-status">—</span>
+              <span class="smart-invoice-status" id="billing-invoice-detail-status">-</span>
             </div>
           </div>
           <div class="smart-invoice-meta" id="billing-invoice-detail-summary"></div>
@@ -89,14 +89,14 @@
       </div>
       <div class="panel settings-section" id="billing-wallet" data-settings-panel aria-labelledby="billing-heading-wallet" hidden>
         <h2 id="billing-heading-wallet" tabindex="-1">Wallet Management</h2>
-        <form id="billing-wallet-form">
+        <form id="billing-wallet-form" data-billing-manage>
           <div class="form-grid">
-            <div class="form-field"><label for="billing-wallet-owner">Owner</label><input id="billing-wallet-owner" maxlength="64" required></div>
+            <div class="form-field"><label for="billing-wallet-owner">Client account</label><select id="billing-wallet-owner" required><option value="">Select client…</option></select></div>
             <div class="form-field"><label for="billing-wallet-currency">Currency</label><input id="billing-wallet-currency" maxlength="3" value="USD"></div>
           </div>
           <button class="primary" id="billing-wallet-save" type="submit">Create wallet</button>
         </form>
-        <form id="billing-credit-form" style="margin-top:16px">
+        <form id="billing-credit-form" style="margin-top:16px" data-billing-manage>
           <div class="form-grid">
             <div class="form-field"><label for="billing-credit-wallet">Wallet</label><select id="billing-credit-wallet" required></select></div>
             <div class="form-field"><label for="billing-credit-amount">Credit amount</label><input id="billing-credit-amount" type="number" min="0.01" step="0.01" required></div>
@@ -110,7 +110,7 @@
       <div class="panel settings-section" id="billing-payments" data-settings-panel aria-labelledby="billing-heading-payments" hidden>
         <h2 id="billing-heading-payments" tabindex="-1">Payments &amp; Transactions</h2>
         <p>Record a manual payment against an unpaid invoice. No card or bank charge is sent.</p>
-        <form id="billing-payment-form">
+        <form id="billing-payment-form" data-billing-manage>
           <div class="form-field"><label for="billing-payment-invoice">Unpaid invoice</label><select id="billing-payment-invoice" required></select></div>
           <button class="primary" id="billing-payment-save" type="submit">Record manual payment</button>
         </form>
@@ -120,9 +120,9 @@
       <div class="panel settings-section" id="billing-subscriptions" data-settings-panel aria-labelledby="billing-heading-subscriptions" hidden>
         <h2 id="billing-heading-subscriptions" tabindex="-1">Subscriptions</h2>
         <p>A subscription snapshots the published catalog price. Later price edits do not change this amount.</p>
-        <form id="billing-subscription-form">
+        <form id="billing-subscription-form" data-billing-manage>
           <div class="form-grid">
-            <div class="form-field"><label for="billing-subscription-owner">Owner</label><input id="billing-subscription-owner" maxlength="64" required></div>
+            <div class="form-field"><label for="billing-subscription-owner">Client account</label><select id="billing-subscription-owner" required><option value="">Select client…</option></select></div>
             <div class="form-field"><label for="billing-subscription-plan">Enabled plan</label><select id="billing-subscription-plan" required></select></div>
             <div class="form-field"><label for="billing-subscription-resource">Resource ID · optional</label><input id="billing-subscription-resource" maxlength="80" placeholder="vps-… or dbp-…"></div>
           </div>
@@ -133,7 +133,7 @@
       </div>
       <div class="panel settings-section" id="billing-refunds" data-settings-panel aria-labelledby="billing-heading-refunds" hidden>
         <h2 id="billing-heading-refunds" tabindex="-1">Refunds &amp; Credits</h2>
-        <form id="billing-refund-form">
+        <form id="billing-refund-form" data-billing-manage>
           <div class="form-grid">
             <div class="form-field"><label for="billing-refund-invoice">Paid invoice</label><select id="billing-refund-invoice" required></select></div>
             <div class="form-field"><label for="billing-refund-amount">Amount · blank = remaining</label><input id="billing-refund-amount" type="number" min="0" step="0.01"></div>

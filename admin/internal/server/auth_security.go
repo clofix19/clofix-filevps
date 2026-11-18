@@ -310,7 +310,7 @@ func (s *Server) updateProfile(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not save profile")
 		return
 	}
-	s.Store.Audit(p.UserID, "profile.update", user.ID, "updated")
+	s.audit(r, "profile.update", user.ID, "updated", nil)
 	writeJSON(w, 200, map[string]any{
 		"id": user.ID, "username": user.Username, "display_name": user.DisplayName, "email": user.Email,
 		"kind": user.Kind, "role": user.Role, "mfa_enabled": user.MFAEnabled, "allow_ips": user.AllowIPs, "deny_ips": user.DenyIPs,
@@ -370,7 +370,7 @@ func (s *Server) enableProfileMFA(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not enable MFA")
 		return
 	}
-	s.Store.Audit(p.UserID, "profile.mfa.enable", user.ID, "enabled")
+	s.audit(r, "profile.mfa.enable", user.ID, "enabled", nil)
 	writeJSON(w, 200, map[string]any{"mfa_enabled": true})
 }
 
@@ -399,6 +399,6 @@ func (s *Server) disableProfileMFA(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not disable MFA")
 		return
 	}
-	s.Store.Audit(p.UserID, "profile.mfa.disable", user.ID, "disabled")
+	s.audit(r, "profile.mfa.disable", user.ID, "disabled", nil)
 	writeJSON(w, 200, map[string]any{"mfa_enabled": false})
 }

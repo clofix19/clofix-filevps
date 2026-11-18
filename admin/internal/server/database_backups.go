@@ -156,7 +156,7 @@ func (s *Server) createDatabaseBackup(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, err.Error())
 		return
 	}
-	s.Store.Audit(project.Owner, "database.backup", backup.ID, job.ID)
+	s.auditAccount(r, project.Owner, "database.backup", backup.ID, job.ID, nil)
 	writeJSON(w, 202, map[string]any{"backup": backup, "job_id": job.ID})
 }
 
@@ -239,7 +239,7 @@ func (s *Server) restoreDatabase(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, err.Error())
 		return
 	}
-	s.Store.Audit(project.Owner, "database.restore", project.Spec.ID, job.ID)
+	s.auditAccount(r, project.Owner, "database.restore", project.Spec.ID, job.ID, nil)
 	writeJSON(w, 202, map[string]any{"job_id": job.ID, "safety_backup_id": safetyID})
 }
 

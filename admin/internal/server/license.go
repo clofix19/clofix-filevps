@@ -168,7 +168,7 @@ func (s *Server) saveControllerLicense(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not save license configuration")
 		return
 	}
-	s.Store.Audit("admin", "license.configure", d.InstallationID, "ok")
+	s.audit(r, "license.configure", d.InstallationID, "ok", nil)
 	writeJSON(w, 200, map[string]bool{"saved": true})
 }
 const (
@@ -265,7 +265,7 @@ func (s *Server) checkControllerLicenseOpt(ctx context.Context, retainOffline bo
 }
 func (s *Server) validateControllerLicense(w http.ResponseWriter, r *http.Request) {
 	e := s.checkControllerLicense(r.Context())
-	s.Store.Audit("admin", "license.validate", "controller", fmt.Sprint(e))
+	s.audit(r, "license.validate", "controller", fmt.Sprint(e), nil)
 	if e != nil {
 		fail(w, 502, e.Error())
 		return

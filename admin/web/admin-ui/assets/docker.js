@@ -30,8 +30,8 @@
   const diskUsed=Number(rt.disk_bytes)||0;
   const diskLim=(Number(c?.spec?.disk_mb)||0)*1048576;
   const cpuTxt=cpuAlloc?`${cpuPct.toFixed(1)}% of ${cpuAlloc} CPU`:`${cpuPct.toFixed(1)}%`;
-  const ramTxt=ramLim?`${fmtBytes(ramUsed)} / ${fmtBytes(ramLim)}`:(ramUsed?fmtBytes(ramUsed):'—');
-  const diskTxt=diskLim?`${fmtBytes(diskUsed)} / ${fmtBytes(diskLim)}`:(diskUsed?fmtBytes(diskUsed):'—');
+  const ramTxt=ramLim?`${fmtBytes(ramUsed)} / ${fmtBytes(ramLim)}`:(ramUsed?fmtBytes(ramUsed):'-');
+  const diskTxt=diskLim?`${fmtBytes(diskUsed)} / ${fmtBytes(diskLim)}`:(diskUsed?fmtBytes(diskUsed):'-');
   return {cpuPct,cpuAlloc,ramUsed,ramLim,diskUsed,diskLim,cpuTxt,ramTxt,diskTxt};
  }
  function appResources(a,containers){
@@ -40,9 +40,9 @@
   if(!mine.length&&a?.spec){
    const cpuAlloc=Number(a.spec.cpu)||0,ramLim=(Number(a.spec.ram_mb)||0)*1048576,diskLim=(Number(a.spec.disk_mb)||0)*1048576;
    return {
-    cpuTxt:cpuAlloc?`— / ${cpuAlloc} CPU`:'—',
-    ramTxt:ramLim?`— / ${fmtBytes(ramLim)}`:'—',
-    diskTxt:diskLim?`— / ${fmtBytes(diskLim)}`:'—',
+    cpuTxt:cpuAlloc?`- / ${cpuAlloc} CPU`:'-',
+    ramTxt:ramLim?`- / ${fmtBytes(ramLim)}`:'-',
+    diskTxt:diskLim?`- / ${fmtBytes(diskLim)}`:'-',
    };
   }
   let cpuPct=0,cpuAlloc=0,ramUsed=0,ramLim=0,diskUsed=0,diskLim=0;
@@ -57,8 +57,8 @@
   if(!diskLim)diskLim=(Number(a?.spec?.disk_mb)||0)*1048576;
   return {
    cpuTxt:cpuAlloc?`${cpuPct.toFixed(1)}% of ${cpuAlloc} CPU`:`${cpuPct.toFixed(1)}%`,
-   ramTxt:ramLim?`${fmtBytes(ramUsed)} / ${fmtBytes(ramLim)}`:(ramUsed?fmtBytes(ramUsed):'—'),
-   diskTxt:diskLim?`${fmtBytes(diskUsed)} / ${fmtBytes(diskLim)}`:(diskUsed?fmtBytes(diskUsed):'—'),
+   ramTxt:ramLim?`${fmtBytes(ramUsed)} / ${fmtBytes(ramLim)}`:(ramUsed?fmtBytes(ramUsed):'-'),
+   diskTxt:diskLim?`${fmtBytes(diskUsed)} / ${fmtBytes(diskLim)}`:(diskUsed?fmtBytes(diskUsed):'-'),
   };
  }
  function dockerWAFSelected(){return dockerWAFTargets.find(t=>`${t.kind}:${t.id}`===dockerWAFTarget)||null;}
@@ -155,7 +155,7 @@
   if($('docker-waf-rule-summary'))$('docker-waf-rule-summary').textContent=installed?`${enabledCount} of ${items.length} rule groups enabled`:'Install the WAF to manage rule groups.';
   if(msg&&!msg.dataset.sticky){
    if(!t)msg.textContent='Select a Docker application or container with a published host port.';
-   else if(installing)msg.textContent='Installing edge OWASP CRS proxy — the app is briefly recreated without host ports.';
+   else if(installing)msg.textContent='Installing edge OWASP CRS proxy - the app is briefly recreated without host ports.';
    else if(uninstalling)msg.textContent='Removing WAF proxy and restoring host ports on the app.';
    else if(!installed)msg.textContent=failed?(t.error||'Install failed. Retry.'):'Install WAF to put ModSecurity CRS in front of this published port.';
    else msg.textContent='WAF edge is protecting published HTTP(S) traffic for this target.';
@@ -231,7 +231,7 @@
   row(wt,['Target','Kind','State','WAF','Ports','Worker','Action'],true);
   if(!targets.length)row(wt,['No WAF-eligible Docker apps/containers. Publish a host port first.','','','','','','']);
   targets.forEach(t=>{
-   const ports=(t.ports||[]).filter(p=>p.host_port>0).map(p=>`${p.host_port}→${p.container_port}/${p.protocol||'tcp'}`).join(', ')||'—';
+   const ports=(t.ports||[]).filter(p=>p.host_port>0).map(p=>`${p.host_port}→${p.container_port}/${p.protocol||'tcp'}`).join(', ')||'-';
    const wafState=String(t.waf_state||'').toUpperCase()||'NOT INSTALLED';
    const wafBadge=document.createElement('span');
    wafBadge.className='badge '+(wafState==='INSTALLED'?'RUNNING':wafState==='INSTALLING'||wafState==='UNINSTALLING'?'STARTING':wafState==='FAILED'?'FAILED':'STOPPED');
@@ -239,7 +239,7 @@
    const acts=document.createElement('div');acts.className='row-actions';
    const open=document.createElement('a');open.className='small-btn';open.href='/waf#waf-bindings';open.textContent='Open WAF';
    acts.append(open);
-   row(wt,[t.name||t.id,t.kind||'—',t.state||'—',wafBadge,ports,t.worker_id||'—',acts]);
+   row(wt,[t.name||t.id,t.kind||'-',t.state||'-',wafBadge,ports,t.worker_id||'-',acts]);
   });
 
   const events=Array.isArray(security?.events)?security.events:[];
@@ -250,8 +250,8 @@
   if(!events.length)row(et,['No security events recorded yet.','','','']);
   events.slice(0,40).forEach(ev=>{
    const when=ev.at||ev.created||ev.time||ev.ts;
-   const whenTxt=when?(Number.isFinite(Date.parse(when))?new Date(when).toLocaleString():String(when)):'—';
-   row(et,[whenTxt,ev.type||ev.action||'—',ev.target||ev.asset||ev.id||'—',ev.detail||ev.message||ev.result||'—']);
+   const whenTxt=when?(Number.isFinite(Date.parse(when))?new Date(when).toLocaleString():String(when)):'-';
+   row(et,[whenTxt,ev.type||ev.action||'-',ev.target||ev.asset||ev.id||'-',ev.detail||ev.message||ev.result||'-']);
   });
   if($('docker-sec-message'))$('docker-sec-message').textContent='';
  }
@@ -272,11 +272,11 @@
     const named=repo&&repo!=='<none>'&&tag!=='<none>';
     if(named){
      namedImages++;
-     imageRows.push({worker:wid,id:img.id||'—',name:repo+':'+tag,digest:img.digest&&img.digest!=='<none>'?img.digest:'—',created:img.created||''});
+     imageRows.push({worker:wid,id:img.id||'-',name:repo+':'+tag,digest:img.digest&&img.digest!=='<none>'?img.digest:'-',created:img.created||''});
     }else dangling++;
    });
-   (st.networks||[]).forEach(n=>networkRows.push({worker:wid,id:n.id||'—',name:n.name||'—',driver:n.driver||'—'}));
-   (st.volumes||[]).forEach(v=>volumeRows.push({worker:wid,id:v.id||'—',name:v.name||'—'}));
+   (st.networks||[]).forEach(n=>networkRows.push({worker:wid,id:n.id||'-',name:n.name||'-',driver:n.driver||'-'}));
+   (st.volumes||[]).forEach(v=>volumeRows.push({worker:wid,id:v.id||'-',name:v.name||'-'}));
   });
   if($('docker-mon-workers'))$('docker-mon-workers').textContent=String(ready);
   if($('docker-mon-workers-note'))$('docker-mon-workers-note').textContent=workerIDs.length?(ready+' of '+workerIDs.length+' reporting'):'No worker heartbeats yet';
@@ -297,7 +297,7 @@
    const engineCell=document.createElement('div');
    engineCell.className='row-actions';
    engineCell.append(badgeEl);
-   row(wt,[wid,engineCell,eng.version||'—',eng.api_version||'—',[eng.os,eng.arch].filter(Boolean).join(' / ')||'—',eng.root_dir||'—',eng.host||'—']);
+   row(wt,[wid,engineCell,eng.version||'-',eng.api_version||'-',[eng.os,eng.arch].filter(Boolean).join(' / ')||'-',eng.root_dir||'-',eng.host||'-']);
   });
 
   const it=$('docker-mon-images-table');
@@ -305,8 +305,8 @@
   const sortedImages=imageRows.sort((a,b)=>String(a.name).localeCompare(String(b.name))).slice(0,40);
   if(!sortedImages.length)row(it,['No named images on reporting workers.','','','','']);
   sortedImages.forEach(img=>{
-   const created=img.created?(()=>{const t=Date.parse(img.created);return Number.isFinite(t)?new Date(t).toLocaleString():String(img.created);})():'—';
-   row(it,[img.worker,img.name,String(img.id).slice(0,12),img.digest==='—'?'—':String(img.digest).slice(0,20)+(String(img.digest).length>20?'…':''),created]);
+   const created=img.created?(()=>{const t=Date.parse(img.created);return Number.isFinite(t)?new Date(t).toLocaleString():String(img.created);})():'-';
+   row(it,[img.worker,img.name,String(img.id).slice(0,12),img.digest==='-'?'-':String(img.digest).slice(0,20)+(String(img.digest).length>20?'…':''),created]);
   });
   if(imageRows.length>40&&$('docker-mon-message'))$('docker-mon-message').textContent=`Showing 40 of ${imageRows.length} named images.`;
   else if($('docker-mon-message'))$('docker-mon-message').textContent=workerIDs.length?'':'Waiting for worker Docker status…';
@@ -447,7 +447,7 @@
   const keep=new Set(selected||[...sel.selectedOptions].map(o=>o.value));
   sel.replaceChildren();
   (dockerVolumesCache||[]).forEach(v=>{
-   const o=document.createElement('option');o.value=v.id;o.textContent=`${v.name||v.id} · ${v.worker_id||'—'}`;
+   const o=document.createElement('option');o.value=v.id;o.textContent=`${v.name||v.id} · ${v.worker_id||'-'}`;
    o.selected=keep.has(v.id);sel.append(o);
   });
  }
@@ -530,13 +530,13 @@
    if($('docker-stat-failed-note'))$('docker-stat-failed-note').textContent=failedN?`${failedN} need attention`:'All clear';
    if(typeof enhanceStatWaves==='function')enhanceStatWaves();
    const wt=$('docker-workers-table');row(wt,['Worker','Hostname','Ready','Version','Containers','Images'],true);
-   wks.forEach(w=>row(wt,[w.id,w.hostname||'—',w.docker_ready?'Yes':'No',w.docker_version||'—',w.container_count??'—',w.image_count??'—']));
+   wks.forEach(w=>row(wt,[w.id,w.hostname||'-',w.docker_ready?'Yes':'No',w.docker_version||'-',w.container_count??'-',w.image_count??'-']));
    if(!wks.length)row(wt,['No active workers','','','','','']);
    const et=$('docker-engine-table');row(et,['Worker','Ready','Version','Host','Actions'],true);
    wks.forEach(w=>{
     const acts=document.createElement('div');acts.className='row-actions';
     ['status','install','start','stop','restart','upgrade'].forEach(a=>acts.append(action(a,async()=>{try{await api('POST',`/api/docker/workers/${encodeURIComponent(w.id)}/engine/${a}`,{});note(`Engine ${a} queued on ${w.id}`);await refresh(true);}catch(e){note(e.message);}})));
-    row(et,[w.id,String(!!w.docker_ready),w.docker_version||'—',w.docker_host||'—',acts]);
+    row(et,[w.id,String(!!w.docker_ready),w.docker_version||'-',w.docker_host||'-',acts]);
    });
    const ct=$('docker-containers-table');row(ct,['Name','Image','State','CPU','RAM','Disk','Worker','Actions'],true);
    containers.forEach(c=>{
@@ -587,18 +587,18 @@
       await refresh(true);
      }catch(e){note(e.message);}
     },'danger small-btn'));
-    row(cot,[a.name,a.state,res.cpuTxt,res.ramTxt,res.diskTxt,a.worker_id||'—',acts]);
+    row(cot,[a.name,a.state,res.cpuTxt,res.ramTxt,res.diskTxt,a.worker_id||'-',acts]);
    });
    if(!composeApps.length)row(cot,['No Compose projects.','','','','','','']);
    const it=$('docker-images-table');row(it,['Repository','Tag','ID','Digest'],true);
-   images.forEach(i=>row(it,[i.repository||'—',i.tag||'—',(i.id||'').slice(0,12),i.digest||'—']));
+   images.forEach(i=>row(it,[i.repository||'-',i.tag||'-',(i.id||'').slice(0,12),i.digest||'-']));
    if(!images.length)row(it,['No images reported yet (worker heartbeat).','','','']);
    const rt=$('docker-registries-table');row(rt,['Name','Server','Username','Actions'],true);
    regs.forEach(reg=>{
     const acts=document.createElement('div');acts.className='row-actions';
     acts.append(action('Edit',()=>openRegistryDialog(reg)));
     acts.append(action('Delete',async()=>{if(!confirm(`Disconnect registry ${reg.name}?`))return;try{await api('DELETE',`/api/docker/registries/${reg.id}`);note('Registry deleted');await refresh(true);}catch(e){note(e.message);}},'danger small-btn'));
-    row(rt,[reg.name,reg.server,reg.username||'—',acts]);
+    row(rt,[reg.name,reg.server,reg.username||'-',acts]);
    });
    if(!regs.length)row(rt,['No registries connected.','','','']);
    const gt=$('docker-git-table');row(gt,['Name','Host','Username','Default URL','Actions'],true);
@@ -606,7 +606,7 @@
     const acts=document.createElement('div');acts.className='row-actions';
     acts.append(action('Edit',()=>openGitDialog(g)));
     acts.append(action('Delete',async()=>{if(!confirm(`Delete Git registration ${g.name}?`))return;try{await api('DELETE',`/api/docker/git-credentials/${g.id}`);note('Git registration deleted');await refresh(true);}catch(e){note(e.message);}},'danger small-btn'));
-    row(gt,[g.name,g.host||'—',g.username||'—',g.default_url||'—',acts]);
+    row(gt,[g.name,g.host||'-',g.username||'-',g.default_url||'-',acts]);
    });
    if(!(gitCreds||[]).length)row(gt,['No Git registrations. Add one for private repos.','','','','']);
    const nt=$('docker-networks-table');row(nt,['Name','Internal','Worker','Actions'],true);
@@ -622,8 +622,8 @@
     acts.append(action('Edit',()=>openVolumeDialog(v)));
     acts.append(action('Backup',async()=>{try{await api('POST','/api/docker/backups',{kind:'volume',target_id:v.id});note('Backup queued');await refresh(true);}catch(e){note(e.message);}}));
     acts.append(action('Delete',async()=>{if(!confirm(`Delete volume ${v.name}?`))return;try{await api('DELETE',`/api/docker/volumes/${v.id}`);note('Volume delete queued');await refresh(true);}catch(e){note(e.message);}},'danger small-btn'));
-    const quota=v.quota_mb?`${v.quota_mb} MiB`:'—';
-    row(vt,[v.name,quota,v.delete_protection?'On':'Off',v.worker_id||'—',acts]);
+    const quota=v.quota_mb?`${v.quota_mb} MiB`:'-';
+    row(vt,[v.name,quota,v.delete_protection?'On':'Off',v.worker_id||'-',acts]);
    });
    if(!volumes.length)row(vt,['No volumes.','','','','']);
    const jt=$('docker-jobs-table');row(jt,['Job','Action','State','Worker','Error','Actions'],true);
@@ -648,7 +648,7 @@
     const keep=bsel.value;
     bsel.innerHTML='<option value="">Select volume…</option>';
     volumes.forEach(v=>{
-     const o=document.createElement('option');o.value=v.id;o.textContent=`${v.name} · ${v.worker_id||'—'}`;bsel.append(o);
+     const o=document.createElement('option');o.value=v.id;o.textContent=`${v.name} · ${v.worker_id||'-'}`;bsel.append(o);
     });
     if(keep&&[...bsel.options].some(o=>o.value===keep))bsel.value=keep;
    }
@@ -656,8 +656,8 @@
    const sorted=[...backups].sort((a,b)=>String(b.created||'').localeCompare(String(a.created||'')));
    sorted.forEach(b=>{
     const vol=volById[b.target_id];
-    const volLabel=vol?vol.name:(b.target_id||'—');
-    const created=b.created?new Date(b.created).toLocaleString():'—';
+    const volLabel=vol?vol.name:(b.target_id||'-');
+    const created=b.created?new Date(b.created).toLocaleString():'-';
     const state=String(b.state||'').toUpperCase();
     const ready=state==='READY'||state==='FAILED';
     const deleting=state==='DELETING';
@@ -681,7 +681,7 @@
       try{await api('DELETE',`/api/docker/backups/${b.id}`);note('Backup delete queued');await refresh(true);}catch(e){note(e.message);}
      },'danger small-btn'));
     }
-    row(bt,[b.name||b.id,volLabel,created,b.state||'—',b.error||'',acts]);
+    row(bt,[b.name||b.id,volLabel,created,b.state||'-',b.error||'',acts]);
    });
    if(!sorted.length)row(bt,['No backups yet. Create one from a CloFix Docker volume.','','','','','']);
    fillComposeVolumeOptions();
@@ -936,7 +936,7 @@
   finally{if(submit)submit.disabled=false;}
  };
  on('docker-image-pull',async()=>{
-  const image=prompt('Image reference (repo:tag)');if(!image)return;
+  const image=await window.cfPrompt('Image reference (repo:tag)','',{title:'Pull image',label:'Image',confirm:'Pull'});if(!image)return;
   try{await api('POST','/api/docker/images/pull',{image});note('Pull queued');await refresh(true);}catch(e){note(e.message);}
  });
  on('docker-image-prune',async()=>{try{await api('POST','/api/docker/images/prune',{});note('Prune queued');await refresh(true);}catch(e){note(e.message);}});
@@ -1018,7 +1018,7 @@
   finally{if(submit)submit.disabled=false;}
  });
  on('docker-network-new',async()=>{
-  const name=prompt('Network name');if(!name)return;
+  const name=await window.cfPrompt('Network name','',{title:'Create network',label:'Network name',confirm:'Create'});if(!name)return;
   const internal=confirm('Internal-only network?');
   try{await api('POST','/api/docker/networks',{name,internal});note('Network create queued');await refresh(true);}catch(e){note(e.message);}
  });
@@ -1081,7 +1081,7 @@
   const keep=sel.value;
   sel.innerHTML='<option value="">Select volume…</option>';
   (dockerVolumesCache||[]).forEach(v=>{
-   const o=document.createElement('option');o.value=v.id;o.textContent=`${v.name} · ${v.worker_id||'—'}`;sel.append(o);
+   const o=document.createElement('option');o.value=v.id;o.textContent=`${v.name} · ${v.worker_id||'-'}`;sel.append(o);
   });
   if(keep&&[...sel.options].some(o=>o.value===keep))sel.value=keep;
   dlg.showModal();
@@ -1137,7 +1137,7 @@
   const blob=new Blob([html],{type:'text/html'});const url=URL.createObjectURL(blob);window.open(url,'_blank','noopener');setTimeout(()=>URL.revokeObjectURL(url),60000);
  });
  on('docker-waf-error-default',()=>{
-  if($('docker-waf-error-html')){$('docker-waf-error-html').value=dockerWAFDefaultHTML(dockerWAFErrorStatus);dockerWAFErrorDirty=true;if($('docker-waf-error-message'))$('docker-waf-error-message').textContent='Default HTML loaded — click Save to apply.';}
+  if($('docker-waf-error-html')){$('docker-waf-error-html').value=dockerWAFDefaultHTML(dockerWAFErrorStatus);dockerWAFErrorDirty=true;if($('docker-waf-error-message'))$('docker-waf-error-message').textContent='Default HTML loaded - click Save to apply.';}
  });
  on('docker-waf-error-save',async()=>{
   const t=dockerWAFSelected(),msg=$('docker-waf-error-message'),btn=$('docker-waf-error-save');if(!t)return;

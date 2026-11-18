@@ -27,6 +27,7 @@ func TestIAMPermissionCatalogCoversResources(t *testing.T) {
 		"/api/logs": "logs", "/api/logs/sources": "logs", "/api/logs/vps-1/tail": "logs",
 		"/api/firewall": "security", "/api/firewall/workers/w-1": "security",
 		"/api/security/overview": "security", "/api/security/modes": "security", "/api/audit": "security",
+		"/api/secrets": "secrets", "/api/secrets/sec-1/value": "secrets", "/api/secrets/by-name/db/value": "secrets",
 		"/api/v1/kubernetes": "kubernetes", "/api/v1/kubernetes/clusters/cks-1": "kubernetes",
 		"/api/cluster-services": "cluster-services", "/api/cluster-services/cs-1": "cluster-services",
 	}

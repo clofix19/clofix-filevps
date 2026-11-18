@@ -1,4 +1,4 @@
-# CloFix Kubernetes Service (CKS) — Phase 2
+# CloFix Kubernetes Service (CKS) - Phase 2
 
 Current CKS behaviour, including node pools, Helm, HA, backups and license quotas, is documented in [cks.md](cks.md). This page is the Phase 2 MVP note.
 

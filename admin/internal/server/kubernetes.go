@@ -263,7 +263,7 @@ func (s *Server) editKubernetesCluster(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, err.Error())
 		return
 	}
-	s.Store.Audit(current.Owner, "kubernetes.edit", current.ID, current.Name)
+	s.auditAccount(r, current.Owner, "kubernetes.edit", current.ID, current.Name, nil)
 	writeJSON(w, 200, map[string]any{"cluster": current.Public()})
 }
 
@@ -404,7 +404,7 @@ func (s *Server) updateKubernetesNode(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, err.Error())
 		return
 	}
-	s.Store.Audit(current.Owner, "kubernetes.node.update", current.ID, currentNode.ID)
+	s.auditAccount(r, current.Owner, "kubernetes.node.update", current.ID, currentNode.ID, nil)
 	writeJSON(w, 202, map[string]any{"cluster": current.Public(), "node": current.Nodes[idx], "job_id": job.ID})
 }
 
@@ -522,7 +522,7 @@ func (s *Server) setKubernetesProtection(w http.ResponseWriter, r *http.Request)
 		fail(w, 503, err.Error())
 		return
 	}
-	s.Store.Audit(current.Owner, "kubernetes.protection", current.ID, fmt.Sprintf("enabled=%t", current.DeleteProtection))
+	s.auditAccount(r, current.Owner, "kubernetes.protection", current.ID, fmt.Sprintf("enabled=%t", current.DeleteProtection), nil)
 	writeJSON(w, 200, map[string]any{"cluster": current.Public()})
 }
 
@@ -660,7 +660,7 @@ func (s *Server) createKubernetesCluster(w http.ResponseWriter, r *http.Request)
 		fail(w, 503, err.Error())
 		return
 	}
-	s.Store.Audit(cluster.Owner, "kubernetes.create", cluster.ID, job.ID)
+	s.auditAccount(r, cluster.Owner, "kubernetes.create", cluster.ID, job.ID, nil)
 	writeJSON(w, 202, map[string]any{"cluster": cluster.Public(), "job_id": job.ID})
 }
 
@@ -709,7 +709,7 @@ func (s *Server) deleteKubernetesCluster(w http.ResponseWriter, r *http.Request)
 		fail(w, 503, err.Error())
 		return
 	}
-	s.Store.Audit(current.Owner, "kubernetes.delete", current.ID, "")
+	s.auditAccount(r, current.Owner, "kubernetes.delete", current.ID, "", nil)
 	writeJSON(w, 202, map[string]any{"cluster": current.Public()})
 }
 
@@ -731,6 +731,14 @@ func (s *Server) postKubernetesWorkloads(w http.ResponseWriter, r *http.Request)
 	in.Name = strings.TrimSpace(in.Name)
 	in.Kind = strings.TrimSpace(in.Kind)
 	action := strings.TrimSpace(strings.ToLower(in.Action))
+	if strings.EqualFold(in.Kind, "secret") && len(in.Data) > 0 {
+		resolved, err := s.resolveSecretRefs(cluster.Owner, in.Data)
+		if err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		in.Data = resolved
+	}
 	if strings.TrimSpace(in.YAML) == "" && in.Kind != "" && in.Name != "" && action != kubernetes.ActionScale && action != kubernetes.ActionRestart && action != kubernetes.ActionDelete {
 		yaml, err := buildKubernetesResourceYAML(in)
 		if err != nil {
@@ -776,7 +784,7 @@ func (s *Server) postKubernetesWorkloads(w http.ResponseWriter, r *http.Request)
 		fail(w, 503, err.Error())
 		return
 	}
-	s.Store.Audit(current.Owner, "kubernetes.workload", current.ID, job.Action)
+	s.auditAccount(r, current.Owner, "kubernetes.workload", current.ID, job.Action, nil)
 	writeJSON(w, 202, map[string]any{"job_id": job.ID})
 }
 

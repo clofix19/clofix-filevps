@@ -11,7 +11,7 @@
   sel.replaceChildren();
   if(target==='nlb'){
    const nlbs=balancers.filter(b=>b.mode==='nlb'&&!b.deleting);
-   if(!nlbs.length){sel.add(new Option('No NLB yet — convert a balancer below first',''));return;}
+   if(!nlbs.length){sel.add(new Option('No NLB yet - convert a balancer below first',''));return;}
    nlbs.forEach(b=>sel.add(new Option(`${b.name} · ${b.public_ip||'no IP'} · ${b.id}`,b.id)));
   }else{
    if(!instances.length){sel.add(new Option('No FileVPS instances',''));return;}
@@ -26,9 +26,9 @@
   row(table,['IP','Target','Resource','Firewall','Attached','Note'],true);
   if(!items.length){row(table,['No floating IPs attached yet.','','','','','']);return;}
   items.forEach(a=>{
-   const target=a.instance_id?'FileVPS':(a.nlb_id?'NLB':'—');
-   const resource=a.instance_id||a.nlb_id||'—';
-   row(table,[a.ip,target,resource,a.firewall||'—',a.attached?new Date(a.attached).toLocaleString():'—',a.note||'—']);
+   const target=a.instance_id?'FileVPS':(a.nlb_id?'NLB':'-');
+   const resource=a.instance_id||a.nlb_id||'-';
+   row(table,[a.ip,target,resource,a.firewall||'-',a.attached?new Date(a.attached).toLocaleString():'-',a.note||'-']);
   });
  }
  async function loadFloating(){

@@ -12,11 +12,11 @@
             <h2 id="instances-heading-overview" class="visually-hidden" tabindex="-1">Overview</h2>
             <div class="ov-topbar">
               <div class="bit-tile-row ov-summary">
-                <div class="bit-tile" data-bit="total"><div class="bit-kicker">VPS · TOTAL</div><div class="bit-value" id="stat-total">—</div><div class="bit-sub">All provisioned</div></div>
-                <div class="bit-tile" data-bit="filevps"><div class="bit-kicker">FileVPS</div><div class="bit-value" id="stat-filevps">—</div><div class="bit-sub">Guest instances</div></div>
-                <div class="bit-tile" data-bit="cks"><div class="bit-kicker">CKS</div><div class="bit-value" id="stat-cks">—</div><div class="bit-sub">Cluster nodes</div></div>
-                <div class="bit-tile" data-bit="run"><div class="bit-kicker">VPS · RUN</div><div class="bit-value" id="stat-running">—</div><div class="bit-sub">Currently active</div></div>
-                <div class="bit-tile" data-bit="stop"><div class="bit-kicker">VPS · STOP</div><div class="bit-value" id="stat-stopped">—</div><div class="bit-sub">Currently stopped</div></div>
+                <div class="bit-tile" data-bit="total"><div class="bit-kicker">VPS · TOTAL</div><div class="bit-value" id="stat-total">-</div><div class="bit-sub">All provisioned</div></div>
+                <div class="bit-tile" data-bit="filevps"><div class="bit-kicker">FileVPS</div><div class="bit-value" id="stat-filevps">-</div><div class="bit-sub">Guest instances</div></div>
+                <div class="bit-tile" data-bit="cks"><div class="bit-kicker">CKS</div><div class="bit-value" id="stat-cks">-</div><div class="bit-sub">Cluster nodes</div></div>
+                <div class="bit-tile" data-bit="run"><div class="bit-kicker">VPS · RUN</div><div class="bit-value" id="stat-running">-</div><div class="bit-sub">Currently active</div></div>
+                <div class="bit-tile" data-bit="stop"><div class="bit-kicker">VPS · STOP</div><div class="bit-value" id="stat-stopped">-</div><div class="bit-sub">Currently stopped</div></div>
               </div>
               <div class="chart-toolbar ov-toolbar"><div class="chart-ranges" role="group" aria-label="Chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="6h" aria-pressed="false">6h</button><button type="button" data-chart-range="1d" aria-pressed="false">1d</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button><button type="button" data-chart-range="custom" aria-pressed="false">Custom</button></div><div class="chart-custom" hidden><label>From <input type="datetime-local" data-chart-from></label><label>To <input type="datetime-local" data-chart-to></label><button type="button" class="small-btn" data-chart-custom-apply>Apply</button></div></div>
             </div>
@@ -27,14 +27,14 @@
                 <section class="bit-card" data-bit="cpu">
                   <div class="bit-side">
                     <div class="bit-kicker">CPU · GUEST</div>
-                    <div class="bit-value" id="stat-cpu">—</div>
-                    <div class="bit-sub" id="chart-cpu-current">—</div>
+                    <div class="bit-value" id="stat-cpu">-</div>
+                    <div class="bit-sub" id="chart-cpu-current">-</div>
                     <div class="bit-pie-row">
-                      <svg class="bit-pie" id="pie-inst-cpu" viewBox="0 0 72 72" role="img" aria-label="Guest CPU pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-inst-cpu-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-inst-cpu-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                      <svg class="bit-pie" id="pie-inst-cpu" viewBox="0 0 72 72" role="img" aria-label="Guest CPU pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-inst-cpu-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-inst-cpu-pct" x="36" y="39" text-anchor="middle">-</text></svg>
                       <div class="bit-nums">
-                        <div><span>USED</span><strong id="pie-inst-cpu-used">—</strong></div>
-                        <div><span>FREE</span><strong id="pie-inst-cpu-free">—</strong></div>
-                        <div><span>AVG</span><strong id="pie-inst-cpu-alloc">—</strong></div>
+                        <div><span>USED</span><strong id="pie-inst-cpu-used">-</strong></div>
+                        <div><span>FREE</span><strong id="pie-inst-cpu-free">-</strong></div>
+                        <div><span>AVG</span><strong id="pie-inst-cpu-alloc">-</strong></div>
                       </div>
                     </div>
                   </div>
@@ -43,18 +43,18 @@
                 <section class="bit-card" data-bit="ram">
                   <div class="bit-side">
                     <div class="bit-kicker">RAM · GUEST</div>
-                    <div class="bit-value" id="stat-ram">—</div>
+                    <div class="bit-value" id="stat-ram">-</div>
                     <div class="bit-sub" id="stat-ram-note">Guest RAM in running VPS</div>
                     <div class="bit-pie-row">
-                      <svg class="bit-pie" id="pie-inst-ram" viewBox="0 0 72 72" role="img" aria-label="Guest RAM pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-inst-ram-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-inst-ram-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                      <svg class="bit-pie" id="pie-inst-ram" viewBox="0 0 72 72" role="img" aria-label="Guest RAM pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-inst-ram-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-inst-ram-pct" x="36" y="39" text-anchor="middle">-</text></svg>
                       <div class="bit-nums">
-                        <div><span>USED</span><strong id="pie-inst-ram-used">—</strong></div>
-                        <div><span>FREE</span><strong id="pie-inst-ram-free">—</strong></div>
-                        <div><span>ALLOC</span><strong id="pie-inst-ram-alloc">—</strong></div>
+                        <div><span>USED</span><strong id="pie-inst-ram-used">-</strong></div>
+                        <div><span>FREE</span><strong id="pie-inst-ram-free">-</strong></div>
+                        <div><span>ALLOC</span><strong id="pie-inst-ram-alloc">-</strong></div>
                       </div>
                     </div>
                   </div>
-                  <div class="bit-graph"><div class="bit-graph-label">TREND</div><svg id="chart-memory" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live memory usage chart"></svg><div class="bit-sub" id="chart-memory-current" hidden>—</div></div>
+                  <div class="bit-graph"><div class="bit-graph-label">TREND</div><svg id="chart-memory" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live memory usage chart"></svg><div class="bit-sub" id="chart-memory-current" hidden>-</div></div>
                 </section>
               </div>
             </section>
@@ -65,34 +65,34 @@
                 <section class="bit-card" data-bit="swap">
                   <div class="bit-side">
                     <div class="bit-kicker">SWAP · GUEST</div>
-                    <div class="bit-value" id="stat-swap">—</div>
+                    <div class="bit-value" id="stat-swap">-</div>
                     <div class="bit-sub" id="stat-swap-note">Guest swap in running VPS</div>
                     <div class="bit-pie-row">
-                      <svg class="bit-pie" id="pie-inst-swap" viewBox="0 0 72 72" role="img" aria-label="Guest swap pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-inst-swap-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-inst-swap-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                      <svg class="bit-pie" id="pie-inst-swap" viewBox="0 0 72 72" role="img" aria-label="Guest swap pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-inst-swap-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-inst-swap-pct" x="36" y="39" text-anchor="middle">-</text></svg>
                       <div class="bit-nums">
-                        <div><span>USED</span><strong id="pie-inst-swap-used">—</strong></div>
-                        <div><span>FREE</span><strong id="pie-inst-swap-free">—</strong></div>
-                        <div><span>ALLOC</span><strong id="pie-inst-swap-alloc">—</strong></div>
+                        <div><span>USED</span><strong id="pie-inst-swap-used">-</strong></div>
+                        <div><span>FREE</span><strong id="pie-inst-swap-free">-</strong></div>
+                        <div><span>ALLOC</span><strong id="pie-inst-swap-alloc">-</strong></div>
                       </div>
                     </div>
                   </div>
-                  <div class="bit-graph"><div class="bit-graph-label">TREND</div><svg id="chart-swap" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live swap usage chart"></svg><div class="bit-sub" id="chart-swap-current" hidden>—</div></div>
+                  <div class="bit-graph"><div class="bit-graph-label">TREND</div><svg id="chart-swap" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live swap usage chart"></svg><div class="bit-sub" id="chart-swap-current" hidden>-</div></div>
                 </section>
                 <section class="bit-card" data-bit="host-disk">
                   <div class="bit-side">
                     <div class="bit-kicker">DISK · GUEST</div>
-                    <div class="bit-value" id="stat-disk">—</div>
+                    <div class="bit-value" id="stat-disk">-</div>
                     <div class="bit-sub" id="stat-disk-note">Writable-layer usage</div>
                     <div class="bit-pie-row">
-                      <svg class="bit-pie" id="pie-inst-disk" viewBox="0 0 72 72" role="img" aria-label="Guest disk pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-inst-disk-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-inst-disk-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                      <svg class="bit-pie" id="pie-inst-disk" viewBox="0 0 72 72" role="img" aria-label="Guest disk pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-inst-disk-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-inst-disk-pct" x="36" y="39" text-anchor="middle">-</text></svg>
                       <div class="bit-nums">
-                        <div><span>USED</span><strong id="pie-inst-disk-used">—</strong></div>
-                        <div><span>FREE</span><strong id="pie-inst-disk-free">—</strong></div>
-                        <div><span>ALLOC</span><strong id="pie-inst-disk-alloc">—</strong></div>
+                        <div><span>USED</span><strong id="pie-inst-disk-used">-</strong></div>
+                        <div><span>FREE</span><strong id="pie-inst-disk-free">-</strong></div>
+                        <div><span>ALLOC</span><strong id="pie-inst-disk-alloc">-</strong></div>
                       </div>
                     </div>
                   </div>
-                  <div class="bit-graph"><div class="bit-graph-label">TREND</div><svg id="chart-disk" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live disk usage chart"></svg><div class="bit-sub" id="chart-disk-current" hidden>—</div></div>
+                  <div class="bit-graph"><div class="bit-graph-label">TREND</div><svg id="chart-disk" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="Live disk usage chart"></svg><div class="bit-sub" id="chart-disk-current" hidden>-</div></div>
                 </section>
               </div>
             </section>
@@ -103,14 +103,14 @@
                 <section class="bit-card" data-bit="vps-net">
                   <div class="bit-side">
                     <div class="bit-kicker">NET · VPS</div>
-                    <div class="bit-value" id="stat-net-bw">—</div>
-                    <div class="bit-sub" id="chart-net-current">—</div>
+                    <div class="bit-value" id="stat-net-bw">-</div>
+                    <div class="bit-sub" id="chart-net-current">-</div>
                     <div class="bit-pie-row">
-                      <svg class="bit-pie" id="pie-inst-net" viewBox="0 0 72 72" role="img" aria-label="VPS IN share pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-inst-net-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-inst-net-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                      <svg class="bit-pie" id="pie-inst-net" viewBox="0 0 72 72" role="img" aria-label="VPS IN share pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-inst-net-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-inst-net-pct" x="36" y="39" text-anchor="middle">-</text></svg>
                       <div class="bit-nums">
-                        <div><span>IN</span><strong id="stat-net-in">—</strong></div>
-                        <div><span>OUT</span><strong id="stat-net-out">—</strong></div>
-                        <div><span>BW</span><strong id="pie-inst-net-alloc">—</strong></div>
+                        <div><span>IN</span><strong id="stat-net-in">-</strong></div>
+                        <div><span>OUT</span><strong id="stat-net-out">-</strong></div>
+                        <div><span>BW</span><strong id="pie-inst-net-alloc">-</strong></div>
                       </div>
                     </div>
                   </div>
@@ -119,14 +119,14 @@
                 <section class="bit-card" data-bit="vps-bw">
                   <div class="bit-side">
                     <div class="bit-kicker">BW · VPS</div>
-                    <div class="bit-value" id="chart-bw-current">—</div>
+                    <div class="bit-value" id="chart-bw-current">-</div>
                     <div class="bit-sub">Combined throughput</div>
                     <div class="bit-pie-row">
-                      <svg class="bit-pie" id="pie-inst-bw" viewBox="0 0 72 72" role="img" aria-label="VPS bandwidth pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-inst-bw-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-inst-bw-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                      <svg class="bit-pie" id="pie-inst-bw" viewBox="0 0 72 72" role="img" aria-label="VPS bandwidth pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-inst-bw-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-inst-bw-pct" x="36" y="39" text-anchor="middle">-</text></svg>
                       <div class="bit-nums">
-                        <div><span>IN</span><strong id="pie-inst-bw-used">—</strong></div>
-                        <div><span>OUT</span><strong id="pie-inst-bw-free">—</strong></div>
-                        <div><span>SUM</span><strong id="pie-inst-bw-alloc">—</strong></div>
+                        <div><span>IN</span><strong id="pie-inst-bw-used">-</strong></div>
+                        <div><span>OUT</span><strong id="pie-inst-bw-free">-</strong></div>
+                        <div><span>SUM</span><strong id="pie-inst-bw-alloc">-</strong></div>
                       </div>
                     </div>
                   </div>
@@ -153,6 +153,7 @@
     <dialog class="terminal-dialog form-dialog" id="create-vps-dialog" aria-labelledby="create-vps-title">
       <div class="section-head"><div><p class="eyebrow">VPS management</p><h2 id="create-vps-title">Create FileVPS</h2><p>Deploy a Linux VPS on an enrolled worker.</p></div><button class="secondary" id="create-vps-close" type="button">Close</button></div>
       <div class="form-grid">
+        <div class="form-field form-span"><label for="vps-name">VPS name</label><input id="vps-name" maxlength="63" placeholder="web-prod" autocomplete="off" required><small class="muted">Required. Shown in the instances list and used as the guest hostname. Letters, digits, and hyphens.</small></div>
         <div class="form-field"><label for="img-preset">OS image</label><select id="img-preset"><option value="ubuntu:24.04">Ubuntu 24.04</option><option value="ubuntu:22.04">Ubuntu 22.04</option><option value="clofix-linux:1.0">CloFix Linux 1.0</option><option value="custom">Custom (name + version)</option></select></div>
         <div class="form-field" id="img-custom-wrap" hidden><label for="img">Image name</label><input id="img" value="ubuntu" placeholder="ubuntu or clofix-linux"></div>
         <div class="form-field" id="ver-custom-wrap" hidden><label for="ver">Image version</label><input id="ver" value="24.04" placeholder="24.04"></div>

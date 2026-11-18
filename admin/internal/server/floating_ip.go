@@ -149,7 +149,7 @@ func (s *Server) attachFloatingIP(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not save floating IP assignment")
 		return
 	}
-	s.Store.Audit(principalFrom(r).Email, "floating-ip.attach", in.IP, in.InstanceID+in.NLBID)
+	s.audit(r, "floating-ip.attach", in.IP, in.InstanceID+in.NLBID, nil)
 	writeJSON(w, 200, map[string]any{
 		"assignment": rec,
 		"firewall":   "Recorded for operator allowlists. Ensure host nftables/security groups permit the published services on this address.",

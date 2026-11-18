@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# clofix-audit.sh — defensive isolation audit for fx (CloFix FileVPS) | incus | lxc
+# clofix-audit.sh - defensive isolation audit for fx (CloFix FileVPS) | incus | lxc
 # Sections: 1 root isolation, 2 namespace escape, 3 cross-VPS, 4 filesystem, 5 resource exhaustion, 6 kernel & OS sharing
 # Usage: sudo ./clofix-audit.sh <fx|incus|lxc> [--destructive]
 #
@@ -36,7 +36,7 @@ ex() { vps_exec "$@" 2>&1 | grep -v -E '^exit status [0-9]+$'; }
 echo "== Security audit: $BACKEND (destructive=$DESTRUCTIVE) =="
 for n in "$A" "$B"; do
   track "$n"
-  vps_create "$n" && vps_start "$n" && wait_ready "$n" 120 || { echo "cannot create $n — check adapter in lib.sh"; exit 2; }
+  vps_create "$n" && vps_start "$n" && wait_ready "$n" 120 || { echo "cannot create $n - check adapter in lib.sh"; exit 2; }
 done
 
 # ============================================================================
@@ -159,14 +159,14 @@ done
 
 ua=$(ex "$A" "awk 'NR==1{print \$2}' /proc/self/uid_map" | tr -d '[:space:]'); ub=$(ex "$B" "awk 'NR==1{print \$2}' /proc/self/uid_map" | tr -d '[:space:]')
 if [ "$ua" = "$ub" ] && [ "$ua" != "0" ]; then rec XV X05 WARN "VPSes share the same host uid range (no per-VPS uid isolation)" "base=$ua"
-elif [ "$ua" = "0" ]; then rec XV X05 FAIL "Identity uid mapping — root in A equals root in B on host"
+elif [ "$ua" = "0" ]; then rec XV X05 FAIL "Identity uid mapping - root in A equals root in B on host"
 else rec XV X05 PASS "Distinct host uid ranges per VPS" "A=$ua B=$ub"; fi
 
 ipb=$(ex "$B" "hostname -I 2>/dev/null | awk '{print \$1}'" | tr -d '[:space:]')
 if [ -n "$ipb" ]; then
   if ex "$A" "ping -c1 -W2 $ipb >/dev/null 2>&1 || timeout 3 bash -c 'echo > /dev/tcp/$ipb/22'" >/dev/null; then
     rec XV X06 WARN "VPS-A can reach VPS-B over the network (verify this is intended policy)" "B=$ipb"
-  else rec XV X06 PASS "VPS-A cannot reach VPS-B ($ipb) — inter-VPS traffic blocked"; fi
+  else rec XV X06 PASS "VPS-A cannot reach VPS-B ($ipb) - inter-VPS traffic blocked"; fi
 else rec XV X06 SKIP "VPS-B has no IP"; fi
 
 # ============================================================================
@@ -186,7 +186,7 @@ rf=$(vps_rootfs "$A"); pd=$(dirname "$rf")
 if [ -d "$pd" ]; then
   m=$(stat -c %a "$pd")
   [ "${m: -1}" != "0" ] && rec FS F04 WARN "VPS dir on host is world-accessible (mode $m)" "$pd" || rec FS F04 PASS "VPS dir on host not world-accessible (mode $m)" "$pd"
-else rec FS F04 SKIP "Rootfs path not found — set FX_ROOTFS / INCUS_ROOTFS" "$pd"; fi
+else rec FS F04 SKIP "Rootfs path not found - set FX_ROOTFS / INCUS_ROOTFS" "$pd"; fi
 
 if ex "$A" "mknod /tmp/blk b 8 0 && rm -f /tmp/blk" >/dev/null; then rec FS F05 FAIL "Container root can create block device nodes"
 else rec FS F05 PASS "mknod of block devices denied"; fi
@@ -213,11 +213,11 @@ cgr() {
 }
 pm=$(cgr "$A" pids.max pids/pids.max | tr -d '[:space:]'); mm=$(cgr "$A" memory.max memory/memory.limit_in_bytes | tr -d '[:space:]')
 cm=$(cgr "$A" cpu.max cpu/cpu.cfs_quota_us | tr -d '[:space:]')
-[ -z "$pm" ] || [ "$pm" = max ] && rec RES R01 FAIL "No pids.max visible — fork bomb can exhaust host PIDs" "pids.max=${pm:-n/a}" || rec RES R01 PASS "pids.max set" "$pm"
+[ -z "$pm" ] || [ "$pm" = max ] && rec RES R01 FAIL "No pids.max visible - fork bomb can exhaust host PIDs" "pids.max=${pm:-n/a}" || rec RES R01 PASS "pids.max set" "$pm"
 case "$mm" in ""|max|9223372036854*) rec RES R02 FAIL "No memory limit visible" "memory.max=${mm:-n/a}";; *) rec RES R02 PASS "Memory limit set" "$mm";; esac
 case "$cm" in ""|max*|-1) rec RES R03 WARN "No CPU quota visible" "cpu.max=${cm:-n/a}";; *) rec RES R03 PASS "CPU quota set" "$cm";; esac
 inkb=$(ex "$A" "df -P / | awk 'NR==2{print \$2}'" | tr -d '[:space:]'); htot=$(( $(disk_total_b)/1024 ))
-if [ -n "$inkb" ] && [ "$inkb" -ge $((htot*9/10)) ]; then rec RES R04 WARN "VPS sees ~whole host disk — no visible per-VPS disk quota" "vps=${inkb}KB host=${htot}KB"
+if [ -n "$inkb" ] && [ "$inkb" -ge $((htot*9/10)) ]; then rec RES R04 WARN "VPS sees ~whole host disk - no visible per-VPS disk quota" "vps=${inkb}KB host=${htot}KB"
 else rec RES R04 PASS "Per-VPS disk size limited" "vps=${inkb}KB host=${htot}KB"; fi
 
 if [ $DESTRUCTIVE -ne 1 ]; then
@@ -268,7 +268,7 @@ fi
 # ============================================================================
 echo "-- 6. Kernel & OS sharing"
 kin=$(ex "$A" "uname -r" | tr -d '[:space:]'); khost=$(uname -r)
-[ "$kin" = "$khost" ] && rec KOS K01 INFO "Kernel shared with host ($khost) — a kernel bug affects ALL VPSes on this worker" || rec KOS K01 PASS "VPS runs its own kernel ($kin)"
+[ "$kin" = "$khost" ] && rec KOS K01 INFO "Kernel shared with host ($khost) - a kernel bug affects ALL VPSes on this worker" || rec KOS K01 PASS "VPS runs its own kernel ($kin)"
 
 hs=""
 chk() { v=$(cat "$1" 2>/dev/null); [ -n "$v" ] && [ "$v" != "$2" ] && hs="$hs $(basename $1)=$v(want $2)"; }
@@ -279,7 +279,7 @@ pp=$(cat /proc/sys/kernel/perf_event_paranoid 2>/dev/null); [ -n "$pp" ] && [ "$
 [ -n "$hs" ] && rec KOS K02 WARN "Host kernel hardening gaps (shared-kernel attack surface):$hs" || rec KOS K02 PASS "Host kernel sysctl hardening in place"
 
 mu=$(cat /proc/sys/user/max_user_namespaces 2>/dev/null)
-[ "${mu:-1}" = "0" ] && rec KOS K03 INFO "User namespaces disabled on host" || rec KOS K03 INFO "Host allows user namespaces (max=$mu) — larger kernel attack surface, but required for uid mapping"
+[ "${mu:-1}" = "0" ] && rec KOS K03 INFO "User namespaces disabled on host" || rec KOS K03 INFO "Host allows user namespaces (max=$mu) - larger kernel attack surface, but required for uid mapping"
 
 wr=""
 for p in /proc/sys/vm/drop_caches /proc/sys/vm/swappiness /proc/sys/kernel/panic /proc/sys/net/ipv4/ip_forward /proc/sys/kernel/hostname; do
@@ -312,10 +312,10 @@ if [ -d "$rfA" ] && [ -d "$rfB" ]; then
   ia=$(stat -c '%i' "$rfA/usr/bin/true" 2>/dev/null); ib=$(stat -c '%i' "$rfB/usr/bin/true" 2>/dev/null)
   nl=$(stat -c '%h' "$rfA/usr/bin/true" 2>/dev/null)
   if [ -n "$ia" ] && [ "$ia" = "$ib" ] && [ "${nl:-1}" -gt 1 ]; then
-    if ex "$A" "test -w /usr/bin/true" >/dev/null; then rec KOS O01 FAIL "Base OS files are hardlinked across VPSes AND writable — one VPS can alter the OS of all others" "inode=$ia links=$nl"
+    if ex "$A" "test -w /usr/bin/true" >/dev/null; then rec KOS O01 FAIL "Base OS files are hardlinked across VPSes AND writable - one VPS can alter the OS of all others" "inode=$ia links=$nl"
     else rec KOS O01 PASS "Base OS shared via hardlink but read-only in VPS" "inode=$ia links=$nl"; fi
   else rec KOS O01 PASS "Base OS not hardlink-shared (separate copy / COW / overlay)" "A=$ia B=$ib"; fi
-else rec KOS O01 SKIP "Rootfs paths not found — set FX_ROOTFS / INCUS_ROOTFS"; fi
+else rec KOS O01 SKIP "Rootfs paths not found - set FX_ROOTFS / INCUS_ROOTFS"; fi
 
 ex "$A" "touch /usr/.cfx_osmark; echo A > /etc/cfx_osmark" >/dev/null
 if ex "$B" "test -e /usr/.cfx_osmark -o -e /etc/cfx_osmark" >/dev/null; then rec KOS O02 FAIL "Write in VPS-A's OS tree (/usr,/etc) appears in VPS-B"
@@ -323,7 +323,7 @@ else rec KOS O02 PASS "OS-tree writes in VPS-A do not leak into VPS-B"; fi
 
 ex "$A" "echo cfx-test > /etc/hostname.cfx; cp /etc/passwd /etc/passwd.cfx" >/dev/null
 hb=$(ex "$B" "cat /etc/hostname" | tr -d '[:space:]'); ha=$(ex "$A" "cat /etc/hostname" | tr -d '[:space:]')
-[ -n "$ha" ] && [ "$ha" = "$hb" ] && rec KOS O03 WARN "VPS-A and VPS-B have identical hostname/identity files ('$ha') — per-VPS identity not set" || rec KOS O03 PASS "Per-VPS identity files differ"
+[ -n "$ha" ] && [ "$ha" = "$hb" ] && rec KOS O03 WARN "VPS-A and VPS-B have identical hostname/identity files ('$ha') - per-VPS identity not set" || rec KOS O03 PASS "Per-VPS identity files differ"
 
 hostos=$(. /etc/os-release; echo "$ID $VERSION_ID"); vpsos=$(ex "$A" ". /etc/os-release; echo \$ID \$VERSION_ID")
 rec KOS O04 INFO "OS share: host='$hostos' VPS='$vpsos' (patching host kernel patches all VPSes; VPS userland patched separately)"

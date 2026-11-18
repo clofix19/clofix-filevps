@@ -160,7 +160,7 @@ func (s *Server) createKubernetesNodePool(w http.ResponseWriter, r *http.Request
 		fail(w, 503, err.Error())
 		return
 	}
-	s.Store.Audit(current.Owner, "kubernetes.nodepool.create", current.ID, pool.ID)
+	s.auditAccount(r, current.Owner, "kubernetes.nodepool.create", current.ID, pool.ID, nil)
 	writeJSON(w, 202, map[string]any{"cluster": current.Public(), "node_pool": pool, "job_id": job.ID})
 }
 
@@ -283,7 +283,7 @@ func (s *Server) scaleKubernetesNodePool(w http.ResponseWriter, r *http.Request)
 		fail(w, 503, err.Error())
 		return
 	}
-	s.Store.Audit(current.Owner, "kubernetes.nodepool.scale", current.ID, pool.ID)
+	s.auditAccount(r, current.Owner, "kubernetes.nodepool.scale", current.ID, pool.ID, nil)
 	writeJSON(w, 202, map[string]any{"cluster": current.Public(), "node_pool": pool, "job_id": job.ID})
 }
 
@@ -346,7 +346,7 @@ func (s *Server) deleteKubernetesNodePool(w http.ResponseWriter, r *http.Request
 		fail(w, 503, err.Error())
 		return
 	}
-	s.Store.Audit(current.Owner, "kubernetes.nodepool.delete", current.ID, pool.ID)
+	s.auditAccount(r, current.Owner, "kubernetes.nodepool.delete", current.ID, pool.ID, nil)
 	writeJSON(w, 202, map[string]any{"cluster": current.Public(), "job_id": job.ID})
 }
 
@@ -385,7 +385,7 @@ func (s *Server) queueClusterManifest(w http.ResponseWriter, r *http.Request, ac
 		fail(w, 503, err.Error())
 		return
 	}
-	s.Store.Audit(current.Owner, audit, current.ID, job.ID)
+	s.auditAccount(r, current.Owner, audit, current.ID, job.ID, nil)
 	writeJSON(w, 202, map[string]any{"job_id": job.ID})
 }
 
@@ -434,7 +434,7 @@ func (s *Server) postKubernetesHelm(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, err.Error())
 		return
 	}
-	s.Store.Audit(current.Owner, "kubernetes.helm", current.ID, job.ID)
+	s.auditAccount(r, current.Owner, "kubernetes.helm", current.ID, job.ID, nil)
 	writeJSON(w, 202, map[string]any{"job_id": job.ID})
 }
 
@@ -586,7 +586,7 @@ func (s *Server) createKubernetesBackup(w http.ResponseWriter, r *http.Request) 
 		fail(w, 503, err.Error())
 		return
 	}
-	s.Store.Audit(current.Owner, "kubernetes.backup", current.ID, backup.ID)
+	s.auditAccount(r, current.Owner, "kubernetes.backup", current.ID, backup.ID, nil)
 	writeJSON(w, 202, map[string]any{"backup": backup, "job_id": job.ID})
 }
 
@@ -648,7 +648,7 @@ func (s *Server) restoreKubernetesBackup(w http.ResponseWriter, r *http.Request)
 		fail(w, 503, err.Error())
 		return
 	}
-	s.Store.Audit(current.Owner, "kubernetes.restore", current.ID, backup.ID)
+	s.auditAccount(r, current.Owner, "kubernetes.restore", current.ID, backup.ID, nil)
 	writeJSON(w, 202, map[string]any{"job_id": job.ID})
 }
 
@@ -699,7 +699,7 @@ func (s *Server) upgradeKubernetesCluster(w http.ResponseWriter, r *http.Request
 		fail(w, 503, err.Error())
 		return
 	}
-	s.Store.Audit(current.Owner, "kubernetes.upgrade", current.ID, version)
+	s.auditAccount(r, current.Owner, "kubernetes.upgrade", current.ID, version, nil)
 	writeJSON(w, 202, map[string]any{"cluster": current.Public(), "job_id": job.ID})
 }
 

@@ -753,7 +753,7 @@ func (s *Server) savePricingPlan(w http.ResponseWriter, r *http.Request) {
 			fail(w, 500, "could not save plan")
 			return
 		}
-		s.Store.Audit(principalFrom(r).Name, "pricing.plan.create", plan.ID, plan.Name)
+		s.audit(r, "pricing.plan.create", plan.ID, plan.Name, nil)
 		writeJSON(w, 200, s.unlockedPlanView(d, plan, now))
 		return
 	}
@@ -781,7 +781,7 @@ func (s *Server) savePricingPlan(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not save plan")
 		return
 	}
-	s.Store.Audit(principalFrom(r).Name, "pricing.plan.update", old.ID, old.Name)
+	s.audit(r, "pricing.plan.update", old.ID, old.Name, nil)
 	writeJSON(w, 200, s.unlockedPlanView(d, old, now))
 }
 func (s *Server) unlockedPlanView(d *billingStore, p billingPlan, now time.Time) map[string]any {
@@ -1074,7 +1074,47 @@ func (s *Server) getBilling(w http.ResponseWriter, r *http.Request) {
 	if p.Kind != "admin" {
 		view = s.filterBillingView(view, p)
 	}
+	view["accounts"] = s.billableAccounts(p)
+	view["can_manage"] = p.Kind == "admin" || p.Kind == "partner"
 	writeJSON(w, 200, view)
+}
+
+// billableAccounts lists partner/client accounts the caller may invoice (admin: all; partner: self + clients; root/IAM: own).
+func (s *Server) billableAccounts(p iamPrincipal) []map[string]any {
+	accs, err := s.Store.ListAccounts()
+	if err != nil {
+		return []map[string]any{}
+	}
+	users, _ := s.Store.ListIAMUsers()
+	allow := s.visibleAccountIDSet(p)
+	out := make([]map[string]any, 0, len(accs))
+	for _, acc := range accs {
+		if acc.Kind != "client" && acc.Kind != "partner" {
+			continue
+		}
+		if p.Kind != "admin" && !allow[acc.ID] {
+			continue
+		}
+		email := ""
+		for _, u := range users {
+			if u.AccountID == acc.ID && (u.Kind == "root" || u.Kind == "partner") {
+				email = u.Email
+				break
+			}
+		}
+		status := acc.Status
+		if status == "" {
+			status = "active"
+		}
+		out = append(out, map[string]any{
+			"id": acc.ID, "name": acc.Name, "kind": acc.Kind, "status": status,
+			"parent_id": acc.ParentID, "email": email,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i]["name"].(string) < out[j]["name"].(string)
+	})
+	return out
 }
 func (s *Server) billingOwnerOK(p iamPrincipal, owner string) bool {
 	if p.Kind == "admin" {
@@ -1173,6 +1213,60 @@ func (s *Server) filterBillingView(view map[string]any, p iamPrincipal) map[stri
 			due["sessions"] = out
 			view["due"] = due
 		}
+	}
+	return recomputeBillingScopedTotals(view)
+}
+
+// recomputeBillingScopedTotals rebuilds overview/reports/due totals from already-filtered lists
+// so non-admin callers never see platform-wide billing stats.
+func recomputeBillingScopedTotals(view map[string]any) map[string]any {
+	subs, _ := view["subscriptions"].([]billingSubscription)
+	invoices, _ := view["invoices"].([]billingInvoice)
+	payments, _ := view["payments"].([]billingPayment)
+	wallets, _ := view["wallets"].([]billingWallet)
+	refunds, _ := view["refunds"].([]billingRefund)
+	active, draft, paid := 0, 0, 0
+	for _, sub := range subs {
+		if sub.Status == "active" {
+			active++
+		}
+	}
+	for _, inv := range invoices {
+		switch inv.Status {
+		case "draft":
+			draft++
+		case "paid":
+			paid++
+		}
+	}
+	overview, _ := view["overview"].(map[string]any)
+	if overview == nil {
+		overview = map[string]any{}
+	}
+	overview["active_subscriptions"] = active
+	overview["draft_invoices"] = draft
+	overview["paid_invoices"] = paid
+	overview["wallets"] = len(wallets)
+	overview["payments"] = len(payments)
+	overview["refunds"] = len(refunds)
+	overview["note"] = "Totals for your account only. Catalog prices live in Settings → Pricing & Plans."
+	view["overview"] = overview
+	view["reports"] = billingReport(invoices, refunds)
+	if due, ok := view["due"].(map[string]any); ok {
+		sessions, _ := due["sessions"].([]billingUsageSession)
+		var dueCents int64
+		for _, sess := range sessions {
+			dueCents += sess.DueCents
+		}
+		rate := 122.0
+		if cur, ok := overview["currency"].(billingCurrency); ok {
+			rate = billingFX(cur)
+		}
+		usd, bdt := convertUSDAndBDT(dueCents, "USD", rate)
+		due["due_cents"] = dueCents
+		due["usd_cents"] = usd
+		due["bdt_cents"] = bdt
+		view["due"] = due
 	}
 	return view
 }
@@ -1441,7 +1535,7 @@ func (s *Server) createBillingSubscription(w http.ResponseWriter, r *http.Reques
 		fail(w, 500, "could not save subscription")
 		return
 	}
-	s.Store.Audit(principalFrom(r).Name, "billing.subscription.create", sub.ID, sub.Owner)
+	s.audit(r, "billing.subscription.create", sub.ID, sub.Owner, nil)
 	writeJSON(w, 200, map[string]any{"subscription": sub, "note": "Price is snapshotted from the published catalog. Later plan edits do not change this subscription."})
 }
 func (s *Server) cancelBillingSubscription(w http.ResponseWriter, r *http.Request) {
@@ -1486,6 +1580,10 @@ func (s *Server) createBillingInvoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := principalFrom(r)
+	if p.Kind != "admin" && p.Kind != "partner" {
+		fail(w, 403, "only admin or partner can create invoices")
+		return
+	}
 	in.Owner, in.SubscriptionID, in.Description = strings.TrimSpace(in.Owner), strings.TrimSpace(in.SubscriptionID), strings.TrimSpace(in.Description)
 	in.ResourceID, in.Product = strings.TrimSpace(in.ResourceID), strings.TrimSpace(in.Product)
 	if in.Owner == "" {
@@ -1506,6 +1604,10 @@ func (s *Server) createBillingInvoice(w http.ResponseWriter, r *http.Request) {
 	var dueLines []billingInvoiceLine
 	var dueKeys []string
 	if in.FromDue {
+		if in.Owner == "" {
+			fail(w, 400, "select a client account to invoice due usage")
+			return
+		}
 		if in.Description == "" {
 			in.Description = "Due hourly usage"
 		}
@@ -1513,12 +1615,6 @@ func (s *Server) createBillingInvoice(w http.ResponseWriter, r *http.Request) {
 		if in.AmountCents == 0 {
 			fail(w, 400, "no due usage to invoice")
 			return
-		}
-		if in.Owner == "" {
-			in.Owner = "platform"
-			if sess, ok := d.Usage[dueKeys[0]]; ok && sess.Owner != "" {
-				in.Owner = sess.Owner
-			}
 		}
 		if in.ResourceID == "" && len(dueLines) == 1 {
 			in.ResourceID, sub.ResourceID = dueLines[0].ResourceID, dueLines[0].ResourceID
@@ -1543,7 +1639,7 @@ func (s *Server) createBillingInvoice(w http.ResponseWriter, r *http.Request) {
 	} else {
 		sub.ResourceID, sub.Product = in.ResourceID, in.Product
 	}
-	if !s.canAccessAccount(p, in.Owner) {
+	if !s.billingOwnerOK(p, in.Owner) {
 		fail(w, 403, "cannot create an invoice for this account")
 		return
 	}
@@ -1574,6 +1670,9 @@ func (s *Server) createBillingInvoice(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not save invoice")
 		return
 	}
+	s.auditAccount(r, inv.Owner, "billing.invoice.create", inv.ID, inv.Status, map[string]any{
+		"owner": inv.Owner, "amount_cents": inv.AmountCents, "currency": inv.Currency, "description": inv.Description,
+	})
 	writeJSON(w, 200, map[string]any{"invoice": inv, "note": "Draft invoices are bookkeeping only until a manual payment is recorded."})
 }
 func (s *Server) recordBillingPayment(w http.ResponseWriter, r *http.Request) {
@@ -1760,7 +1859,15 @@ func (s *Server) createBillingWallet(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid wallet payload")
 		return
 	}
+	p := principalFrom(r)
 	in.Owner, in.Currency = strings.TrimSpace(in.Owner), strings.ToUpper(strings.TrimSpace(in.Currency))
+	if in.Owner == "" {
+		in.Owner = p.AccountID
+	}
+	if !s.billingOwnerOK(p, in.Owner) {
+		fail(w, 403, "cannot create a wallet for this account")
+		return
+	}
 	d := s.billing
 	d.Lock()
 	defer d.Unlock()

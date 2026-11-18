@@ -1,5 +1,5 @@
 #!/bin/sh
-# CloFix Linux system CLI — real commands, not placeholders.
+# CloFix Linux system CLI - real commands, not placeholders.
 set -eu
 
 VERSION_FILE=/etc/clofix/version

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lib.sh — shared helpers + backend adapters for CloFix FileVPS / Incus / LXC
+# lib.sh - shared helpers + backend adapters for CloFix FileVPS / Incus / LXC
 # BACKEND must be set before sourcing: fx | incus | lxc
 
 STORAGE_PATH="${STORAGE_PATH:-/var/lib}"

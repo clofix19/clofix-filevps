@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -60,6 +61,15 @@ func (p *Postgres) EnsureSchema() error {
 			created TIMESTAMPTZ NOT NULL DEFAULT now())`,
 		`CREATE INDEX IF NOT EXISTS cf_metrics_samples_series_at ON cf_metrics_samples(series, at DESC)`,
 		`CREATE INDEX IF NOT EXISTS cf_metrics_samples_at ON cf_metrics_samples(at)`,
+		`CREATE TABLE IF NOT EXISTS cf_audit (
+			id BIGSERIAL PRIMARY KEY, ts TIMESTAMPTZ NOT NULL DEFAULT now(),
+			actor TEXT, action TEXT NOT NULL, target TEXT, result TEXT)`,
+		`ALTER TABLE cf_audit ADD COLUMN IF NOT EXISTS account_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE cf_audit ADD COLUMN IF NOT EXISTS actor_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE cf_audit ADD COLUMN IF NOT EXISTS detail JSONB`,
+		`CREATE INDEX IF NOT EXISTS cf_audit_account_id_id ON cf_audit (account_id, id DESC)`,
+		`CREATE INDEX IF NOT EXISTS cf_audit_actor_id ON cf_audit (actor_id) WHERE actor_id <> ''`,
+		`CREATE INDEX IF NOT EXISTS cf_audit_ts ON cf_audit (ts DESC)`,
 	} {
 		if _, err := p.db.Exec(ddl); err != nil {
 			return err
@@ -278,31 +288,134 @@ func (p *Postgres) TakeOps(workerID string) ([]proto.Operation, error) {
 }
 
 func (p *Postgres) Audit(actor, action, target, result string) error {
-	_, err := p.db.Exec(`INSERT INTO cf_audit(actor,action,target,result) VALUES($1,$2,$3,$4)`, actor, action, target, result)
+	return p.AuditScoped("", "", actor, action, target, result, "")
+}
+
+func (p *Postgres) AuditScoped(accountID, actorID, actor, action, target, result, detail string) error {
+	var detailArg any
+	if strings.TrimSpace(detail) != "" {
+		detailArg = detail
+	}
+	_, err := p.db.Exec(`INSERT INTO cf_audit(account_id,actor_id,actor,action,target,result,detail) VALUES($1,$2,$3,$4,$5,$6,$7)`,
+		accountID, actorID, actor, action, target, result, detailArg)
 	return err
 }
 
+func scanAudit(s scanner) (AuditEntry, error) {
+	var e AuditEntry
+	var detail []byte
+	err := s.Scan(&e.ID, &e.At, &e.AccountID, &e.ActorID, &e.Actor, &e.Action, &e.Target, &e.Result, &detail)
+	if err != nil {
+		return e, err
+	}
+	if len(detail) > 0 {
+		e.Detail = string(detail)
+	}
+	return e, nil
+}
+
 func (p *Postgres) ListAudit(limit int) ([]AuditEntry, error) {
-	if limit <= 0 {
-		limit = 50
+	return p.ListAuditQuery(AuditQuery{Limit: limit})
+}
+
+func (p *Postgres) ListAuditScoped(accountIDs []string, limit int) ([]AuditEntry, error) {
+	return p.ListAuditQuery(AuditQuery{AccountIDs: accountIDs, Limit: limit})
+}
+
+func auditSQLWhere(q AuditQuery) (whereSQL string, args []any) {
+	where := []string{}
+	add := func(clause string, v any) {
+		args = append(args, v)
+		where = append(where, strings.Replace(clause, "?", fmt.Sprintf("$%d", len(args)), 1))
 	}
-	if limit > 500 {
-		limit = 500
+	if len(q.AccountIDs) > 0 {
+		add("account_id = ANY(?)", q.AccountIDs)
 	}
-	rows, err := p.db.Query(`SELECT id, ts, COALESCE(actor,''), action, COALESCE(target,''), COALESCE(result,'') FROM cf_audit ORDER BY id DESC LIMIT $1`, limit)
+	if id := strings.TrimSpace(q.AccountID); id != "" {
+		add("account_id = ?", id)
+	}
+	if !q.Since.IsZero() {
+		add("ts >= ?", q.Since.UTC())
+	}
+	if !q.Until.IsZero() {
+		add("ts <= ?", q.Until.UTC())
+	}
+	if action := strings.TrimSpace(q.Action); action != "" {
+		if strings.HasSuffix(action, "*") || strings.HasSuffix(action, "%") {
+			add("action ILIKE ?", strings.TrimRight(action, "*%")+"%")
+		} else {
+			add("action = ?", action)
+		}
+	}
+	if actor := strings.TrimSpace(q.Actor); actor != "" {
+		args = append(args, "%"+actor+"%", "%"+actor+"%")
+		n := len(args)
+		where = append(where, fmt.Sprintf("(actor ILIKE $%d OR actor_id ILIKE $%d)", n-1, n))
+	}
+	if text := strings.TrimSpace(q.Q); text != "" {
+		pat := "%" + text + "%"
+		args = append(args, pat, pat, pat, pat, pat)
+		n := len(args)
+		where = append(where, fmt.Sprintf("(actor ILIKE $%d OR action ILIKE $%d OR COALESCE(target,'') ILIKE $%d OR COALESCE(result,'') ILIKE $%d OR COALESCE(account_id,'') ILIKE $%d)", n-4, n-3, n-2, n-1, n))
+	}
+	if len(where) > 0 {
+		whereSQL = " WHERE " + strings.Join(where, " AND ")
+	}
+	return whereSQL, args
+}
+
+func (p *Postgres) ListAuditQuery(q AuditQuery) ([]AuditEntry, error) {
+	limit := auditLimit(q.Limit)
+	offset := auditOffset(q.Offset)
+	whereSQL, args := auditSQLWhere(q)
+	query := `SELECT id, ts, COALESCE(account_id,''), COALESCE(actor_id,''), COALESCE(actor,''), action, COALESCE(target,''), COALESCE(result,''), detail FROM cf_audit` + whereSQL
+	args = append(args, limit, offset)
+	query += fmt.Sprintf(" ORDER BY id DESC LIMIT $%d OFFSET $%d", len(args)-1, len(args))
+	rows, err := p.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []AuditEntry{}
 	for rows.Next() {
-		var e AuditEntry
-		if err := rows.Scan(&e.ID, &e.At, &e.Actor, &e.Action, &e.Target, &e.Result); err != nil {
+		e, err := scanAudit(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+func (p *Postgres) CountAuditQuery(q AuditQuery) (int, error) {
+	whereSQL, args := auditSQLWhere(q)
+	var total int
+	err := p.db.QueryRow(`SELECT COUNT(*) FROM cf_audit`+whereSQL, args...).Scan(&total)
+	return total, err
+}
+
+func (p *Postgres) PurgeAuditBefore(before time.Time) (int64, error) {
+	if before.IsZero() {
+		return 0, nil
+	}
+	res, err := p.db.Exec(`DELETE FROM cf_audit WHERE ts < $1`, before.UTC())
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+func (p *Postgres) GetAudit(id int64) (AuditEntry, error) {
+	row := p.db.QueryRow(`SELECT id, ts, COALESCE(account_id,''), COALESCE(actor_id,''), COALESCE(actor,''), action, COALESCE(target,''), COALESCE(result,''), detail FROM cf_audit WHERE id=$1`, id)
+	e, err := scanAudit(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return AuditEntry{}, ErrNotFound
+		}
+		return AuditEntry{}, err
+	}
+	return e, nil
 }
 
 func scanIAMUser(s scanner) (IAMUser, error) {

@@ -38,7 +38,7 @@ Console: `/kubernetes` (alias `/cks`). API: `/api/v1/kubernetes`.
 
 kube-apiserver stays on the worker. Download kubeconfig from the console (`GET /api/v1/kubernetes/clusters/{id}/kubeconfig`). Reach the API over VPN, a bastion on the worker network, or an operator mTLS tunnel. Compose does not publish 6443, 10250 or 2379. CloFix does not open a public kube-apiserver by default.
 
-## FileVPS nodes — still gated
+## FileVPS nodes - still gated
 
 `GET /api/v1/kubernetes/compatibility` returns the FileVPS validation report. `infrastructure_mode=filevps` remains HTTP 409. Customer workloads on FileVPS nodes are not enabled.
 

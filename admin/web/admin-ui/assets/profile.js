@@ -5,10 +5,10 @@
 
   async function load() {
     const profile = await api('GET', '/api/profile');
-    $('profile-kind').textContent = profile.kind || '—';
-    $('profile-role').textContent = profile.role || '—';
+    $('profile-kind').textContent = profile.kind || '-';
+    $('profile-role').textContent = profile.role || '-';
     $('profile-mfa-status').textContent = profile.mfa_enabled ? 'On' : 'Off';
-    $('profile-client-ip').textContent = profile.client_ip || '—';
+    $('profile-client-ip').textContent = profile.client_ip || '-';
     $('profile-display-name').value = profile.display_name || '';
     $('profile-username').value = profile.username || '';
     $('profile-email').value = profile.email || '';
@@ -73,7 +73,7 @@
       if (typeof cfDrawQR === 'function' && otpauth) {
         cfDrawQR($('profile-mfa-qr'), otpauth, 220);
       } else {
-        $('profile-mfa-qr').textContent = 'QR unavailable — enter the secret manually.';
+        $('profile-mfa-qr').textContent = 'QR unavailable - enter the secret manually.';
       }
       msg('profile-mfa-message', 'Scan the QR code (or enter the secret), then confirm with a code.');
       $('profile-mfa-code')?.focus();

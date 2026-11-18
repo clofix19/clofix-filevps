@@ -722,7 +722,7 @@ func (e *Engine) configureGuestShellHistory(m *Meta) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	body := `# CloFix FileVPS — persist bash history after every command.
+	body := `# CloFix FileVPS - persist bash history after every command.
 # Abrupt SSH disconnect / VPS stop otherwise loses in-memory history.
 if [ -n "${BASH_VERSION:-}" ]; then
   HISTFILE="${HISTFILE:-$HOME/.bash_history}"
@@ -822,7 +822,7 @@ func (e *Engine) ensureGuestRedis(id string, m *Meta) {
 
 // ensureGuestSystemd installs systemd (provides systemctl) if missing.
 // Builtin images bake systemd into the rootfs; this covers older layers and custom images.
-// FileVPS still boots with fx-init as PID 1 — systemctl is for CLI/package compatibility.
+// FileVPS still boots with fx-init as PID 1 - systemctl is for CLI/package compatibility.
 func (e *Engine) ensureGuestSystemd(id string) {
 	m, err := e.get(id)
 	if err != nil || protectionEnabled(m.Spec) {

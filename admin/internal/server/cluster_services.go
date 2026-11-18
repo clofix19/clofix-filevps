@@ -124,7 +124,7 @@ func (s *Server) listClusterServices(w http.ResponseWriter, r *http.Request) {
 	defer d.Unlock()
 	out := make([]clusterService, 0, len(d.Items))
 	for _, item := range d.Items {
-		if !s.canAccessAccount(p, item.AccountID) && item.AccountID != "" && p.Kind != "admin" {
+		if p.Kind != "admin" && !s.canAccessAccount(p, item.AccountID) {
 			continue
 		}
 		out = append(out, item)
@@ -147,7 +147,7 @@ func (s *Server) getClusterService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := principalFrom(r)
-	if item.AccountID != "" && !s.canAccessAccount(p, item.AccountID) && p.Kind != "admin" {
+	if p.Kind != "admin" && !s.canAccessAccount(p, item.AccountID) {
 		fail(w, 404, "cluster not found")
 		return
 	}
@@ -271,7 +271,7 @@ func (s *Server) createClusterService(w http.ResponseWriter, r *http.Request) {
 	d.Items[id] = item
 	_ = d.save()
 	d.Unlock()
-	s.Store.Audit(p.Email, "cluster-services.create", id, in.App)
+	s.audit(r, "cluster-services.create", id, in.App, nil)
 	writeJSON(w, 202, item)
 }
 
@@ -290,7 +290,7 @@ func (s *Server) deleteClusterService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := principalFrom(r)
-	if item.AccountID != "" && !s.canAccessAccount(p, item.AccountID) && p.Kind != "admin" {
+	if p.Kind != "admin" && !s.canAccessAccount(p, item.AccountID) {
 		d.Unlock()
 		fail(w, 404, "cluster not found")
 		return
@@ -301,7 +301,7 @@ func (s *Server) deleteClusterService(w http.ResponseWriter, r *http.Request) {
 	d.Items[id] = item
 	_ = d.save()
 	d.Unlock()
-	s.Store.Audit(p.Email, "cluster-services.delete", id, item.App)
+	s.audit(r, "cluster-services.delete", id, item.App, nil)
 	writeJSON(w, 202, map[string]any{"id": id, "status": clusterStatusDeleting})
 }
 

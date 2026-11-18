@@ -1,4 +1,4 @@
-# ~/.bashrc — CloFix Linux defaults for new users
+# ~/.bashrc - CloFix Linux defaults for new users
 case $- in *i*) ;; *) return ;; esac
 HISTFILE="${HISTFILE:-$HOME/.bash_history}"
 HISTCONTROL=ignoreboth

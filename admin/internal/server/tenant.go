@@ -27,6 +27,15 @@ func (s *Server) canAccessAccount(p iamPrincipal, accountID string) bool {
 	return false
 }
 
+// canAccessIAMScoped allows account roots to manage legacy IAM groups/policies
+// that were created before AccountID stamping (empty owner).
+func (s *Server) canAccessIAMScoped(p iamPrincipal, accountID string) bool {
+	if s.canAccessAccount(p, accountID) {
+		return true
+	}
+	return accountID == "" && (p.Kind == "root" || p.Root)
+}
+
 func (s *Server) visibleAccountIDSet(p iamPrincipal) map[string]bool {
 	out := map[string]bool{}
 	if p.Kind == "admin" {
@@ -107,7 +116,7 @@ func filterVolumes(items []store.Volume, allow map[string]bool, admin bool) []st
 
 func platformAdminResource(resource string) bool {
 	switch resource {
-	case "workers", "license", "pricing", "platform":
+	case "license", "pricing", "platform":
 		return true
 	default:
 		return false

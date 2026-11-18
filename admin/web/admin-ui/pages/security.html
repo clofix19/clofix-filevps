@@ -23,10 +23,10 @@
           <div class="settings-section" id="security-score" data-settings-panel aria-labelledby="security-heading-score">
             <h2 id="security-heading-score" class="visually-hidden" tabindex="-1">Score</h2>
             <div class="cards">
-              <div class="stat"><div class="stat-label">Global score</div><div class="stat-value" id="security-score-value">—</div><div class="stat-note" id="security-score-note">Starts at 100; findings subtract capped deltas</div></div>
-              <div class="stat"><div class="stat-label">Findings</div><div class="stat-value" id="security-score-findings-count">—</div><div class="stat-note">Live inventory only</div></div>
-              <div class="stat"><div class="stat-label">Open alerts (24h)</div><div class="stat-value" id="security-score-alerts">—</div><div class="stat-note">Log alert-events</div></div>
-              <div class="stat"><div class="stat-label">User namespaces</div><div class="stat-value" id="security-score-userns">—</div><div class="stat-note">Worker lab posture</div></div>
+              <div class="stat"><div class="stat-label">Global score</div><div class="stat-value" id="security-score-value">-</div><div class="stat-note" id="security-score-note">Starts at 100; findings subtract capped deltas</div></div>
+              <div class="stat"><div class="stat-label">Findings</div><div class="stat-value" id="security-score-findings-count">-</div><div class="stat-note">Live inventory only</div></div>
+              <div class="stat"><div class="stat-label">Open alerts (24h)</div><div class="stat-value" id="security-score-alerts">-</div><div class="stat-note">Log alert-events</div></div>
+              <div class="stat"><div class="stat-label">User namespaces</div><div class="stat-value" id="security-score-userns">-</div><div class="stat-note">Worker lab posture</div></div>
             </div>
             <p class="muted" id="security-score-formula">Formula loads with overview.</p>
             <div class="security-deeplinks" id="security-deeplinks"></div>
@@ -39,18 +39,18 @@
 
           <div class="settings-section" id="security-overview" data-settings-panel aria-labelledby="security-heading-overview" hidden>
             <h2 id="security-heading-overview" class="visually-hidden" tabindex="-1">Posture</h2>
-            <div class="cards"><div class="stat"><div class="stat-label">Protection Mode enabled</div><div class="stat-value" id="security-protected">—</div><div class="stat-note">Read-only guest root</div></div><div class="stat"><div class="stat-label">Protection Mode disabled</div><div class="stat-value" id="security-unprotected">—</div><div class="stat-note">Review these VPSs</div></div><div class="stat"><div class="stat-label">SSH Login Block enabled</div><div class="stat-value" id="security-ssh-blocked">—</div><div class="stat-note">Blocks new SSH logins</div></div><div class="stat"><div class="stat-label">Delete Protection enabled</div><div class="stat-value" id="security-delete-protected">—</div><div class="stat-note">Guards admin and worker deletion</div></div><div class="stat"><div class="stat-label">OWASP CRS WAF installed</div><div class="stat-value" id="security-waf">—</div><div class="stat-note">HTTP/HTTPS through guest Nginx</div></div><div class="stat"><div class="stat-label">Custom port forwards</div><div class="stat-value" id="security-forwards">—</div><div class="stat-note">Additional host exposure</div></div><div class="stat"><div class="stat-label">Active workers</div><div class="stat-value" id="security-workers">—</div><div class="stat-note">Workers reporting capacity</div></div></div>
+            <div class="cards"><div class="stat"><div class="stat-label">Protection Mode enabled</div><div class="stat-value" id="security-protected">-</div><div class="stat-note">Read-only guest root</div></div><div class="stat"><div class="stat-label">Protection Mode disabled</div><div class="stat-value" id="security-unprotected">-</div><div class="stat-note">Review these VPSs</div></div><div class="stat"><div class="stat-label">SSH Login Block enabled</div><div class="stat-value" id="security-ssh-blocked">-</div><div class="stat-note">Blocks new SSH logins</div></div><div class="stat"><div class="stat-label">Delete Protection enabled</div><div class="stat-value" id="security-delete-protected">-</div><div class="stat-note">Guards admin and worker deletion</div></div><div class="stat"><div class="stat-label">OWASP CRS WAF installed</div><div class="stat-value" id="security-waf">-</div><div class="stat-note">HTTP/HTTPS through guest Nginx</div></div><div class="stat"><div class="stat-label">Custom port forwards</div><div class="stat-value" id="security-forwards">-</div><div class="stat-note">Additional host exposure</div></div><div class="stat"><div class="stat-label">Active workers</div><div class="stat-value" id="security-workers">-</div><div class="stat-note">Workers reporting capacity</div></div></div>
           </div>
 
           <div class="panel settings-section" id="security-alerts" data-settings-panel aria-labelledby="security-heading-alerts" hidden>
             <div class="section-head"><div><h2 id="security-heading-alerts" tabindex="-1">Alerts hub</h2><p>Summary from log alert-events. Manage rules on <a href="/logs">Logs</a> and channels on <a href="/health-checks">Health Checks</a>.</p></div></div>
-            <div class="cards"><div class="stat"><div class="stat-label">Open (24h)</div><div class="stat-value" id="security-alerts-open">—</div></div><div class="stat"><div class="stat-label">Stored events</div><div class="stat-value" id="security-alerts-total">—</div></div></div>
+            <div class="cards"><div class="stat"><div class="stat-label">Open (24h)</div><div class="stat-value" id="security-alerts-open">-</div></div><div class="stat"><div class="stat-label">Stored events</div><div class="stat-value" id="security-alerts-total">-</div></div></div>
             <div class="table-wrap"><table id="security-alerts-table"></table></div>
           </div>
 
           <div class="panel settings-section" id="security-audit" data-settings-panel aria-labelledby="security-heading-audit" hidden>
-            <div class="section-head"><div><h2 id="security-heading-audit" tabindex="-1">Audit trail</h2><p>Newest controller mutations from <code>GET /api/audit</code>.</p></div></div>
-            <div class="table-wrap"><table id="security-audit-table"></table></div>
+            <div class="section-head"><div><h2 id="security-heading-audit" tabindex="-1">Audit trail</h2><p>Newest activity for your account. Open <a href="/audit">Audit Trail</a> for search and full JSON detail.</p></div><a class="secondary" href="/audit">Open Audit Trail</a></div>
+            <div class="table-wrap"><table id="security-audit-table" data-inline-actions></table></div>
           </div>
 
           <div class="panel settings-section" id="security-modes" data-settings-panel aria-labelledby="security-heading-modes" hidden>
@@ -70,9 +70,9 @@
           <div class="panel settings-section" id="security-protection" data-settings-panel aria-labelledby="security-heading-protection" hidden>
             <div class="section-head"><div><h2 id="security-heading-protection" tabindex="-1">Advanced Protection</h2><p>Feature catalog status (live / partial / planned). Protection Mode stays orthogonal to Security Modes. Use the tabs below for unlock, approvals, and posture tables.</p></div></div>
             <div class="cards">
-              <div class="stat"><div class="stat-label">Live or RO-satisfied</div><div class="stat-value" id="security-prot-live">—</div></div>
-              <div class="stat"><div class="stat-label">Partial</div><div class="stat-value" id="security-prot-partial">—</div></div>
-              <div class="stat"><div class="stat-label">Planned</div><div class="stat-value" id="security-prot-planned">—</div></div>
+              <div class="stat"><div class="stat-label">Live or RO-satisfied</div><div class="stat-value" id="security-prot-live">-</div></div>
+              <div class="stat"><div class="stat-label">Partial</div><div class="stat-value" id="security-prot-partial">-</div></div>
+              <div class="stat"><div class="stat-label">Planned</div><div class="stat-value" id="security-prot-planned">-</div></div>
             </div>
             <div class="section-tabs" data-section-tabs role="tablist" aria-label="Advanced Protection sections">
               <button type="button" role="tab" data-section-tab="catalog" aria-selected="true" id="prot-tab-catalog" aria-controls="prot-panel-catalog">Catalog</button>
@@ -133,8 +133,8 @@
           <div class="panel settings-section" id="security-vulns" data-settings-panel aria-labelledby="security-heading-vulns" hidden>
             <div class="section-head"><div><h2 id="security-heading-vulns" tabindex="-1">Vulnerabilities, Databases, CKS</h2><p>Package CVE feeds are planned. Database and CKS scores use live inventory.</p></div></div>
             <div class="cards">
-              <div class="stat"><div class="stat-label">Databases score</div><div class="stat-value" id="security-db-score">—</div><div class="stat-note">TLS CA, exposure, encrypted backups</div></div>
-              <div class="stat"><div class="stat-label">CKS score</div><div class="stat-value" id="security-cks-score">—</div><div class="stat-note" id="security-cks-note">CKS Readiness Status</div></div>
+              <div class="stat"><div class="stat-label">Databases score</div><div class="stat-value" id="security-db-score">-</div><div class="stat-note">TLS CA, exposure, encrypted backups</div></div>
+              <div class="stat"><div class="stat-label">CKS score</div><div class="stat-value" id="security-cks-score">-</div><div class="stat-note" id="security-cks-note">CKS Readiness Status</div></div>
               <div class="stat"><div class="stat-label">Package CVE</div><div class="stat-value" id="security-pkg-status">Planned</div><div class="stat-note">OSV/NVD</div></div>
             </div>
             <div class="table-wrap"><table id="security-vuln-findings"></table></div>
@@ -142,7 +142,7 @@
 
           <div class="panel settings-section" id="security-autopilot" data-settings-panel aria-labelledby="security-heading-autopilot" hidden>
             <div class="section-head"><div><h2 id="security-heading-autopilot" tabindex="-1">AutoPilot, incidents, compliance</h2><p>Monitor / Recommend / Approval / Auto Protect / Emergency Lockdown. Never auto-shutdown production on low-confidence detections.</p></div></div>
-            <div class="cards"><div class="stat"><div class="stat-label">AutoPilot mode</div><div class="stat-value" id="security-autopilot-mode">—</div><div class="stat-note" id="security-autopilot-note"></div></div></div>
+            <div class="cards"><div class="stat"><div class="stat-label">AutoPilot mode</div><div class="stat-value" id="security-autopilot-mode">-</div><div class="stat-note" id="security-autopilot-note"></div></div></div>
             <label>Mode
               <select id="security-autopilot-select">
                 <option value="monitor">Monitor Only</option>

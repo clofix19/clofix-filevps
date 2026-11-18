@@ -43,21 +43,9 @@ type securityPosture struct {
 func (s *Server) securityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/security/overview", s.auth(s.getSecurityOverview))
 	mux.HandleFunc("GET /api/audit", s.auth(s.listAudit))
+	mux.HandleFunc("GET /api/audit/{id}", s.auth(s.getAudit))
 	s.securityCenterRoutes(mux)
 	s.advancedProtectionRoutes(mux)
-}
-
-func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	entries, err := s.Store.ListAudit(limit)
-	if err != nil {
-		fail(w, http.StatusInternalServerError, "could not list audit events")
-		return
-	}
-	if entries == nil {
-		entries = []store.AuditEntry{}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"events": entries})
 }
 
 func (s *Server) getSecurityOverview(w http.ResponseWriter, r *http.Request) {

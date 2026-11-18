@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Step 3 — Push deploy/worker to a remote Ubuntu host and run install-join-worker.sh.
+# Step 3 - Push deploy/worker to a remote Ubuntu host and run install-join-worker.sh.
 set -euo pipefail
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 # shellcheck disable=SC1091
@@ -22,7 +22,7 @@ for f in "$SCRIPT_DIR"/dist/clofix-worker*.deb "$SCRIPT_DIR"/dist/*.deb; do
   [ -f "$f" ] || continue
   if [ -z "$DEB" ] || [ "$f" -nt "$DEB" ]; then DEB="$f"; fi
 done
-[ -n "$DEB" ] || { echo 'No .deb — run ./build-worker.sh deb first' >&2; exit 2; }
+[ -n "$DEB" ] || { echo 'No .deb - run ./build-worker.sh deb first' >&2; exit 2; }
 [ -f "$SCRIPT_DIR/install-join-worker.sh" ] || { echo 'install-join-worker.sh missing' >&2; exit 2; }
 [ -f "$SCRIPT_DIR/build-managed-templates.sh" ] || { echo 'build-managed-templates.sh missing' >&2; exit 2; }
 

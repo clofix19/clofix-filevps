@@ -14,8 +14,8 @@ type tokenRec struct {
 }
 
 type AuditRec struct {
-	TS                            time.Time
-	Actor, Action, Target, Result string
+	TS                                                       time.Time
+	AccountID, ActorID, Actor, Action, Target, Result, Detail string
 }
 
 type MemoryStore struct {
@@ -439,39 +439,193 @@ func (m *MemoryStore) TakeOps(w string) ([]proto.Operation, error) {
 }
 
 func (m *MemoryStore) Audit(actor, action, target, result string) error {
+	return m.AuditScoped("", "", actor, action, target, result, "")
+}
+
+func (m *MemoryStore) AuditScoped(accountID, actorID, actor, action, target, result, detail string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.audit = append(m.audit, AuditRec{time.Now(), actor, action, target, result})
+	m.audit = append(m.audit, AuditRec{time.Now(), accountID, actorID, actor, action, target, result, detail})
 	return nil
 }
 
-func (m *MemoryStore) ListAudit(limit int) ([]AuditEntry, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func auditLimit(limit int) int {
 	if limit <= 0 {
-		limit = 50
+		limit = 100
 	}
 	if limit > 500 {
 		limit = 500
 	}
+	return limit
+}
+
+func auditOffset(offset int) int {
+	if offset < 0 {
+		return 0
+	}
+	return offset
+}
+
+func auditQueryMatch(rec AuditRec, q AuditQuery, allow map[string]bool, filterAccounts bool, accountID, action, actionPrefix, actor, text string) bool {
+	if filterAccounts && !allow[rec.AccountID] {
+		return false
+	}
+	if accountID != "" && rec.AccountID != accountID {
+		return false
+	}
+	if !q.Since.IsZero() && rec.TS.Before(q.Since) {
+		return false
+	}
+	if !q.Until.IsZero() && rec.TS.After(q.Until) {
+		return false
+	}
+	if action != "" && rec.Action != action {
+		return false
+	}
+	if actionPrefix != "" && !strings.HasPrefix(rec.Action, actionPrefix) {
+		return false
+	}
+	if actor != "" {
+		hay := strings.ToLower(rec.Actor + " " + rec.ActorID)
+		if !strings.Contains(hay, actor) {
+			return false
+		}
+	}
+	if text != "" {
+		hay := strings.ToLower(strings.Join([]string{rec.Actor, rec.Action, rec.Target, rec.Result, rec.AccountID}, " "))
+		if !strings.Contains(hay, text) {
+			return false
+		}
+	}
+	return true
+}
+
+func parseAuditQueryFilters(q AuditQuery) (allow map[string]bool, filterAccounts bool, accountID, action, actionPrefix, actor, text string) {
+	allow = map[string]bool{}
+	filterAccounts = len(q.AccountIDs) > 0
+	for _, id := range q.AccountIDs {
+		if id != "" {
+			allow[id] = true
+		}
+	}
+	accountID = strings.TrimSpace(q.AccountID)
+	action = strings.TrimSpace(q.Action)
+	actor = strings.ToLower(strings.TrimSpace(q.Actor))
+	text = strings.ToLower(strings.TrimSpace(q.Q))
+	if strings.HasSuffix(action, "*") || strings.HasSuffix(action, "%") {
+		actionPrefix = strings.TrimRight(action, "*%")
+		action = ""
+	}
+	return
+}
+
+func (m *MemoryStore) ListAudit(limit int) ([]AuditEntry, error) {
+	return m.ListAuditQuery(AuditQuery{Limit: limit})
+}
+
+func (m *MemoryStore) ListAuditScoped(accountIDs []string, limit int) ([]AuditEntry, error) {
+	return m.ListAuditQuery(AuditQuery{AccountIDs: accountIDs, Limit: limit})
+}
+
+// AuditScopedAt inserts an audit row at a fixed timestamp (tests / retention).
+func (m *MemoryStore) AuditScopedAt(ts time.Time, accountID, actorID, actor, action, target, result, detail string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if ts.IsZero() {
+		ts = time.Now()
+	}
+	m.audit = append(m.audit, AuditRec{ts, accountID, actorID, actor, action, target, result, detail})
+	return nil
+}
+
+func (m *MemoryStore) ListAuditQuery(q AuditQuery) ([]AuditEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	limit := auditLimit(q.Limit)
+	offset := auditOffset(q.Offset)
+	allow, filterAccounts, accountID, action, actionPrefix, actor, text := parseAuditQueryFilters(q)
 	n := len(m.audit)
 	if n == 0 {
 		return []AuditEntry{}, nil
 	}
-	if limit > n {
-		limit = n
-	}
+	matched := 0
 	out := make([]AuditEntry, 0, limit)
-	for i := n - 1; i >= n-limit; i-- {
+	for i := n - 1; i >= 0; i-- {
 		rec := m.audit[i]
+		if !auditQueryMatch(rec, q, allow, filterAccounts, accountID, action, actionPrefix, actor, text) {
+			continue
+		}
+		if matched < offset {
+			matched++
+			continue
+		}
+		if len(out) >= limit {
+			break
+		}
+		matched++
 		out = append(out, AuditEntry{
-			ID:     int64(i + 1),
-			At:     rec.TS,
-			Actor:  rec.Actor,
-			Action: rec.Action,
-			Target: rec.Target,
-			Result: rec.Result,
+			ID:        int64(i + 1),
+			At:        rec.TS,
+			AccountID: rec.AccountID,
+			ActorID:   rec.ActorID,
+			Actor:     rec.Actor,
+			Action:    rec.Action,
+			Target:    rec.Target,
+			Result:    rec.Result,
+			Detail:    rec.Detail,
 		})
 	}
 	return out, nil
+}
+
+func (m *MemoryStore) CountAuditQuery(q AuditQuery) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	allow, filterAccounts, accountID, action, actionPrefix, actor, text := parseAuditQueryFilters(q)
+	total := 0
+	for i := len(m.audit) - 1; i >= 0; i-- {
+		if auditQueryMatch(m.audit[i], q, allow, filterAccounts, accountID, action, actionPrefix, actor, text) {
+			total++
+		}
+	}
+	return total, nil
+}
+
+func (m *MemoryStore) PurgeAuditBefore(before time.Time) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if before.IsZero() || len(m.audit) == 0 {
+		return 0, nil
+	}
+	kept := m.audit[:0]
+	var removed int64
+	for _, rec := range m.audit {
+		if rec.TS.Before(before) {
+			removed++
+			continue
+		}
+		kept = append(kept, rec)
+	}
+	m.audit = kept
+	return removed, nil
+}
+
+func (m *MemoryStore) GetAudit(id int64) (AuditEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if id < 1 || int(id) > len(m.audit) {
+		return AuditEntry{}, ErrNotFound
+	}
+	rec := m.audit[int(id)-1]
+	return AuditEntry{
+		ID:        id,
+		At:        rec.TS,
+		AccountID: rec.AccountID,
+		ActorID:   rec.ActorID,
+		Actor:     rec.Actor,
+		Action:    rec.Action,
+		Target:    rec.Target,
+		Result:    rec.Result,
+		Detail:    rec.Detail,
+	}, nil
 }

@@ -1,4 +1,4 @@
-# CloFix Linux 1.0 — Branding matrix
+# CloFix Linux 1.0 - Branding matrix
 
 | Location | Change | Owner |
 |----------|--------|--------|
@@ -24,7 +24,7 @@
 | `/boot/grub/` | No forced theme unless assets shipped | optional |
 | `/etc/cloud/build.info` | CloFix product build metadata (replaces ubuntu-oci) | brand script |
 | `/etc/cloud/cloud.cfg.d/99-clofix.cfg` | CloFix defaults; `distro: ubuntu` = cloud-init module only | brand script |
-| Kernel `uname` | **Not** rebranded | — |
+| Kernel `uname` | **Not** rebranded | - |
 
 Website in release metadata: **https://clofix.com**
 

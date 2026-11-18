@@ -211,12 +211,82 @@ func (s *Server) syncWAFBindingStates() {
 	}
 }
 
+func (s *Server) wafTargetOwner(b wafBinding) string {
+	switch b.TargetKind {
+	case "vps":
+		if inst, err := s.Store.GetInstance(b.TargetID); err == nil {
+			return inst.AccountID
+		}
+	case "docker_app":
+		if s.docker != nil {
+			s.docker.mu.Lock()
+			a, ok := s.docker.Applications[b.TargetID]
+			s.docker.mu.Unlock()
+			if ok {
+				return a.Owner
+			}
+		}
+	case "docker_container":
+		if s.docker != nil {
+			s.docker.mu.Lock()
+			c, ok := s.docker.Containers[b.TargetID]
+			s.docker.mu.Unlock()
+			if ok {
+				return c.Owner
+			}
+		}
+	}
+	return ""
+}
+
+func (s *Server) wafBindingOwner(b wafBinding) string {
+	if owner := s.wafTargetOwner(b); owner != "" {
+		return owner
+	}
+	return b.Owner
+}
+
+func (s *Server) canAccessWAFBinding(r *http.Request, b wafBinding) bool {
+	// Prefer live target ownership so stale Owner="root" (or cross-tenant) stamps cannot leak.
+	if owner := s.wafTargetOwner(b); owner != "" {
+		return canAccessApplication(r, owner)
+	}
+	if b.Owner == "" {
+		return principalFrom(r).Kind == "admin"
+	}
+	return canAccessApplication(r, b.Owner)
+}
+
+func (s *Server) requireWAFBinding(w http.ResponseWriter, r *http.Request, id string) (wafBinding, bool) {
+	b, ok := s.waf.get(id)
+	if !ok || !s.canAccessWAFBinding(r, b) {
+		fail(w, 404, "binding not found")
+		return wafBinding{}, false
+	}
+	if owner := s.wafTargetOwner(b); owner != "" && b.Owner != owner {
+		b.Owner = owner
+		_ = s.waf.put(b)
+	}
+	return b, true
+}
+
 func (s *Server) getWAF(w http.ResponseWriter, r *http.Request) {
 	s.syncWAFBindingStates()
+	p := principalFrom(r)
+	allowWorkers := map[string]bool{}
+	if p.Kind != "admin" {
+		instances, _ := s.Store.ListInstances()
+		for _, inst := range filterInstances(instances, s.visibleAccountIDSet(p), false) {
+			allowWorkers[inst.WorkerID] = true
+		}
+	}
 	workers, _ := s.Store.ListWorkers()
 	engines := make([]map[string]any, 0, len(workers))
 	now := time.Now()
 	for _, wk := range workers {
+		if p.Kind != "admin" && !allowWorkers[wk.ID] {
+			continue
+		}
 		live := wk.Status == "active" && now.Sub(wk.LastHeartbeat) <= time.Minute
 		engines = append(engines, map[string]any{
 			"worker_id": wk.ID, "hostname": wk.Hostname, "status": wk.Status,
@@ -230,14 +300,15 @@ func (s *Server) getWAF(w http.ResponseWriter, r *http.Request) {
 
 	bindings := []map[string]any{}
 	for _, b := range s.waf.list() {
-		if b.Owner != "" && !canAccessApplication(r, b.Owner) {
+		if !s.canAccessWAFBinding(r, b) {
 			continue
 		}
+		owner := s.wafBindingOwner(b)
 		bindings = append(bindings, map[string]any{
 			"id": b.ID, "name": b.Name, "target_kind": b.TargetKind, "target_id": b.TargetID,
 			"worker_id": b.WorkerID, "state": b.State, "error": b.Error,
 			"owasp_protection": b.OWASPProtection, "waf_error_pages": b.WAFErrorPages,
-			"stats": b.Stats, "owner": b.Owner, "created": b.Created, "updated": b.Updated,
+			"stats": b.Stats, "owner": owner, "created": b.Created, "updated": b.Updated,
 		})
 	}
 
@@ -261,8 +332,7 @@ func (s *Server) wafTargetCatalog(r *http.Request) []map[string]any {
 	out := []map[string]any{}
 	instances, _ := s.Store.ListInstances()
 	for _, inst := range instances {
-		owner := inst.AccountID
-		if owner != "" && !canAccessApplication(r, owner) {
+		if !canAccessApplication(r, inst.AccountID) {
 			continue
 		}
 		s.usageMu.RLock()
@@ -357,7 +427,7 @@ func (s *Server) createWAFBinding(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = s.waf.put(b)
 	}
-	s.Store.Audit(accountID(r), "waf.binding.create", b.ID, kind+":"+tid)
+	s.audit(r, "waf.binding.create", b.ID, kind+":"+tid, nil)
 	writeJSON(w, 201, b)
 }
 
@@ -369,7 +439,7 @@ func (s *Server) resolveWAFTarget(r *http.Request, kind, tid string) (workerID, 
 			return "", "", "", fmt.Errorf("VPS not found")
 		}
 		owner := inst.AccountID
-		if owner != "" && !canAccessApplication(r, owner) {
+		if !canAccessApplication(r, owner) {
 			return "", "", "", fmt.Errorf("VPS not found")
 		}
 		return inst.WorkerID, owner, inst.ID, nil
@@ -451,7 +521,7 @@ func (s *Server) activateVPSWAF(b *wafBinding) error {
 	st := s.serviceInstalls[b.TargetID]["owasp-waf"]
 	s.usageMu.RUnlock()
 	if st == "INSTALLED" || st == "INSTALLING" || st == "UNINSTALLING" {
-		return fmt.Errorf("legacy guest OWASP WAF is still present (%s) — uninstall it from CloFix Library first; edge WAF does not install inside the VPS", st)
+		return fmt.Errorf("legacy guest OWASP WAF is still present (%s) - uninstall it from CloFix Library first; edge WAF does not install inside the VPS", st)
 	}
 	if b.State == "ACTIVE" || b.State == "ACTIVATING" {
 		return nil
@@ -717,13 +787,8 @@ func (s *Server) deactivateDockerWAF(b *wafBinding) error {
 
 func (s *Server) updateWAFBinding(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	b, ok := s.waf.get(id)
+	b, ok := s.requireWAFBinding(w, r, id)
 	if !ok {
-		fail(w, 404, "binding not found")
-		return
-	}
-	if b.Owner != "" && !canAccessApplication(r, b.Owner) {
-		fail(w, 404, "binding not found")
 		return
 	}
 	var in struct {
@@ -789,6 +854,64 @@ func (s *Server) queueVPSWAFUpdate(b wafBinding) error {
 	}
 	_, err = s.queueDockerJob(inst.WorkerID, owner, "waf-update", op)
 	return err
+}
+
+// queueVPSWAFEnable recreates the edge gateway for an already-ACTIVE VPS binding
+// (e.g. after the proxy container was pruned or the worker was recreated).
+func (s *Server) queueVPSWAFEnable(b wafBinding) error {
+	inst, err := s.Store.GetInstance(b.TargetID)
+	if err != nil {
+		return fmt.Errorf("VPS not found")
+	}
+	if strings.TrimSpace(inst.Spec.IPAddress) == "" || inst.Spec.SSHPort < proto.HostSSHBase {
+		return fmt.Errorf("VPS has no private IP or SSH publish yet")
+	}
+	owner := b.Owner
+	if owner == "" {
+		owner = inst.AccountID
+	}
+	// Keep guest HTTP unpublished while the edge proxy owns the host port.
+	off := false
+	inst.Spec.PublishHTTP = &off
+	_ = s.Store.SaveInstance(inst)
+	spec := inst.Spec
+	_ = s.Store.QueueOp(inst.WorkerID, proto.Operation{
+		ID: b.TargetID + "/" + proto.ActionUpdatePorts + "/" + randHex(4),
+		Action: proto.ActionUpdatePorts, InstanceID: b.TargetID, Spec: &spec,
+	})
+	httpPort := proto.HostHTTPPort(inst.Spec.SSHPort)
+	op := dock.Operation{
+		Action: "waf-enable", WAFMode: "vps", WAFTargetID: b.TargetID,
+		WAFBackend: "http://" + inst.Spec.IPAddress + ":80",
+		WAFPorts:   []dock.PortPublish{{HostPort: httpPort, ContainerPort: 80, Protocol: "tcp"}},
+		WAFPolicy: b.OWASPProtection, WAFErrorPages: b.WAFErrorPages,
+	}
+	_, err = s.queueDockerJob(inst.WorkerID, owner, "waf-enable", op)
+	return err
+}
+
+var (
+	wafMissingHealMu sync.Mutex
+	wafMissingHealAt = map[string]time.Time{}
+)
+
+func (s *Server) maybeHealMissingVPSWAF(b wafBinding, stats *dock.WAFStats) {
+	if b.State != "ACTIVE" || b.TargetKind != "vps" || stats == nil {
+		return
+	}
+	err := strings.ToLower(stats.Error)
+	if !strings.Contains(err, "no such container") && !strings.Contains(err, "no such object") {
+		return
+	}
+	wafMissingHealMu.Lock()
+	last := wafMissingHealAt[b.ID]
+	if time.Since(last) < 2*time.Minute {
+		wafMissingHealMu.Unlock()
+		return
+	}
+	wafMissingHealAt[b.ID] = time.Now()
+	wafMissingHealMu.Unlock()
+	_ = s.queueVPSWAFEnable(b)
 }
 
 // applyVPSWAFJobResult updates a FileVPS edge WAF binding after a worker docker job finishes.
@@ -907,13 +1030,8 @@ func (s *Server) queueDockerWAFUpdate(b wafBinding) error {
 
 func (s *Server) deleteWAFBinding(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	b, ok := s.waf.get(id)
+	b, ok := s.requireWAFBinding(w, r, id)
 	if !ok {
-		fail(w, 404, "binding not found")
-		return
-	}
-	if b.Owner != "" && !canAccessApplication(r, b.Owner) {
-		fail(w, 404, "binding not found")
 		return
 	}
 	if b.State == "ACTIVE" || b.State == "ACTIVATING" {
@@ -924,15 +1042,14 @@ func (s *Server) deleteWAFBinding(w http.ResponseWriter, r *http.Request) {
 		// Drop immediately; deactivate continues on the worker.
 	}
 	_ = s.waf.drop(id)
-	s.Store.Audit(accountID(r), "waf.binding.delete", id, b.TargetKind+":"+b.TargetID)
+	s.audit(r, "waf.binding.delete", id, b.TargetKind+":"+b.TargetID, nil)
 	writeJSON(w, 200, map[string]any{"deleted": id})
 }
 
 func (s *Server) activateWAFBinding(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	b, ok := s.waf.get(id)
+	b, ok := s.requireWAFBinding(w, r, id)
 	if !ok {
-		fail(w, 404, "binding not found")
 		return
 	}
 	if err := s.activateWAFBindingLocked(&b); err != nil {
@@ -947,9 +1064,8 @@ func (s *Server) activateWAFBinding(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deactivateWAFBinding(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	b, ok := s.waf.get(id)
+	b, ok := s.requireWAFBinding(w, r, id)
 	if !ok {
-		fail(w, 404, "binding not found")
 		return
 	}
 	if err := s.deactivateWAFBindingLocked(&b); err != nil {
@@ -962,9 +1078,8 @@ func (s *Server) deactivateWAFBinding(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) wafBindingCategory(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	b, ok := s.waf.get(id)
+	b, ok := s.requireWAFBinding(w, r, id)
 	if !ok {
-		fail(w, 404, "binding not found")
 		return
 	}
 	var in struct {
@@ -992,9 +1107,8 @@ func (s *Server) wafBindingCategory(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) wafBindingErrorPages(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	b, ok := s.waf.get(id)
+	b, ok := s.requireWAFBinding(w, r, id)
 	if !ok {
-		fail(w, 404, "binding not found")
 		return
 	}
 	var in struct {
@@ -1034,13 +1148,12 @@ func (s *Server) wafBindingErrorPages(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getWAFBindingStats(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	b, ok := s.waf.get(id)
-	if !ok || !canAccessApplication(r, b.Owner) {
-		fail(w, 404, "binding not found")
+	b, ok := s.requireWAFBinding(w, r, id)
+	if !ok {
 		return
 	}
 	if b.Stats == nil {
-		writeJSON(w, 200, map[string]any{"id": id, "stats": nil, "message": "No samples yet — open Refresh to pull edge logs."})
+		writeJSON(w, 200, map[string]any{"id": id, "stats": nil, "message": "No samples yet - open Refresh to pull edge logs."})
 		return
 	}
 	writeJSON(w, 200, map[string]any{"id": id, "stats": b.Stats})
@@ -1048,9 +1161,8 @@ func (s *Server) getWAFBindingStats(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) refreshWAFBindingStats(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	b, ok := s.waf.get(id)
-	if !ok || !canAccessApplication(r, b.Owner) {
-		fail(w, 404, "binding not found")
+	b, ok := s.requireWAFBinding(w, r, id)
+	if !ok {
 		return
 	}
 	j, err := s.queueWAFStatsJob(b)
@@ -1163,4 +1275,5 @@ func (s *Server) applyWAFStatsJobResult(targetID, mode string, data json.RawMess
 	b.Updated = time.Now().UTC()
 	_ = s.waf.put(b)
 	s.recordWAFMetrics(b.ID, &stats)
+	s.maybeHealMissingVPSWAF(b, b.Stats)
 }

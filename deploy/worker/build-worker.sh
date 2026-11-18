@@ -39,7 +39,7 @@ resolve_installation_id() {
   limit="$(printf '%s' "$json" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("workers") or {}).get("limit",""))' 2>/dev/null || true)"
   reason="$(printf '%s' "$json" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("workers") or {}).get("reason",""))' 2>/dev/null || true)"
   if [ "$admit" = "false" ]; then
-    echo "WARNING: admin worker license limit full (used=${used:-?} limit=${limit:-?})${reason:+ — $reason}. Package will build, but enroll will be refused until a slot is free." >&2
+    echo "WARNING: admin worker license limit full (used=${used:-?} limit=${limit:-?})${reason:+ - $reason}. Package will build, but enroll will be refused until a slot is free." >&2
   elif [ -n "$used" ] || [ -n "$limit" ]; then
     echo "Worker capacity: used=${used:-?} limit=${limit:-?}"
   fi
@@ -53,7 +53,7 @@ resolve_installation_id() {
 command -v go >/dev/null 2>&1 || { echo 'Go toolchain required to build the worker.' >&2; exit 1; }
 export PATH="$(go env GOPATH 2>/dev/null)/bin:${PATH:-}"
 if [ "$TARGET" != "bin" ] && ! command -v nfpm >/dev/null 2>&1; then
-  echo "nfpm not found — installing…"
+  echo "nfpm not found - installing…"
   go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
   export PATH="$(go env GOPATH)/bin:$PATH"
 fi
@@ -90,7 +90,7 @@ if command -v strings >/dev/null 2>&1; then
     echo "WARNING: baked Installation ID string not found in binary (env/worker.json still required at runtime)" >&2
   fi
   if ! strings "$BIN" | grep -q 'configure-cluster-node'; then
-    echo "WARNING: $BIN may lack configure-cluster-node — Redis Cluster configure will fail on this worker" >&2
+    echo "WARNING: $BIN may lack configure-cluster-node - Redis Cluster configure will fail on this worker" >&2
   fi
 fi
 

@@ -24,7 +24,7 @@
   logs:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="16" rx="1"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>',
   settings:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1 1.4 1.1-1.4 2.4-1.7-.6a8 8 0 0 1-1.8 1l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.8-1l-1.7.6-1.4-2.4 1.4-1.1a1.7 1.7 0 0 0 .3-1.8 7 7 0 0 1 0-2 1.7 1.7 0 0 0-.3-1.8l-1.4-1.1 1.4-2.4 1.7.6a8 8 0 0 1 1.8-1l.3-1.8h2.8l.3 1.8a8 8 0 0 1 1.8 1l1.7-.6 1.4 2.4-1.4 1.1a1.7 1.7 0 0 0-.3 1.8 7 7 0 0 1 0 2z"/></svg>'
  };
- // CloFix platform services only — no third-party app names (Jenkins, Grafana, …).
+ // CloFix platform services only - no third-party app names (Jenkins, Grafana, …).
  const catalog=[
   {name:'Dashboard',href:'/',group:'Overview',hint:'Fleet overview',keys:'home dashboard overview clofix cloud',icon:icon.dashboard,core:true},
   {name:'FileVPS',href:'/instances',group:'Compute',hint:'Linux VPS instances',keys:'vps instance compute linux filevps server vm ssh',icon:icon.vps,core:true},
@@ -62,12 +62,14 @@
   {name:'Advanced Protection',href:'/security#security-protection',group:'Security',hint:'Catalog & unlock',keys:'advanced protection unlock quarantine approval filevps network worker storage',icon:icon.security},
   {name:'Security Modes',href:'/security#security-modes',group:'Security',hint:'Policy templates',keys:'modes policy harden dry-run apply',icon:icon.security},
   {name:'Security Guide',href:'/security#security-guide',group:'Security',hint:'Control map',keys:'guide catalog control map deeplink',icon:icon.security},
-  {name:'Security audit',href:'/security#security-audit',group:'Security',hint:'Mutation trail',keys:'audit trail activity',icon:icon.security},
+  {name:'Audit Trail',href:'/audit',group:'Security',hint:'Account activity · who did what',keys:'audit trail activity log json',icon:icon.security},
+  {name:'Security audit',href:'/security#security-audit',group:'Security',hint:'Security Center audit panel',keys:'audit security center',icon:icon.security},
   {name:'IAM',href:'/iam',group:'Security',hint:'Keys & policies',keys:'iam users keys policies access',icon:icon.iam,kinds:['admin','root','iam'],core:true},
+  {name:'Secrets Manager',href:'/secrets',group:'Security',hint:'Vault & inject',keys:'secrets vault password credential cks sync inject sec',icon:icon.security,core:true},
   {name:'Users',href:'/users',group:'Security',hint:'Accounts',keys:'users partner client accounts',icon:icon.iam,kinds:['admin','partner'],core:true},
   {name:'My Profile',href:'/profile',group:'Account',hint:'MFA & allowlist',keys:'profile mfa authenticator allow ip password',icon:icon.iam,core:true},
   {name:'Log Service',href:'/logs',group:'Platform',hint:'Tail & alerts',keys:'logs tail alert analysis download nginx syslog',icon:icon.logs,core:true},
-  {name:'Workers',href:'/workers',group:'Platform',hint:'Host capacity',keys:'worker host capacity enroll lab',icon:icon.workers,kinds:['admin'],core:true},
+  {name:'Workers',href:'/workers',group:'Platform',hint:'Host capacity & placement',keys:'worker host capacity enroll lab placement',icon:icon.workers,kinds:['admin','root','iam'],core:true},
   {name:'Billing & Payments',href:'/billing',group:'Platform',hint:'Plans & invoices',keys:'invoice payment wallet billing plan',icon:icon.billing,core:true},
   {name:'Settings',href:'/settings',group:'Platform',hint:'Defaults & license',keys:'defaults license pricing settings',icon:icon.settings,core:true}
  ];
@@ -81,6 +83,8 @@
   db:'databases',sql:'databases',postgres:'databases',mysql:'databases',redis:'databases',mongo:'databases',
   nlb:'load balancers',alb:'load balancers',lb:'load balancers',
   waf:'waf',owasp:'waf',modsecurity:'waf',crs:'waf',ssh:'security center',fim:'advanced protection',cve:'security center',
+  secret:'secrets manager',secrets:'secrets manager',vault:'secrets manager',credential:'secrets manager',
+
   protect:'advanced protection',protection:'advanced protection',
   package:'vps software',packages:'vps software',install:'vps software',
   deploy:'quick apps',managed:'quick apps',

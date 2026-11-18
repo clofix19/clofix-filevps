@@ -1,0 +1,20 @@
+[Unit]
+Description=CloFix S3 pool (SeaweedFS master + filer + S3 gateway)
+Documentation=https://clofix.com
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=clofix
+Group=clofix
+EnvironmentFile=-/etc/clofix/s3pool.env
+WorkingDirectory=/var/lib/clofix-s3pool
+ExecStart=/usr/local/bin/clofix-s3pool-start
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=1048576
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

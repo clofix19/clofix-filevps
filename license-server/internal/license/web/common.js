@@ -63,7 +63,7 @@ function button(text,fn,className){
 (function footerMeta(){
   const host=$('footer-host');
   const clock=$('footer-clock');
-  if(host)host.textContent=location.host||'—';
+  if(host)host.textContent=location.host||'-';
   if(!clock)return;
   const tick=()=>{clock.textContent=new Date().toLocaleString();};
   tick();

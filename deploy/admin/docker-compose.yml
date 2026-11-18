@@ -1,6 +1,6 @@
 # Production-oriented customer controller: db + S3 master + admin.
 # Copied to the remote host under /opt/clofix-admin (build context = that directory).
-# Does NOT start a Compose worker — enroll Linux workers via deploy/worker.
+# Does NOT start a Compose worker - enroll Linux workers via deploy/worker.
 name: clofix-admin
 services:
   s3pool:

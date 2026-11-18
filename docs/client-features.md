@@ -1,10 +1,10 @@
-# CloFix Cloud — Client Feature Guide
+# CloFix Cloud - Client Feature Guide
 
 This document describes every major CloFix Cloud Console feature and its sub-features for customers (root accounts and IAM users). For each area you will find:
 
-- **About** — what the feature is  
-- **What you can do** — practical capabilities  
-- **Benefits** — why it matters  
+- **About** - what the feature is  
+- **What you can do** - practical capabilities  
+- **Benefits** - why it matters  
 
 > **Note:** Some platform-only areas (Workers, License, pricing catalogs, NLB IP pool) are operated by the CloFix admin/provider. They are summarized at the end so you understand how capacity and billing work.
 
@@ -45,7 +45,7 @@ This document describes every major CloFix Cloud Console feature and its sub-fea
 
 ### About
 
-CloFix Cloud is a console to create and operate Linux VPS (FileVPS), containers, Kubernetes, databases, storage, networking, and security from one place—without logging into hypervisors or worker hosts.
+CloFix Cloud is a console to create and operate Linux VPS (FileVPS), containers, Kubernetes, databases, storage, networking, and security from one place-without logging into hypervisors or worker hosts.
 
 ### What you can do
 
@@ -122,7 +122,7 @@ The home page is your fleet overview: usage charts, VPS summary, security snapsh
 ### What you can do
 
 - Create Linux VPS with bundled **Ubuntu 22.04**, **Ubuntu 24.04**, or **CloFix Linux 1.0** (or a custom rootfs URL)  
-- Login as **root** only — bundled images do not include the stock `ubuntu` cloud user  
+- Login as **root** only - bundled images do not include the stock `ubuntu` cloud user  
 - Start, stop, restart, delete (respecting delete protection); retry failed creates  
 - Manage PEM keys; download a private key once when generated  
 - Resize resources; set root password; open console helpers  
@@ -247,7 +247,7 @@ Deploy containers and Compose stacks on the worker Docker Engine. Tenants do **n
 
 ### About
 
-Shared **OWASP CRS** (ModSecurity) engines on workers. You create **bindings** for FileVPS HTTP or Docker apps—no per-guest engine reinstall.
+Shared **OWASP CRS** (ModSecurity) engines on workers. You create **bindings** for FileVPS HTTP or Docker apps-no per-guest engine reinstall.
 
 ### Sub-features
 
@@ -369,7 +369,7 @@ Worker-local persistent directories you attach **1:1** to a FileVPS on the same 
 
 ### About
 
-Named **shared** file stores backed by CloFix object storage. Mount the same share on many FileVPS instances—ideal for load-balanced web roots.
+Named **shared** file stores backed by CloFix object storage. Mount the same share on many FileVPS instances-ideal for load-balanced web roots.
 
 ### Sub-features
 
@@ -454,7 +454,7 @@ Worker-local compressed snapshots of a **stopped** FileVPS writable root. This i
 
 ### About
 
-Managed MySQL, PostgreSQL, MongoDB, and Redis instances with logical databases, users, backups, and schedules—without installing engines yourself on a VPS.
+Managed MySQL, PostgreSQL, MongoDB, and Redis instances with logical databases, users, backups, and schedules-without installing engines yourself on a VPS.
 
 ### Sub-features
 
@@ -544,7 +544,7 @@ Private IPv4 segmentation on the FileVPS network (`10.231.0.0/16`), with a defau
 
 ### About
 
-DNS zones and records for FileVPS, load balancers, CKS, databases, managed apps, and workers—plus TLS certificates (ACME).
+DNS zones and records for FileVPS, load balancers, CKS, databases, managed apps, and workers-plus TLS certificates (ACME).
 
 ### Sub-features
 
@@ -658,7 +658,7 @@ Fleet security posture: live **score**, explainable **findings**, **Security Mod
 
 ### Benefits
 
-- Transparent scoring—not a black box  
+- Transparent scoring-not a black box  
 - Maps controls to Firewall, WAF, Logs, and instance detail  
 - Governance (approvals, audit, AutoPilot) for production fleets  
 
@@ -724,7 +724,7 @@ Self-service account hardening for any signed-in role.
 
 ### About
 
-Bounded live log tailing across VPS, LB, database, Library apps, workers, and WAF—with analysis and keyword/level alerts.
+Bounded live log tailing across VPS, LB, database, Library apps, workers, and WAF-with analysis and keyword/level alerts.
 
 ### Sub-features
 

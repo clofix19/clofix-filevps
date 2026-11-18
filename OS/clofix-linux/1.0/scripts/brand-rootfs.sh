@@ -169,7 +169,7 @@ if [[ -f "$ROOT/etc/debian_version" ]]; then
   log_change "KEEP /etc/debian_version ($(cat "$ROOT/etc/debian_version"))"
 fi
 
-# hostname/hosts may be bind-mounted read-only in Docker BuildKit — best-effort
+# hostname/hosts may be bind-mounted read-only in Docker BuildKit - best-effort
 if printf 'clofix-linux\n' > "$ROOT/etc/hostname" 2>/dev/null; then
   log_change "WRITE /etc/hostname"
 else
@@ -252,6 +252,16 @@ fi
 if [[ -f "$TREE/config/security/malware-hashes.txt" ]]; then
   install_file "$TREE/config/security/malware-hashes.txt" "$ROOT/etc/clofix/guard/malware-hashes.txt" 0644
 fi
+# Guest kernel security sysctl (net/fs + best-effort kernel.* on shared kernel)
+if [[ -f "$TREE/config/sysctl/99-clofix-kernel-security.conf" ]]; then
+  mkdir -p "$ROOT/etc/sysctl.d"
+  install_file "$TREE/config/sysctl/99-clofix-kernel-security.conf" "$ROOT/etc/sysctl.d/99-clofix-kernel-security.conf" 0644
+  # Drop legacy short baseline if an older image left it behind.
+  if [[ -f "$ROOT/etc/sysctl.d/99-clofix-hardening.conf" ]]; then
+    rm -f "$ROOT/etc/sysctl.d/99-clofix-hardening.conf"
+    log_change "REMOVE /etc/sysctl.d/99-clofix-hardening.conf (superseded)"
+  fi
+fi
 
 mkdir -p "$ROOT/var/lib/clofix"
 write_text "$ROOT/var/lib/clofix/branded" 0644 <<EOF
@@ -286,7 +296,7 @@ note: User-facing OS is CloFix Linux; Ubuntu is the package source only
 EOF
   mkdir -p "$ROOT/etc/cloud/cloud.cfg.d"
   write_text "$ROOT/etc/cloud/cloud.cfg.d/99-clofix.cfg" 0644 <<'EOF'
-# CloFix Linux — cloud-init defaults
+# CloFix Linux - cloud-init defaults
 # Product name: CloFix Linux (see /etc/os-release).
 # system_info.distro must remain a cloud-init module id ("ubuntu") so
 # package/APT helpers work; it is NOT the marketing OS name.

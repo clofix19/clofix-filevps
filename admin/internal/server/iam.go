@@ -51,6 +51,7 @@ var iamPermissionSet = map[string]bool{
 	"instances:read": true, "instances:manage": true, "workers:read": true, "workers:manage": true,
 	"volumes:read": true, "volumes:manage": true, "storage:read": true, "storage:manage": true,
 	"security:read": true, "security:manage": true, "services:read": true, "services:manage": true,
+	"secrets:read": true, "secrets:manage": true,
 	"iam:read": true, "iam:manage": true,
 	"accounts:read": true, "accounts:manage": true,
 	"pricing:read": true, "pricing:manage": true,
@@ -104,7 +105,9 @@ func permissionResource(path string) string {
 		return "license"
 	case strings.HasPrefix(path, "/api/logs"):
 		return "logs"
-	case strings.HasPrefix(path, "/api/firewall"), strings.HasPrefix(path, "/api/security"), strings.HasPrefix(path, "/api/waf"), path == "/api/audit":
+	case strings.HasPrefix(path, "/api/secrets"):
+		return "secrets"
+	case strings.HasPrefix(path, "/api/firewall"), strings.HasPrefix(path, "/api/security"), strings.HasPrefix(path, "/api/waf"), path == "/api/audit", strings.HasPrefix(path, "/api/audit/"):
 		return "security"
 	case strings.HasPrefix(path, "/api/monitoring"):
 		return "health-checks"
@@ -242,7 +245,7 @@ func (s *Server) listIAMGroups(w http.ResponseWriter, r *http.Request) {
 	out := make([]groupView, 0, len(groups))
 	p := principalFrom(r)
 	for _, g := range groups {
-		if p.Kind != "admin" && !s.canAccessAccount(p, g.AccountID) {
+		if p.Kind != "admin" && !s.canAccessIAMScoped(p, g.AccountID) {
 			continue
 		}
 		view := groupView{IAMGroup: g, UserIDs: []string{}}
@@ -270,7 +273,7 @@ func (s *Server) listIAMPolicies(w http.ResponseWriter, r *http.Request) {
 	if p.Kind != "admin" {
 		filtered := make([]store.IAMPolicy, 0, len(v))
 		for _, policy := range v {
-			if s.canAccessAccount(p, policy.AccountID) {
+			if s.canAccessIAMScoped(p, policy.AccountID) {
 				filtered = append(filtered, policy)
 			}
 		}
@@ -289,13 +292,13 @@ func iamBuiltInPolicies() []map[string]any {
 			"instances:manage", "workers:manage", "managed-apps:manage", "applications:manage", "docker:manage", "services:manage", "kubernetes:manage", "cluster-services:manage", "backups:manage",
 		}},
 		{"name": "CloFixClusterServicesOperator", "description": "Redis Cluster multi-VPS topology", "category": "Compute", "permissions": []string{"cluster-services:manage", "instances:manage", "storage:manage"}},
-		{"name": "CloFixDockerOperator", "description": "Docker Engine containers, images, Compose and deployments", "category": "Compute", "permissions": []string{"docker:manage"}},
+		{"name": "CloFixDockerOperator", "description": "Docker Engine containers, images, Compose and deployments", "category": "Compute", "permissions": []string{"docker:manage", "secrets:read"}},
 		{"name": "CloFixVPSOperator", "description": "Day-to-day FileVPS, services, security controls, volumes and backups", "category": "Compute", "permissions": []string{
-			"instances:manage", "services:manage", "security:manage", "volumes:manage", "backups:manage",
+			"instances:manage", "services:manage", "security:manage", "volumes:manage", "backups:manage", "secrets:read",
 		}},
-		{"name": "CloFixCKSOperator", "description": "CloFix Kubernetes Service clusters and workloads", "category": "Compute", "permissions": []string{"kubernetes:manage"}},
+		{"name": "CloFixCKSOperator", "description": "CloFix Kubernetes Service clusters and workloads", "category": "Compute", "permissions": []string{"kubernetes:manage", "secrets:read"}},
 		{"name": "CloFixLibraryOperator", "description": "Managed Quick Apps and VPS software catalog actions", "category": "Compute", "permissions": []string{"managed-apps:manage", "services:manage"}},
-		{"name": "CloFixJobsOperator", "description": "Jobs & Functions applications and runs", "category": "Compute", "permissions": []string{"applications:manage"}},
+		{"name": "CloFixJobsOperator", "description": "Jobs & Functions applications and runs", "category": "Compute", "permissions": []string{"applications:manage", "secrets:read"}},
 		{"name": "CloFixStorageOperator", "description": "Volumes, S3/EFS, managed databases and backups", "category": "Storage", "permissions": []string{
 			"volumes:manage", "storage:manage", "databases:manage", "backups:manage",
 		}},
@@ -306,8 +309,9 @@ func iamBuiltInPolicies() []map[string]any {
 		}},
 		{"name": "CloFixLoadBalancerAdmin", "description": "NLB/ALB listeners, IP pool and autoscaling backends", "category": "Networking", "permissions": []string{"load-balancers:manage"}},
 		{"name": "CloFixDNSAdmin", "description": "Controller DNS zone and records", "category": "Networking", "permissions": []string{"dns:manage"}},
-		{"name": "CloFixSecurityOperator", "description": "Protection Mode, WAF, ports, host firewall and log service", "category": "Security", "permissions": []string{"security:manage", "logs:manage"}},
-		{"name": "CloFixSecurityAuditor", "description": "Read security settings, firewall, IAM and logs", "category": "Security", "permissions": []string{"security:read", "iam:read", "logs:read", "accounts:read"}},
+		{"name": "CloFixSecurityOperator", "description": "Protection Mode, WAF, ports, host firewall, Secrets Manager and log service", "category": "Security", "permissions": []string{"security:manage", "secrets:manage", "logs:manage"}},
+		{"name": "CloFixSecurityAuditor", "description": "Read security settings, firewall, secrets metadata, IAM and logs", "category": "Security", "permissions": []string{"security:read", "secrets:read", "iam:read", "logs:read", "accounts:read"}},
+		{"name": "CloFixSecretsAdmin", "description": "Secrets Manager vault, reveal, runtime value and CKS sync", "category": "Security", "permissions": []string{"secrets:manage", "kubernetes:manage"}},
 		{"name": "CloFixIAMAdmin", "description": "IAM users, groups, policies and access keys (Full Administrator role still required)", "category": "Security", "permissions": []string{"iam:manage"}},
 		{"name": "CloFixAccountsAdmin", "description": "Partner and client account records", "category": "Security", "permissions": []string{"accounts:manage"}},
 		{"name": "CloFixBillingOperator", "description": "Invoices, wallets, payments and pricing catalog", "category": "Platform", "permissions": []string{"billing:manage", "pricing:manage"}},
@@ -374,14 +378,14 @@ func (s *Server) saveIAMUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validateIAMIDs(in.GroupIDs, "grp", func(id string) bool {
 		g, e := s.Store.GetIAMGroup(id)
-		return e == nil && s.canAccessAccount(actor, g.AccountID)
+		return e == nil && s.canAccessIAMScoped(actor, g.AccountID)
 	}) {
 		fail(w, 400, "one or more groups are invalid")
 		return
 	}
 	if !validateIAMIDs(in.PolicyIDs, "pol", func(id string) bool {
 		policy, e := s.Store.GetIAMPolicy(id)
-		return e == nil && s.canAccessAccount(actor, policy.AccountID)
+		return e == nil && s.canAccessIAMScoped(actor, policy.AccountID)
 	}) {
 		fail(w, 400, "one or more policies are invalid")
 		return
@@ -448,6 +452,10 @@ func (s *Server) saveIAMUser(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, "cannot activate user while the parent account is suspended")
 		return
 	}
+	if actor.UserID == user.ID && in.Status == "inactive" {
+		fail(w, 400, "cannot deactivate your own login")
+		return
+	}
 	prevStatus := user.Status
 	user.Username, user.Role, user.Status, user.GroupIDs, user.PolicyIDs = in.Username, in.Role, in.Status, in.GroupIDs, in.PolicyIDs
 	if user.Kind == "" {
@@ -467,7 +475,7 @@ func (s *Server) saveIAMUser(w http.ResponseWriter, r *http.Request) {
 	if user.Status == "inactive" && prevStatus != "inactive" {
 		s.revokeIAMUserAccess(user.ID)
 	}
-	s.Store.Audit(principalFrom(r).Name, "iam.user.save", user.ID, user.Role)
+	s.audit(r, "iam.user.save", user.ID, user.Role, nil)
 	writeJSON(w, 200, user)
 }
 
@@ -514,7 +522,7 @@ func (s *Server) setIAMUserSuspended(w http.ResponseWriter, r *http.Request, sus
 			return
 		}
 		s.revokeIAMUserAccess(user.ID)
-		s.Store.Audit(actor.Name, "iam.user.suspend", user.ID, user.Kind)
+		s.audit(r, "iam.user.suspend", user.ID, user.Kind, nil)
 		writeJSON(w, 200, map[string]any{"id": user.ID, "status": "inactive"})
 		return
 	}
@@ -527,7 +535,7 @@ func (s *Server) setIAMUserSuspended(w http.ResponseWriter, r *http.Request, sus
 		fail(w, 500, "could not resume IAM user")
 		return
 	}
-	s.Store.Audit(actor.Name, "iam.user.resume", user.ID, user.Kind)
+	s.audit(r, "iam.user.resume", user.ID, user.Kind, nil)
 	writeJSON(w, 200, map[string]any{"id": user.ID, "status": "active"})
 }
 
@@ -545,7 +553,7 @@ func (s *Server) deleteIAMUser(w http.ResponseWriter, r *http.Request) {
 	}
 	actor := principalFrom(r)
 	if actor.UserID == id {
-		fail(w, 409, "you cannot delete the IAM user currently in use")
+		fail(w, 409, "you cannot delete your own login")
 		return
 	}
 	user, err := s.Store.GetIAMUser(id)
@@ -553,11 +561,15 @@ func (s *Server) deleteIAMUser(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "IAM user not found")
 		return
 	}
+	if actor.Kind != "admin" && user.Kind != "iam" {
+		fail(w, 403, "account root cannot be deleted from IAM; contact CloFix support or your partner")
+		return
+	}
 	if e := s.Store.DeleteIAMUser(id); e != nil {
 		fail(w, 404, "IAM user not found")
 		return
 	}
-	s.Store.Audit(principalFrom(r).Name, "iam.user.delete", id, "deleted")
+	s.audit(r, "iam.user.delete", id, "deleted", nil)
 	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
 func (s *Server) saveIAMGroup(w http.ResponseWriter, r *http.Request) {
@@ -579,7 +591,7 @@ func (s *Server) saveIAMGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validateIAMIDs(in.PolicyIDs, "pol", func(id string) bool {
 		policy, e := s.Store.GetIAMPolicy(id)
-		return e == nil && s.canAccessAccount(principalFrom(r), policy.AccountID)
+		return e == nil && s.canAccessIAMScoped(principalFrom(r), policy.AccountID)
 	}) {
 		fail(w, 400, "one or more policies are invalid")
 		return
@@ -596,11 +608,14 @@ func (s *Server) saveIAMGroup(w http.ResponseWriter, r *http.Request) {
 			fail(w, 404, "group not found")
 			return
 		}
-		if !s.canAccessAccount(principalFrom(r), old.AccountID) {
+		if !s.canAccessIAMScoped(principalFrom(r), old.AccountID) {
 			fail(w, 404, "group not found")
 			return
 		}
 		g = old
+	}
+	if g.AccountID == "" {
+		g.AccountID = s.stampAccount(principalFrom(r))
 	}
 	existingGroups, listErr := s.Store.ListIAMGroups()
 	if listErr != nil {
@@ -608,7 +623,7 @@ func (s *Server) saveIAMGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, existing := range existingGroups {
-		if existing.ID != g.ID && strings.EqualFold(existing.Name, in.Name) {
+		if existing.ID != g.ID && strings.EqualFold(existing.Name, in.Name) && (principalFrom(r).Kind == "admin" || existing.AccountID == g.AccountID || existing.AccountID == "") {
 			fail(w, 409, "group name already exists")
 			return
 		}
@@ -622,7 +637,7 @@ func (s *Server) saveIAMGroup(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	s.Store.Audit(principalFrom(r).Name, "iam.group.save", g.ID, g.Name)
+	s.audit(r, "iam.group.save", g.ID, g.Name, nil)
 	writeJSON(w, 200, g)
 }
 func (s *Server) deleteIAMGroup(w http.ResponseWriter, r *http.Request) {
@@ -632,7 +647,7 @@ func (s *Server) deleteIAMGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	group, groupErr := s.Store.GetIAMGroup(id)
-	if groupErr != nil || !s.canAccessAccount(principalFrom(r), group.AccountID) {
+	if groupErr != nil || !s.canAccessIAMScoped(principalFrom(r), group.AccountID) {
 		fail(w, 404, "group not found")
 		return
 	}
@@ -652,7 +667,7 @@ func (s *Server) deleteIAMGroup(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "group not found")
 		return
 	}
-	s.Store.Audit(principalFrom(r).Name, "iam.group.delete", id, "deleted")
+	s.audit(r, "iam.group.delete", id, "deleted", nil)
 	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
 func (s *Server) saveIAMPolicy(w http.ResponseWriter, r *http.Request) {
@@ -693,11 +708,14 @@ func (s *Server) saveIAMPolicy(w http.ResponseWriter, r *http.Request) {
 			fail(w, 404, "policy not found")
 			return
 		}
-		if !s.canAccessAccount(principalFrom(r), old.AccountID) {
+		if !s.canAccessIAMScoped(principalFrom(r), old.AccountID) {
 			fail(w, 404, "policy not found")
 			return
 		}
 		p = old
+	}
+	if p.AccountID == "" {
+		p.AccountID = s.stampAccount(principalFrom(r))
 	}
 	existingPolicies, listErr := s.Store.ListIAMPolicies()
 	if listErr != nil {
@@ -719,7 +737,7 @@ func (s *Server) saveIAMPolicy(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	s.Store.Audit(principalFrom(r).Name, "iam.policy.save", p.ID, p.Name)
+	s.audit(r, "iam.policy.save", p.ID, p.Name, nil)
 	writeJSON(w, 200, p)
 }
 func removeIAMString(list []string, target string) []string {
@@ -738,7 +756,7 @@ func (s *Server) deleteIAMPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	policy, policyErr := s.Store.GetIAMPolicy(id)
-	if policyErr != nil || !s.canAccessAccount(principalFrom(r), policy.AccountID) {
+	if policyErr != nil || !s.canAccessIAMScoped(principalFrom(r), policy.AccountID) {
 		fail(w, 404, "policy not found")
 		return
 	}
@@ -770,7 +788,7 @@ func (s *Server) deleteIAMPolicy(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "policy not found")
 		return
 	}
-	s.Store.Audit(principalFrom(r).Name, "iam.policy.delete", id, "deleted")
+	s.audit(r, "iam.policy.delete", id, "deleted", nil)
 	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
 
@@ -802,8 +820,14 @@ func (s *Server) listIAMUserKeys(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) createIAMUserKey(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	actor := principalFrom(r)
 	user, e := s.Store.GetIAMUser(id)
-	if e != nil || !s.visibleIAMUser(principalFrom(r), user) {
+	if e != nil || !s.visibleIAMUser(actor, user) {
+		fail(w, 404, "IAM user not found")
+		return
+	}
+	// Non-admins may mint keys for own-account IAM users, or for themselves (root password stays on Profile).
+	if actor.Kind != "admin" && user.Kind != "iam" && user.ID != actor.UserID {
 		fail(w, 404, "IAM user not found")
 		return
 	}
@@ -843,13 +867,76 @@ func (s *Server) createIAMUserKey(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not save access key")
 		return
 	}
-	s.Store.Audit(principalFrom(r).Name, "iam.key.create", accessID, id)
+	s.audit(r, "iam.key.create", accessID, id, nil)
 	writeJSON(w, 201, map[string]string{"access_key_id": accessID, "secret_access_key": secret, "bearer_token": accessID + "." + secret, "warning": "The secret is shown once. Copy it now; CloFix stores only its hash."})
 }
+func (s *Server) setIAMUserKeyActive(w http.ResponseWriter, r *http.Request, active bool) {
+	id, keyID := r.PathValue("id"), r.PathValue("key")
+	actor := principalFrom(r)
+	user, userErr := s.Store.GetIAMUser(id)
+	if userErr != nil || !s.visibleIAMUser(actor, user) {
+		fail(w, 404, "access key not found")
+		return
+	}
+	if actor.Kind != "admin" && user.Kind != "iam" && user.ID != actor.UserID {
+		fail(w, 404, "access key not found")
+		return
+	}
+	key, e := s.Store.GetIAMAccessKey(keyID)
+	if e != nil || key.UserID != id {
+		fail(w, 404, "access key not found")
+		return
+	}
+	if key.Active == active {
+		writeJSON(w, 200, map[string]any{"access_key_id": key.AccessKeyID, "active": key.Active})
+		return
+	}
+	if active {
+		keys, listErr := s.Store.ListIAMAccessKeys(id)
+		if listErr != nil {
+			fail(w, 500, "could not list access keys")
+			return
+		}
+		n := 0
+		for _, k := range keys {
+			if k.Active {
+				n++
+			}
+		}
+		if n >= 2 {
+			fail(w, 409, "an IAM user may have at most two active access keys")
+			return
+		}
+	}
+	key.Active = active
+	if e = s.Store.SaveIAMAccessKey(key); e != nil {
+		fail(w, 500, "could not update access key")
+		return
+	}
+	action := "iam.key.suspend"
+	if active {
+		action = "iam.key.resume"
+	}
+	s.audit(r, action, keyID, id, nil)
+	writeJSON(w, 200, map[string]any{"access_key_id": key.AccessKeyID, "active": key.Active})
+}
+
+func (s *Server) suspendIAMUserKey(w http.ResponseWriter, r *http.Request) {
+	s.setIAMUserKeyActive(w, r, false)
+}
+func (s *Server) resumeIAMUserKey(w http.ResponseWriter, r *http.Request) {
+	s.setIAMUserKeyActive(w, r, true)
+}
+
 func (s *Server) revokeIAMUserKey(w http.ResponseWriter, r *http.Request) {
 	id, keyID := r.PathValue("id"), r.PathValue("key")
+	actor := principalFrom(r)
 	user, userErr := s.Store.GetIAMUser(id)
-	if userErr != nil || !s.visibleIAMUser(principalFrom(r), user) {
+	if userErr != nil || !s.visibleIAMUser(actor, user) {
+		fail(w, 404, "access key not found")
+		return
+	}
+	if actor.Kind != "admin" && user.Kind != "iam" && user.ID != actor.UserID {
 		fail(w, 404, "access key not found")
 		return
 	}
@@ -859,9 +946,9 @@ func (s *Server) revokeIAMUserKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if e = s.Store.DeleteIAMAccessKey(keyID); e != nil {
-		fail(w, 500, "could not revoke access key")
+		fail(w, 500, "could not delete access key")
 		return
 	}
-	s.Store.Audit(principalFrom(r).Name, "iam.key.revoke", keyID, id)
-	writeJSON(w, 200, map[string]bool{"revoked": true})
+	s.audit(r, "iam.key.delete", keyID, id, nil)
+	writeJSON(w, 200, map[string]bool{"deleted": true})
 }

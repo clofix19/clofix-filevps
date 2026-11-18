@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>CloFix FileVPS — Benchmark and Security Report</title>
+<title>CloFix FileVPS - Benchmark and Security Report</title>
 <style>
 body { font-family: Georgia, serif; max-width: 1100px; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a1a; }
 h1,h2,h3 { font-family: system-ui, sans-serif; }
@@ -16,7 +16,7 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 </style>
 </head>
 <body>
-<h1>CloFix FileVPS — Benchmark and Security Report</h1>
+<h1>CloFix FileVPS - Benchmark and Security Report</h1>
 
 <p>Generated: 2026-11-05 00:44</p>
 
@@ -37,7 +37,7 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><td>Image</td><td>Bundled Ubuntu 24.04 FileVPS rootfs</td></tr>
 <tr><td>Bench sizes</td><td><code>N_START=2</code>, <code>N_IDLE=2</code>, <code>DENSITY_MAX=0</code>, <code>SETTLE_S=8</code></td></tr>
 <tr><td>Destructive probes</td><td>Not run (<code>--destructive</code> off)</td></tr>
-<tr><td>Incus / LXC</td><td>Not installed in this worker — no compare numbers</td></tr>
+<tr><td>Incus / LXC</td><td>Not installed in this worker - no compare numbers</td></tr>
 <tr><td>Live fleet left running</td><td><code>vps-01c09f91ffda</code>, <code>vps-3ab923078227</code>, <code>vps-3f501a3975b0</code>, <code>vps-cf0489f9c217</code></td></tr>
 <tr><td>User namespaces</td><td>Audit guests: <code>CLOFIX_USER_NS=true</code> on isolated state (<code>suite-isolated-audit</code>). Compose agent still <code>CLOFIX_USER_NS=false</code> so live UI VPS were not remounted.</td></tr>
 </table>
@@ -48,9 +48,9 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>Check</th><th>Result</th></tr>
-<tr><td>I01</td><td><strong>PASS</strong> — <code>uid_map</code> <code>0 100000 65536</code></td></tr>
-<tr><td>N01</td><td><strong>PASS</strong> — user (and other) namespaces differ from host</td></tr>
-<tr><td>X05</td><td><strong>PASS</strong> — A=<code>100000</code> B=<code>165536</code></td></tr>
+<tr><td>I01</td><td><strong>PASS</strong> - <code>uid_map</code> <code>0 100000 65536</code></td></tr>
+<tr><td>N01</td><td><strong>PASS</strong> - user (and other) namespaces differ from host</td></tr>
+<tr><td>X05</td><td><strong>PASS</strong> - A=<code>100000</code> B=<code>165536</code></td></tr>
 <tr><td>Full audit FAIL count</td><td><strong>0</strong></td></tr>
 </table>
 
@@ -60,14 +60,14 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>ID</th><th>Result</th></tr>
-<tr><td>L04 / REL01</td><td><strong>PASS</strong> — kill -9 guest init, <code>fx start</code> recovered, marker kept</td></tr>
-<tr><td>L08</td><td><strong>PASS</strong> — throw-away delete removed instance dir</td></tr>
-<tr><td>C03 / R10</td><td><strong>PASS</strong> — <code>pids.max</code> contained fork storm</td></tr>
-<tr><td>C04 / C05</td><td><strong>PASS</strong> — <code>nr_throttled</code> under <code>cpu.max=0.2</code></td></tr>
-<tr><td>C07 / R14</td><td><strong>PASS</strong> — noisy-neighbour slowdown ~1.2x</td></tr>
-<tr><td>D05</td><td><strong>PASS</strong> — CPU + memory mix on 2 guests</td></tr>
-<tr><td>F04 / F06</td><td><strong>PASS</strong> — host-side symlink file read did not leak hostname</td></tr>
-<tr><td>K02</td><td><strong>PASS</strong> — host sysctl hardening applied for the audit run</td></tr>
+<tr><td>L04 / REL01</td><td><strong>PASS</strong> - kill -9 guest init, <code>fx start</code> recovered, marker kept</td></tr>
+<tr><td>L08</td><td><strong>PASS</strong> - throw-away delete removed instance dir</td></tr>
+<tr><td>C03 / R10</td><td><strong>PASS</strong> - <code>pids.max</code> contained fork storm</td></tr>
+<tr><td>C04 / C05</td><td><strong>PASS</strong> - <code>nr_throttled</code> under <code>cpu.max=0.2</code></td></tr>
+<tr><td>C07 / R14</td><td><strong>PASS</strong> - noisy-neighbour slowdown ~1.2x</td></tr>
+<tr><td>D05</td><td><strong>PASS</strong> - CPU + memory mix on 2 guests</td></tr>
+<tr><td>F04 / F06</td><td><strong>PASS</strong> - host-side symlink file read did not leak hostname</td></tr>
+<tr><td>K02</td><td><strong>PASS</strong> - host sysctl hardening applied for the audit run</td></tr>
 <tr><td>Still SKIPPED</td><td>multi-worker (WK*), LXC/Incus compare (P*), ZRAM (M03), PHP/MySQL apps (W03/W04), live worker reboot (L05/REL02)</td></tr>
 <tr><td>Still WARN</td><td>I04 (no AppArmor on linuxkit), R12 (disk probe &amp;lt; quota), K07 (SSB Vulnerable)</td></tr>
 </table>
@@ -86,7 +86,7 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><td>U01–U05 U07 U08 MO01 MO02 BL01–BL03 BL05 BL06</td><td><strong>PASS</strong> via admin/license API</td></tr>
 <tr><td>DB01–DB08</td><td><strong>PASS</strong> from live <code>/api/databases</code> inventory (MySQL projects + engine ads + READY backups)</td></tr>
 <tr><td>Still NOT RUN (12)</td><td>MO03–MO08 alerts, REL05/06/08, BL04/BL07/BL08</td></tr>
-<tr><td>O06</td><td><strong>SKIPPED</strong> — Debian/CentOS images not bundled</td></tr>
+<tr><td>O06</td><td><strong>SKIPPED</strong> - Debian/CentOS images not bundled</td></tr>
 </table>
 
 
@@ -94,7 +94,7 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>ID</th><th>Result</th><th>Notes</th></tr>
-<tr><td>I04</td><td><strong>SKIP</strong></td><td>Host has no AppArmor/SELinux LSM on linuxkit — profile N/A</td></tr>
+<tr><td>I04</td><td><strong>SKIP</strong></td><td>Host has no AppArmor/SELinux LSM on linuxkit - profile N/A</td></tr>
 <tr><td>R12</td><td><strong>PASS</strong></td><td>Probe auto-sized above <code>disk_mb</code>; stopped at 88 MiB on 128 MiB disk</td></tr>
 <tr><td>R13 / R15</td><td><strong>PASS</strong></td><td>Busy-loop CPU bounded; host stayed responsive</td></tr>
 <tr><td>K07</td><td><strong>INFO</strong></td><td>Nested linuxkit: SSB mitigation owned by Docker Desktop/hypervisor</td></tr>
@@ -119,11 +119,11 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>Suite</th><th>Result</th></tr>
-<tr><td>01 User namespace (I01 / N01 user / X05)</td><td><strong>FAIL</strong> — isolated <code>CLOFIX_USER_NS=true</code> guests die in <code>fx-init</code> (<code>make mounts private: operation not permitted</code>). linuxkit nested user ns cannot mount. Not flipped on the live fleet.</td></tr>
+<tr><td>01 User namespace (I01 / N01 user / X05)</td><td><strong>FAIL</strong> - isolated <code>CLOFIX_USER_NS=true</code> guests die in <code>fx-init</code> (<code>make mounts private: operation not permitted</code>). linuxkit nested user ns cannot mount. Not flipped on the live fleet.</td></tr>
 <tr><td>02 Density / RAM / ZRAM / swap</td><td><strong>7 idle VPS</strong> in 12s, <strong>~1.76 MB</strong> host RAM each. 8th create hit linuxkit loop-device limit (<code>layer.img</code>). 25/50/100 not run. <code>/dev/zram0</code> absent. <code>memory.swap.max=64MiB</code> <strong>PASS</strong>.</td></tr>
 <tr><td>03 Resource enforcement</td><td>CPU <code>nr_throttled=17</code> under 0.2 core <strong>PASS</strong>. Disk write past 256 MiB <strong>ENOSPC PASS</strong> (<code>df</code> 229096K). Anonymous-memory OOM probe <strong>WARN</strong> (<code>oom=0</code>). Host stayed up.</td></tr>
-<tr><td>04 Nginx / e-commerce</td><td><strong>SKIPPED</strong> — bundled image has no nginx/php/mysql; routed apt would collide live 10.231 / 22000 ports.</td></tr>
-<tr><td>05 Worker scheduling</td><td><strong>SKIPPED</strong> — one compose worker; filling/draining it would hit the live fleet.</td></tr>
+<tr><td>04 Nginx / e-commerce</td><td><strong>SKIPPED</strong> - bundled image has no nginx/php/mysql; routed apt would collide live 10.231 / 22000 ports.</td></tr>
+<tr><td>05 Worker scheduling</td><td><strong>SKIPPED</strong> - one compose worker; filling/draining it would hit the live fleet.</td></tr>
 <tr><td>06 Recovery / backup</td><td>Writable-layer <strong>backup + restore PASS</strong> (marker file). Worker crash, reboot, and cross-worker restore not run.</td></tr>
 </table>
 
@@ -133,13 +133,13 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>Priority</th><th>Result</th></tr>
-<tr><td>01 Native Linux root isolation</td><td><strong>FAIL</strong> — still no dedicated Ubuntu worker. Isolated <code>user_ns=true</code> dies with <code>make mounts private: operation not permitted</code>.</td></tr>
+<tr><td>01 Native Linux root isolation</td><td><strong>FAIL</strong> - still no dedicated Ubuntu worker. Isolated <code>user_ns=true</code> dies with <code>make mounts private: operation not permitted</code>.</td></tr>
 <tr><td>02 High-density VPS</td><td><strong>10 / 25 / 50 / 100 idle MEASURED</strong> in 159s, <strong>~2.56 MB</strong> host RAM each. CPU load on 3 guests <code>nr_throttled_sum=34</code>. Nginx/PHP/MySQL density not run.</td></tr>
 <tr><td>03 Real RAM + ZRAM</td><td>ZRAM <strong>SKIPPED</strong> (no module). Swap cap <strong>PASS</strong>. Guest OOM <strong>PASS</strong> (<code>oom=1 oom_kill=1</code>). Live fleet stayed up.</td></tr>
-<tr><td>04 Real application load</td><td><strong>SKIPPED</strong> — no nginx/php/mysql in the image; routed apt would collide live 10.231.</td></tr>
-<tr><td>05 Multi-worker scheduler</td><td><strong>SKIPPED</strong> — one compose worker.</td></tr>
+<tr><td>04 Real application load</td><td><strong>SKIPPED</strong> - no nginx/php/mysql in the image; routed apt would collide live 10.231.</td></tr>
+<tr><td>05 Multi-worker scheduler</td><td><strong>SKIPPED</strong> - one compose worker.</td></tr>
 <tr><td>06 Security and recovery</td><td>Protection Mode <strong>PASS</strong> (<code>/etc</code> EROFS). Symlink did not expose host hostname. Backup/restore <strong>PASS</strong>. Worker crash not run.</td></tr>
-<tr><td>07 Docker / LXC / Incus</td><td><strong>SKIPPED</strong> — Incus/LXC not installed.</td></tr>
+<tr><td>07 Docker / LXC / Incus</td><td><strong>SKIPPED</strong> - Incus/LXC not installed.</td></tr>
 </table>
 
 <h3>Requested follow-ups (2026-11-01 09:30 UTC)</h3>
@@ -190,8 +190,8 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <table>
 <tr><th>Evidence class</th><th>Meaning</th><th>Production proof?</th></tr>
 <tr><td>PASS / MEASURED</td><td>Live host audit / bench</td><td>Yes (for that probe only)</td></tr>
-<tr><td>UNIT</td><td>Go <code>httptest</code> / package tests</td><td>No — API contract only</td></tr>
-<tr><td>SMOKE</td><td>Single-worker admin/template probe</td><td>No — not multi-worker / not performance</td></tr>
+<tr><td>UNIT</td><td>Go <code>httptest</code> / package tests</td><td>No - API contract only</td></tr>
+<tr><td>SMOKE</td><td>Single-worker admin/template probe</td><td>No - not multi-worker / not performance</td></tr>
 <tr><td>SKIPPED / NOT RUN</td><td>No honest evidence on this lab</td><td>No</td></tr>
 </table>
 
@@ -208,7 +208,7 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><td>100 networked VPS tested</td><td>Theoretical projected idle density</td></tr>
 <tr><td>42 scored security <strong>conditions</strong> passed (not kernel certification)</td><td>Docker nginx throughput peaks</td></tr>
 <tr><td>Lightweight shared-OS architecture</td><td>UNIT / SMOKE as multi-worker proof</td></tr>
-<tr><td></td><td>AppArmor/SELinux — still SKIPPED</td></tr>
+<tr><td></td><td>AppArmor/SELinux - still SKIPPED</td></tr>
 </table>
 
 <p><strong>Next:</strong> demote any remaining weak PASS rows, then on a <strong>native Ubuntu server</strong> run <code>sudo ./run-compare.sh</code> (FileVPS vs Docker/LXC/Incus) for partner-grade evidence.</p>
@@ -273,12 +273,12 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><td><strong>Total</strong></td><td><strong>0 / 0 / 42</strong></td></tr>
 </table>
 
-<h3>Findings — CloFix FileVPS</h3>
+<h3>Findings - CloFix FileVPS</h3>
 
 <table>
 <tr><th>Status</th><th>ID</th><th>Check</th><th>Detail</th></tr>
-<tr><td>INFO</td><td>K01</td><td>Kernel shared with host (7.0.14-linuxkit) — a kernel bug affects ALL VPSes on this worker</td><td>uname guest==host 7.0.14-linuxkit (shared-kernel model)</td></tr>
-<tr><td>INFO</td><td>K03</td><td>Host allows user namespaces (max=31879) — larger kernel attack surface, but required for uid mapping</td><td>user.max_user_namespaces=31879</td></tr>
+<tr><td>INFO</td><td>K01</td><td>Kernel shared with host (7.0.14-linuxkit) - a kernel bug affects ALL VPSes on this worker</td><td>uname guest==host 7.0.14-linuxkit (shared-kernel model)</td></tr>
+<tr><td>INFO</td><td>K03</td><td>Host allows user namespaces (max=31879) - larger kernel attack surface, but required for uid mapping</td><td>user.max_user_namespaces=31879</td></tr>
 <tr><td>INFO</td><td>K07</td><td>Nested linuxkit lab: spec_store_bypass still Vulnerable (mitigation owned by Docker Desktop/hypervisor)</td><td>/sys/devices/system/cpu/vulnerabilities/spec_store_bypass=Vulnerable; smt=n/a</td></tr>
 <tr><td>INFO</td><td>O04</td><td>OS share: host=&#x27;ubuntu 24.04&#x27; VPS=&#x27;ubuntu 24.04&#x27; (patching host kernel patches all VPSes; VPS userland patched separately)</td><td>/etc/os-release ID=ubuntu VERSION_ID=24.04 on host and guest</td></tr>
 <tr><td>SKIPPED</td><td>I04</td><td>Host kernel has no AppArmor/SELinux LSM (e.g. linuxkit lab); guest profile N/A</td><td>/sys/kernel/security/lsm empty / no aa_status / no sestatus on linuxkit</td></tr>
@@ -300,7 +300,7 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><td>PASS</td><td>X03</td><td>VPS-B processes invisible from VPS-A</td><td>B PIDs absent from A /proc</td></tr>
 <tr><td>PASS</td><td>X04</td><td>No namespace shared between VPSes</td><td>A vs B ns inodes all distinct</td></tr>
 <tr><td>PASS</td><td>X05</td><td>Distinct host uid ranges per VPS</td><td>A=100000 B=165536 (65536-wide maps)</td></tr>
-<tr><td>PASS</td><td>X06</td><td>VPS-A cannot reach VPS-B (10.231.0.7) — inter-VPS traffic blocked</td><td>TCP to B:22 timed out / refused (bridge isolated + nft default-drop)</td></tr>
+<tr><td>PASS</td><td>X06</td><td>VPS-A cannot reach VPS-B (10.231.0.7) - inter-VPS traffic blocked</td><td>TCP to B:22 timed out / refused (bridge isolated + nft default-drop)</td></tr>
 <tr><td>PASS</td><td>F01</td><td>SUID binary count acceptable (0)</td><td>find -perm -4000 count=0 in guest</td></tr>
 <tr><td>PASS</td><td>F02</td><td>No world-writable dirs lacking sticky bit</td><td>no 1777-missing sticky dirs under guest /</td></tr>
 <tr><td>PASS</td><td>F03</td><td>/etc/shadow mode 640</td><td>stat mode=640</td></tr>
@@ -333,11 +333,11 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <p><strong>Evidence tiers (do not collapse into “production PASS”):</strong></p>
 
 <ul>
-<li><strong>PASS</strong> — live host audit / isolation / enforcement probe</li>
-<li><strong>MEASURED</strong> — live bench numbers (create/start/RAM/CPU loop, etc.)</li>
-<li><strong>UNIT</strong> — Go <code>httptest</code> / package tests (API contract; not multi-worker or live guest performance)</li>
-<li><strong>SMOKE</strong> — single-worker admin API / template surface check</li>
-<li><strong>SKIPPED / NOT RUN</strong> — multi-worker, reboot, ZRAM, LXC/Incus compare, density, destructive cases without honest evidence</li>
+<li><strong>PASS</strong> - live host audit / isolation / enforcement probe</li>
+<li><strong>MEASURED</strong> - live bench numbers (create/start/RAM/CPU loop, etc.)</li>
+<li><strong>UNIT</strong> - Go <code>httptest</code> / package tests (API contract; not multi-worker or live guest performance)</li>
+<li><strong>SMOKE</strong> - single-worker admin API / template surface check</li>
+<li><strong>SKIPPED / NOT RUN</strong> - multi-worker, reboot, ZRAM, LXC/Incus compare, density, destructive cases without honest evidence</li>
 </ul>
 
 <p>A catalog total of N rows is <strong>not</strong> an N/N production-test pass claim. Unit + single-worker smoke must not be counted as multi-worker or production performance evidence.</p>
@@ -348,8 +348,8 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><td>WARN</td><td>0</td><td>Live probe weak/partial</td></tr>
 <tr><td>PASS</td><td>67</td><td>Live host audit/enforcement only</td></tr>
 <tr><td>MEASURED</td><td>15</td><td>Live bench metrics</td></tr>
-<tr><td>UNIT</td><td>57</td><td>Go unit / httptest — not production performance</td></tr>
-<tr><td>SMOKE</td><td>47</td><td>Single-worker API surface — not multi-worker</td></tr>
+<tr><td>UNIT</td><td>57</td><td>Go unit / httptest - not production performance</td></tr>
+<tr><td>SMOKE</td><td>47</td><td>Single-worker API surface - not multi-worker</td></tr>
 <tr><td>INFO</td><td>3</td><td>Informational</td></tr>
 <tr><td>SKIPPED</td><td>19</td><td>Not honestly evidenced on this lab</td></tr>
 <tr><td>NOT RUN</td><td>0</td><td>No probe</td></tr>
@@ -362,7 +362,7 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <h3>Still open (not production-proven here)</h3>
 
-<p>These remain <strong>SKIPPED</strong> on this lab. They are not failures — they need a dedicated multi-worker / LSM / density host before client production claims.</p>
+<p>These remain <strong>SKIPPED</strong> on this lab. They are not failures - they need a dedicated multi-worker / LSM / density host before client production claims.</p>
 
 <table>
 <tr><th>Area</th><th>IDs</th><th>Why skipped here</th><th>What would prove it</th></tr>
@@ -409,10 +409,10 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><td>O01</td><td>Shared read-only base OS</td><td>PASS</td><td>O01=PASS · Base OS not hardlink-shared (separate copy / COW / overlay) · os-release inode A=103151 B=103151 with overlay/COW separation (writes do not cross)</td></tr>
 <tr><td>O02</td><td>OverlayFS lower/upper isolation (A write not visible in B)</td><td>PASS</td><td>O02=PASS · OS-tree writes in VPS-A do not leak into VPS-B · marker under /usr or /etc in A absent in B; X01=PASS · VPS-B marker files invisible from VPS-A · marker written in B not visible via A rootfs/proc</td></tr>
 <tr><td>O03</td><td>Per-VPS hostname / identity files</td><td>PASS</td><td>O03=PASS · Per-VPS identity files differ · hostname/machine-id differ between A and B</td></tr>
-<tr><td>O04</td><td>Base OS image update and rollback</td><td>SMOKE</td><td>Base image cache present; rollback via re-extract not exercised · ubuntu/24.04 image cache present; rollback/re-extract NOT exercised — not a full image-update PASS</td></tr>
+<tr><td>O04</td><td>Base OS image update and rollback</td><td>SMOKE</td><td>Base image cache present; rollback via re-extract not exercised · ubuntu/24.04 image cache present; rollback/re-extract NOT exercised - not a full image-update PASS</td></tr>
 <tr><td>O05</td><td>Ubuntu 24.04 bundled image (this collection)</td><td>INFO</td><td>O04=INFO · OS share: host=&#x27;ubuntu 24.04&#x27; VPS=&#x27;ubuntu 24.04&#x27; (patching host kernel patches all VPSes; VPS userland patched separately) · /etc/os-release ID=ubuntu VERSION_ID=24.04 on host and guest</td></tr>
 <tr><td>O06</td><td>Debian / CentOS-compatible image tests</td><td>SKIPPED</td><td>ubuntu/24.04 / remapped from PASS→SKIPPED (insufficient evidence)</td></tr>
-<tr><td>O07</td><td>Shared kernel information leakage</td><td>INFO</td><td>K01=INFO · Kernel shared with host (7.0.14-linuxkit) — a kernel bug affects ALL VPSes on this worker · uname guest==host 7.0.14-linuxkit (shared-kernel model); K05=PASS · VPS sees its own memory view · guest MemTotal=262144 kB (≠ host MemTotal); K06=PASS · Kernel module list hidden · guest /proc/modules ≤1 usable line; I08=PASS · dmesg not readable · kernel.dmesg_restrict=1; guest dmesg denied</td></tr>
+<tr><td>O07</td><td>Shared kernel information leakage</td><td>INFO</td><td>K01=INFO · Kernel shared with host (7.0.14-linuxkit) - a kernel bug affects ALL VPSes on this worker · uname guest==host 7.0.14-linuxkit (shared-kernel model); K05=PASS · VPS sees its own memory view · guest MemTotal=262144 kB (≠ host MemTotal); K06=PASS · Kernel module list hidden · guest /proc/modules ≤1 usable line; I08=PASS · dmesg not readable · kernel.dmesg_restrict=1; guest dmesg denied</td></tr>
 <tr><td>O08</td><td>Guest package install and systemd compatibility</td><td>SMOKE</td><td>Guest apt not required; Docker/Library Quick Apps provide app stacks · template=wordpress / remapped from PASS→SMOKE (single-worker)</td></tr>
 </table>
 
@@ -480,11 +480,11 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
-<tr><td>NET01</td><td>Per-VPS IP and network isolation</td><td>PASS</td><td>X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) — inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop)</td></tr>
+<tr><td>NET01</td><td>Per-VPS IP and network isolation</td><td>PASS</td><td>X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) - inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop)</td></tr>
 <tr><td>NET02</td><td>SSH login and authorized keys</td><td>PASS</td><td>SSH login with authorized key via host port · port=22004</td></tr>
 <tr><td>NET03</td><td>Host port mapping and port exhaustion</td><td>PASS</td><td>Distinct SSH host ports and guest IPs allocated · A=10.231.0.6:22004 B=10.231.0.7:22005</td></tr>
-<tr><td>NET04</td><td>Cross-VPS networking allow/deny</td><td>PASS</td><td>X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) — inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop)</td></tr>
-<tr><td>NET05</td><td>Nftables / isolated veth (observed via reachability)</td><td>PASS</td><td>X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) — inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop)</td></tr>
+<tr><td>NET04</td><td>Cross-VPS networking allow/deny</td><td>PASS</td><td>X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) - inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop)</td></tr>
+<tr><td>NET05</td><td>Nftables / isolated veth (observed via reachability)</td><td>PASS</td><td>X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) - inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop)</td></tr>
 <tr><td>NET06</td><td>Inbound / outbound connectivity</td><td>PASS</td><td>Inbound SSH via host port mapping works · port=22004</td></tr>
 <tr><td>NET07</td><td>IPv4 / IPv6 and DNS</td><td>PASS</td><td>Guest has IPv4 address (DNS may be lab-limited) · ip=10.231.0.6 dns=2606:4700:10::6814:179a example.com 2606:4700:10::ac42:93f3 example.com</td></tr>
 <tr><td>NET08</td><td>High-concurrency network connections</td><td>PASS</td><td>High-concurrency SSH via host port · ok=20 fail=0</td></tr>
@@ -590,7 +590,7 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <table>
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
 <tr><td>A01</td><td>Guest-to-host escape regression probes</td><td>PASS</td><td>I05=PASS · Sensitive /proc,/sys paths not writable · probe write denied on /proc/sysrq-trigger /sys/kernel/uevent_helper (and similar); I06=PASS · No /dev/mem,kmem,port or block devices · guest /dev has no mem/kmem/port or host block nodes; I07=PASS · mount() denied inside container · mount(tmpfs) failed (EPERM/EACCES) under seccomp/userns; N03=PASS · No host runtime paths in mountinfo · no /var/lib/clofix-filevps, /run/docker.sock, or /var/run/docker in guest mountinfo; N04=PASS · No writable release_agent · cgroup release_agent not writable from guest; F05=PASS · mknod of block devices denied · mknod /tmp/blk b 8 0 → EPERM</td></tr>
-<tr><td>A02</td><td>Cross-tenant access attempts</td><td>PASS</td><td>X01=PASS · VPS-B marker files invisible from VPS-A · marker written in B not visible via A rootfs/proc; X02=PASS · Host runtime directories not visible · guest cannot list host instances/runtime dirs; X03=PASS · VPS-B processes invisible from VPS-A · B PIDs absent from A /proc; X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) — inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop)</td></tr>
+<tr><td>A02</td><td>Cross-tenant access attempts</td><td>PASS</td><td>X01=PASS · VPS-B marker files invisible from VPS-A · marker written in B not visible via A rootfs/proc; X02=PASS · Host runtime directories not visible · guest cannot list host instances/runtime dirs; X03=PASS · VPS-B processes invisible from VPS-A · B PIDs absent from A /proc; X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) - inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop)</td></tr>
 <tr><td>A03</td><td>Command injection input validation</td><td>PASS</td><td>Malicious project name rejected by API · http=409</td></tr>
 <tr><td>A04</td><td>Privilege escalation controls</td><td>PASS</td><td>I02=PASS · No dangerous capabilities · CapEff=00000000200405ff (no SYS_MODULE/RAWIO/BOOT/TIME/PTRACE/SYS_ADMIN); I03=PASS · Seccomp filter active · NoNewPrivs=1 Seccomp=2 (filter mode); F05=PASS · mknod of block devices denied · mknod /tmp/blk b 8 0 → EPERM</td></tr>
 <tr><td>A05</td><td>Wrong SSH key rejected (rate-limit / brute-force detection not proven)</td><td>SMOKE</td><td>Wrong SSH key rejected (rate-limit / brute-force detection not proven) · Wrong SSH key rejected (BatchMode) · port=22004 · auth reject only; no rate-limit/brute-force detection evidence</td></tr>
@@ -636,7 +636,7 @@ ul { margin: 0.6rem 0 0.6rem 1.2rem; }
 <tr><th>ID</th><th>Case</th><th>Status</th><th>Evidence</th></tr>
 <tr><td>REL01</td><td>Unexpected VPS process termination</td><td>PASS</td><td>Unexpected VPS process termination recovered with fx start · pid=19946</td></tr>
 <tr><td>REL02</td><td>Worker reboot / power-loss recovery</td><td>SKIPPED</td><td>workers+instances ok / remapped from PASS→SKIPPED (insufficient evidence)</td></tr>
-<tr><td>REL03</td><td>Network disconnect / reconnect</td><td>SMOKE</td><td>Guest net devices present; reconnect covered by SSH retry above · Guest net iface present (cfbr0); ssh_ok=0 on this reconnect sample — SSH proven elsewhere (NET02)</td></tr>
+<tr><td>REL03</td><td>Network disconnect / reconnect</td><td>SMOKE</td><td>Guest net devices present; reconnect covered by SSH retry above · Guest net iface present (cfbr0); ssh_ok=0 on this reconnect sample - SSH proven elsewhere (NET02)</td></tr>
 <tr><td>REL04</td><td>Disk full and filesystem read-only</td><td>PASS</td><td>Disk fill hit ENOSPC inside quota · dd: error writing &#x27;/root/fill&#x27;: No space left on device 42+0 records in 41+0 records out 42991616 bytes (43 MB, 41 MiB) copied, 0.0449164 s, 957 MB/s RC=1</td></tr>
 <tr><td>REL05</td><td>Interrupted OS image update</td><td>SMOKE</td><td>Image catalog API present; interrupted update recovers via re-pull/re-extract path · http=200 / remapped from PASS→SMOKE (single-worker)</td></tr>
 <tr><td>REL06</td><td>Control-plane database outage</td><td>SMOKE</td><td>Controller health endpoint reachable; DB outage fails closed via auth/API errors · healthz=200 / remapped from PASS→SMOKE (single-worker)</td></tr>

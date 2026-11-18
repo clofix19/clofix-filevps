@@ -1,5 +1,5 @@
 #!/usr/sbin/nft -f
-# CloFix baseline — additive table only. Do NOT flush foreign rulesets.
+# CloFix baseline - additive table only. Do NOT flush foreign rulesets.
 # Apply only on hosts with CAP_NET_ADMIN; never from unprivileged shared-kernel guests blindly.
 table inet clofix_guard {
   chain input {

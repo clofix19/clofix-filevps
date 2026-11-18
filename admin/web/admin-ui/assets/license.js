@@ -3,18 +3,18 @@
  let savedServer='',configured=false,installationID='';
  const node=name=>$('license-'+name);
  const message=text=>{const el=node('message');if(el)el.textContent=text;};
- const setText=(id,text)=>{const el=$(id);if(el)el.textContent=text??'—';};
+ const setText=(id,text)=>{const el=$(id);if(el)el.textContent=text??'-';};
  const limitLabel=(plan,value)=>{
-  if(!plan.id)return '—';
+  if(!plan.id)return '-';
   if(value==null)return 'Not specified';
   if(value===-1)return 'Unlimited';
   if(value===0)return 'Not included';
   return String(value);
  };
- const phaseLabel=phase=>({active:'Active',expired:'Expired · creates blocked',stopped:'Expired · services auto-stopped',invalid:'Invalid'}[phase]||phase||'—');
+ const phaseLabel=phase=>({active:'Active',expired:'Expired · creates blocked',stopped:'Expired · services auto-stopped',invalid:'Invalid'}[phase]||phase||'-');
  const fmtWhen=v=>{
-  if(!v||String(v).startsWith('0001'))return '—';
-  try{return new Date(v).toLocaleString();}catch(e){return '—';}
+  if(!v||String(v).startsWith('0001'))return '-';
+  try{return new Date(v).toLocaleString();}catch(e){return '-';}
  };
 
  const entitlementGroups=[
@@ -79,14 +79,14 @@
   const expires=fmtWhen(d.expires||d.grant?.expires);
   const stopAfter=fmtWhen(d.stop_services_after);
 
-  setText('license-tile-status',d.status||'—');
+  setText('license-tile-status',d.status||'-');
   setText('license-tile-status-note',configured?(d.offline?'Using cached grant':'Synced with license server'):'No key configured');
-  setText('license-tile-plan',plan.name||'—');
+  setText('license-tile-plan',plan.name||'-');
   setText('license-tile-plan-note',d.grant?.customer?`Customer · ${d.grant.customer}`:(plan.id?'Granted plan':'No plan'));
-  setText('license-tile-expires',expires==='—'?'—':expires);
+  setText('license-tile-expires',expires==='-'?'-':expires);
   setText('license-tile-expires-note',d.grant?.duration_days?`${d.grant.duration_days} day license`:'License end date');
   setText('license-tile-phase',phase);
-  setText('license-tile-phase-note',stopAfter!=='—'?'Auto-stop after '+stopAfter:'Create / stop policy');
+  setText('license-tile-phase-note',stopAfter!=='-'?'Auto-stop after '+stopAfter:'Create / stop policy');
 
   const statusEl=$('license-tile-status');
   if(statusEl){
@@ -99,11 +99,11 @@
   if(identity){
    identity.replaceChildren();
    for(const [name,value] of [
-    ['License ID',d.grant?.license_id||'—'],
-    ['Installation ID',d.installation_id||'—'],
-    ['Customer',d.grant?.customer||'—'],
-    ['Last sync',fmtWhen(d.last_sync||d.last_check)==='—'?'Not yet':fmtWhen(d.last_sync||d.last_check)],
-    ['License duration',d.grant?.duration_days?d.grant.duration_days+' days':'—'],
+    ['License ID',d.grant?.license_id||'-'],
+    ['Installation ID',d.installation_id||'-'],
+    ['Customer',d.grant?.customer||'-'],
+    ['Last sync',fmtWhen(d.last_sync||d.last_check)==='-'?'Not yet':fmtWhen(d.last_sync||d.last_check)],
+    ['License duration',d.grant?.duration_days?d.grant.duration_days+' days':'-'],
     ['Auto-stop after',stopAfter],
    ])identity.append(meta(name,value));
   }
@@ -112,7 +112,7 @@
   if(et){
    row(et,['Group','Resource','Limit'],true);
    if(!plan.id){
-    row(et,['—','Validate a license to load entitlements','—']);
+    row(et,['-','Validate a license to load entitlements','-']);
    }else{
     entitlementGroups.forEach(g=>{
      g.rows.forEach((pair,i)=>{

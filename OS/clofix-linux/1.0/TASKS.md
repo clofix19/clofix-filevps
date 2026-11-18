@@ -1,19 +1,19 @@
-# CloFix Linux 1.0.0 — Implementation tasks
+# CloFix Linux 1.0.0 - Implementation tasks
 
 **Security Engine:** CloFix Guard · **Base (this artifact):** Ubuntu **noble** / arm64 · https://clofix.com
 
 Status: `PASS` · `PARTIAL` · `FAIL` · `UNSUPPORTED` · `TODO`
 
-## Phase 1 — RootFS inspection — PASS
+## Phase 1 - RootFS inspection - PASS
 Inventory: `docs/ROOTFS-INVENTORY.md`. Path traversal check OK. Shared-kernel FileVPS rootfs (no systemd PID1 / empty boot).
 
-## Phase 2 — Branding — PASS
+## Phase 2 - Branding - PASS
 `ID=clofix`, `VERSION_ID=1.0`, `UBUNTU_CODENAME` preserved, `clofix-release` owns branding files.
 
-## Phase 3 — APT policy — PASS
+## Phase 3 - APT policy - PASS
 Ubuntu noble repos; smoke `apt update` + `curl` install; foreign suite scan; release-upgrade prompts disabled. Non-absolute lock documented in `docs/APT-POLICY.md`.
 
-## Phase 4 — Security baseline
+## Phase 4 - Security baseline
 | Module | Status |
 |--------|--------|
 | SSH Guard | PASS (config + brute indicators; no auto lockout) |
@@ -27,19 +27,19 @@ Ubuntu noble repos; smoke `apt update` + `curl` install; foreign suite scan; rel
 | Vulnerability Guard | PARTIAL (apt sim + optional OSV; backport-aware disclaimer) |
 | Hardening | PASS (`harden-rootfs.sh`) |
 
-## Phase 5 — Modes — PASS (policy layer)
+## Phase 5 - Modes - PASS (policy layer)
 Immutable/Zero Trust **enforcement** = host-worker (`PARTIAL` API, not wired to FileVPS worker yet).
 
-## Phase 6 — Shared-kernel — PARTIAL
+## Phase 6 - Shared-kernel - PARTIAL
 Docs + HMAC host API skeleton. Worker integration TODO.
 
-## Phase 7–9 — Agent / score / CLI — PASS
+## Phase 7–9 - Agent / score / CLI - PASS
 `cmd/clofix`, `cmd/clofix-guard`, scoring unknowns ≠ pass (unit test). Smoke: `GUARD_SMOKE_OK`, score.json evidence.
 
-## Phase 10 — Default policy — PASS
+## Phase 10 - Default policy - PASS
 Safe baseline on; disruptive controls opt-in.
 
-## Phase 11–13 — Structure / tests / deliverables — PASS
+## Phase 11–13 - Structure / tests / deliverables - PASS
 Tree under `OS/clofix-linux/1.0/`; unit tests; rootfs 40M; reports in `.build/reports/`; matrix `SECURITY-MATRIX.md`.
 
 ### Not done / next

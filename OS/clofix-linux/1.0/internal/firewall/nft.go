@@ -75,7 +75,7 @@ func ApplySSHProtect(backupDir string, sshPort int, allowIPs []string) error {
 	if sshPort <= 0 {
 		sshPort = 22
 	}
-	// Delete our table only, then recreate — never `nft flush ruleset`
+	// Delete our table only, then recreate - never `nft flush ruleset`
 	_ = exec.Command("nft", "delete", "table", "inet", tableName).Run()
 	script := fmt.Sprintf(`
 add table inet %s
@@ -106,7 +106,7 @@ func Rollback(backupDir string) error {
 	if latest == "" {
 		return fmt.Errorf("no firewall backup found")
 	}
-	// Restore full ruleset from backup — operator explicit action
+	// Restore full ruleset from backup - operator explicit action
 	raw, err := os.ReadFile(latest)
 	if err != nil {
 		return err

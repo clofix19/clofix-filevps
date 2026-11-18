@@ -45,24 +45,22 @@ echo "# harden $ROOT" >> "$REPORT"
 apply "$ROOT/tmp" mkdir -p "$ROOT/tmp" "$ROOT/var/tmp"
 apply chmod chmod 1777 "$ROOT/tmp" "$ROOT/var/tmp"
 
-# Sysctl hardening snippet (loaded when proc writable / host allows)
+# Kernel security sysctl baseline (guest). Prefer canonical file under config/sysctl/.
 mkdir -p "$ROOT/etc/sysctl.d"
-SYSCTL="$ROOT/etc/sysctl.d/99-clofix-hardening.conf"
+SYSCTL_SRC="$TREE/config/sysctl/99-clofix-kernel-security.conf"
+SYSCTL="$ROOT/etc/sysctl.d/99-clofix-kernel-security.conf"
+LEGACY="$ROOT/etc/sysctl.d/99-clofix-hardening.conf"
 backup "$SYSCTL"
-[[ $DRY -eq 0 ]] && cat > "$SYSCTL" <<'EOF'
-# CloFix Linux hardening (guest-applicable where sysctl is writable)
-kernel.dmesg_restrict = 1
-kernel.kptr_restrict = 2
-kernel.yama.ptrace_scope = 1
-fs.protected_hardlinks = 1
-fs.protected_symlinks = 1
-fs.suid_dumpable = 0
-net.ipv4.conf.all.rp_filter = 1
-net.ipv4.conf.default.rp_filter = 1
-net.ipv4.tcp_syncookies = 1
-net.ipv4.conf.all.accept_redirects = 0
-net.ipv6.conf.all.accept_redirects = 0
-EOF
+backup "$LEGACY"
+if [[ $DRY -eq 0 ]]; then
+  if [[ -f "$SYSCTL_SRC" ]]; then
+    install -m 0644 "$SYSCTL_SRC" "$SYSCTL"
+  else
+    echo "WARN missing $SYSCTL_SRC" | tee -a "$REPORT"
+  fi
+  # Replace older short baseline if present so only one CloFix kernel policy applies.
+  [[ -f "$LEGACY" ]] && rm -f "$LEGACY"
+fi
 echo "WRITE $SYSCTL" >> "$REPORT"
 
 # SSH: validate-only recommendations file (do not lock out)
@@ -102,7 +100,7 @@ for b in clofix clofix-guard; do
     [[ $DRY -eq 0 ]] && install -m 0755 "$src" "$ROOT/usr/bin/$b"
     echo "WRITE /usr/bin/$b from $src" >> "$REPORT"
   else
-    echo "WARN missing binary $b — run scripts/build-binaries.sh" >> "$REPORT"
+    echo "WARN missing binary $b - run scripts/build-binaries.sh" >> "$REPORT"
   fi
 done
 

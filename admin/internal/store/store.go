@@ -173,15 +173,37 @@ type Store interface {
 	TakeOps(workerID string) ([]proto.Operation, error)
 
 	Audit(actor, action, target, result string) error
+	AuditScoped(accountID, actorID, actor, action, target, result, detail string) error
 	ListAudit(limit int) ([]AuditEntry, error)
+	ListAuditScoped(accountIDs []string, limit int) ([]AuditEntry, error)
+	ListAuditQuery(q AuditQuery) ([]AuditEntry, error)
+	CountAuditQuery(q AuditQuery) (int, error)
+	PurgeAuditBefore(before time.Time) (int64, error)
+	GetAudit(id int64) (AuditEntry, error)
+}
+
+// AuditQuery filters cf_audit rows (newest-first). Zero times are ignored.
+type AuditQuery struct {
+	AccountIDs []string
+	AccountID  string // single account (AND with AccountIDs when both set)
+	Since      time.Time
+	Until      time.Time
+	Q          string // substring across actor/action/target/result/account_id
+	Action     string // exact or prefix match on action
+	Actor      string // substring on actor or actor_id
+	Limit      int
+	Offset     int
 }
 
 // AuditEntry is a cf_audit row returned newest-first by ListAudit.
 type AuditEntry struct {
-	ID     int64     `json:"id"`
-	At     time.Time `json:"at"`
-	Actor  string    `json:"actor"`
-	Action string    `json:"action"`
-	Target string    `json:"target"`
-	Result string    `json:"result,omitempty"`
+	ID        int64     `json:"id"`
+	At        time.Time `json:"at"`
+	AccountID string    `json:"account_id,omitempty"`
+	ActorID   string    `json:"actor_id,omitempty"`
+	Actor     string    `json:"actor"`
+	Action    string    `json:"action"`
+	Target    string    `json:"target"`
+	Result    string    `json:"result,omitempty"`
+	Detail    string    `json:"detail,omitempty"` // JSON object/array string when present
 }

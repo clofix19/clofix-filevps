@@ -92,7 +92,7 @@
   [['Zone',o.domain],['Records',o.records],['Automatic',o.automatic],['Manual',o.manual],['Selectable targets',targets().length]].forEach(([label,value])=>{
    const card=document.createElement('div');
    card.className='stat-card';
-   card.innerHTML=`<span>${label}</span><strong>${value??'—'}</strong>`;
+   card.innerHTML=`<span>${label}</span><strong>${value??'-'}</strong>`;
    box.append(card);
   });
  }
@@ -126,7 +126,7 @@
     del.onclick=async()=>{del.disabled=true;try{await api('DELETE',`/api/dns/records/${encodeURIComponent(rec.id)}`);$('dns-record-message').textContent='Record deleted.';clearRecordForm();await loadDNS();}catch(e){$('dns-record-message').textContent=e.message;}finally{del.disabled=false;}};
     actions.append(edit,del);
    }
-   row(table,[rec.name,rec.type,displayValue(rec),rec.port||'—',rec.ttl,rec.source,rec.resource_id?`${rec.resource} · ${rec.resource_id}`:rec.resource,rec.description||'—',actions]);
+   row(table,[rec.name,rec.type,displayValue(rec),rec.port||'-',rec.ttl,rec.source,rec.resource_id?`${rec.resource} · ${rec.resource_id}`:rec.resource,rec.description||'-',actions]);
   }
   fillTargets();
  }
@@ -151,7 +151,7 @@
   sel.replaceChildren();
   const items=target==='docker'?certTargets.docker:target==='managed-app'?certTargets.apps:certTargets.alb;
   if(!items.length){
-   const empty=target==='docker'?'No Docker apps yet — deploy one with a domain first':target==='managed-app'?'No managed apps yet — deploy one first':'No ALB yet — create an HTTP load balancer';
+   const empty=target==='docker'?'No Docker apps yet - deploy one with a domain first':target==='managed-app'?'No managed apps yet - deploy one first':'No ALB yet - create an HTTP load balancer';
    sel.add(new Option(empty,''));
    fillCertDomains();
    return;
@@ -195,8 +195,8 @@
    const del=document.createElement('button');del.type='button';del.className='danger small-btn';del.textContent='Delete';
    del.onclick=async()=>{if(!window.confirm('Delete certificate for '+c.domain+'?'))return;del.disabled=true;try{await api('DELETE',`/api/certificates/${encodeURIComponent(c.domain)}`);$('dns-cert-message').textContent='Certificate removed.';await loadCertificates();}catch(e){$('dns-cert-message').textContent=e.message;}finally{del.disabled=false;}};
    actions.append(del);
-   const state=document.createElement('span');state.className='badge '+(c.state==='issued'?'RUNNING':c.state==='failed'?'FAILED':'STARTING');state.textContent=c.state||'—';
-   row(table,[c.domain,c.target,c.resource_id||'—',state,c.issued?new Date(c.issued).toLocaleString():'—',c.expires?new Date(c.expires).toLocaleString():'—',c.error||'—',actions]);
+   const state=document.createElement('span');state.className='badge '+(c.state==='issued'?'RUNNING':c.state==='failed'?'FAILED':'STARTING');state.textContent=c.state||'-';
+   row(table,[c.domain,c.target,c.resource_id||'-',state,c.issued?new Date(c.issued).toLocaleString():'-',c.expires?new Date(c.expires).toLocaleString():'-',c.error||'-',actions]);
   });
  }
  async function ensureCertDomain(target,resourceId,domain){

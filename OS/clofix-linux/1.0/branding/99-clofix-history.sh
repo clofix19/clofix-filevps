@@ -1,4 +1,4 @@
-# CloFix Linux — persist bash history after every command.
+# CloFix Linux - persist bash history after every command.
 # Abrupt SSH disconnect / VPS stop otherwise loses in-memory history.
 # shellcheck shell=sh
 if [ -n "${BASH_VERSION:-}" ]; then

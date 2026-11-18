@@ -67,7 +67,7 @@
     message('Alert updated.');
     await refreshCatalog();
    }));
-   row(table,[a.name,a.source_id,a.match||'—',a.level||'any',a.threshold,a.cooldown_seconds+(a.enabled?'':' · off'),a.enabled?'Enabled':'Disabled',actions]);
+   row(table,[a.name,a.source_id,a.match||'-',a.level||'any',a.threshold,a.cooldown_seconds+(a.enabled?'':' · off'),a.enabled?'Enabled':'Disabled',actions]);
   }
  }
  function renderEvents(events){
@@ -79,7 +79,7 @@
     const name=(data?.channels||[]).find(c=>c.id===id)?.name||'Removed channel';
     return name+': '+d.status+' ('+d.attempts+' attempts)';
    }).join(' · ');
-   row(table,[event.at?new Date(event.at).toLocaleString():'—',event.name,event.source_id,event.sample||'—',deliveries||'No enabled channel at event time']);
+   row(table,[event.at?new Date(event.at).toLocaleString():'-',event.name,event.source_id,event.sample||'-',deliveries||'No enabled channel at event time']);
   }
  }
  async function refreshCatalog(){

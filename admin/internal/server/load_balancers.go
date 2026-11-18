@@ -444,7 +444,7 @@ func (s *Server) saveLoadBalancer(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, e.Error())
 		return
 	}
-	s.Store.Audit("admin", "load-balancer.save", b.ID, "ok")
+	s.audit(r, "load-balancer.save", b.ID, "ok", nil)
 	b.refreshLive()
 	writeJSON(w, 200, &b)
 }
@@ -464,7 +464,7 @@ func (s *Server) deleteLoadBalancer(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, e.Error())
 		return
 	}
-	s.Store.Audit("admin", "load-balancer.delete", b.ID, "queued")
+	s.audit(r, "load-balancer.delete", b.ID, "queued", nil)
 	writeJSON(w, 202, map[string]string{"status": "deleting balancer and owned VPS instances"})
 }
 

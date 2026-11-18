@@ -22,14 +22,16 @@ import (
 )
 
 type alertChannel struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Type    string `json:"type"`
-	Webhook string `json:"webhook,omitempty"`
-	Enabled bool   `json:"enabled"`
+	ID        string `json:"id"`
+	AccountID string `json:"account_id,omitempty"`
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	Webhook   string `json:"webhook,omitempty"`
+	Enabled   bool   `json:"enabled"`
 }
 type healthMonitor struct {
 	ID        string `json:"id"`
+	AccountID string `json:"account_id,omitempty"`
 	Name      string `json:"name"`
 	Type      string `json:"type"`
 	Target    string `json:"target"`
@@ -109,26 +111,59 @@ func (s *Server) monitoringRoutes(m *http.ServeMux) {
 	m.HandleFunc("DELETE /api/monitoring/monitors/{id}", s.auth(s.deleteMonitoringResource))
 	m.HandleFunc("POST /api/monitoring/channels/{id}/test", s.auth(s.testAlertChannel))
 }
+func (s *Server) canAccessMonitoringAccount(r *http.Request, accountID string) bool {
+	p := principalFrom(r)
+	if p.Kind == "admin" {
+		return true
+	}
+	if accountID == "" {
+		return false
+	}
+	return s.canAccessAccount(p, accountID)
+}
+
 func (s *Server) getMonitoring(w http.ResponseWriter, r *http.Request) {
 	d := s.monitoring
 	d.Lock()
 	defer d.Unlock()
 	channels := []map[string]any{}
 	for _, c := range d.Channels {
-		channels = append(channels, map[string]any{"id": c.ID, "name": c.Name, "type": c.Type, "enabled": c.Enabled, "configured": c.Webhook != ""})
+		if !s.canAccessMonitoringAccount(r, c.AccountID) {
+			continue
+		}
+		channels = append(channels, map[string]any{"id": c.ID, "account_id": c.AccountID, "name": c.Name, "type": c.Type, "enabled": c.Enabled, "configured": c.Webhook != ""})
 	}
 	sort.Slice(channels, func(i, j int) bool { return channels[i]["name"].(string) < channels[j]["name"].(string) })
 	monitors := []healthMonitor{}
+	allowedMonitors := map[string]bool{}
 	for _, m := range d.Monitors {
+		if !s.canAccessMonitoringAccount(r, m.AccountID) {
+			continue
+		}
 		monitors = append(monitors, m)
+		allowedMonitors[m.ID] = true
 	}
 	sort.Slice(monitors, func(i, j int) bool { return monitors[i].Name < monitors[j].Name })
+	admin := principalFrom(r).Kind == "admin"
 	states := []healthState{}
 	for _, state := range d.States {
+		if !admin {
+			// Tenants only see states for their own monitors (ids are monitor ids).
+			if !allowedMonitors[state.ID] {
+				continue
+			}
+		}
 		states = append(states, state)
 	}
 	sort.Slice(states, func(i, j int) bool { return states[i].Name < states[j].Name })
-	writeJSON(w, 200, map[string]any{"channels": channels, "monitors": monitors, "states": states, "events": d.Events, "error": d.Error, "interval_seconds": 30})
+	events := []healthEvent{}
+	for _, ev := range d.Events {
+		if !admin && !allowedMonitors[ev.MonitorID] {
+			continue
+		}
+		events = append(events, ev)
+	}
+	writeJSON(w, 200, map[string]any{"channels": channels, "monitors": monitors, "states": states, "events": events, "error": d.Error, "interval_seconds": 30})
 }
 func validMonitorHTTP(raw string) bool {
 	u, e := url.Parse(raw)
@@ -148,6 +183,14 @@ func (s *Server) saveAlertChannel(w http.ResponseWriter, r *http.Request) {
 	if c.ID != "" && !exists {
 		fail(w, 404, "channel not found")
 		return
+	}
+	if exists && !s.canAccessMonitoringAccount(r, old.AccountID) {
+		fail(w, 404, "channel not found")
+		return
+	}
+	c.AccountID = old.AccountID
+	if c.AccountID == "" {
+		c.AccountID = s.stampAccount(principalFrom(r))
 	}
 	if c.Webhook == "" && exists {
 		c.Webhook = old.Webhook
@@ -177,7 +220,7 @@ func (s *Server) saveAlertChannel(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not save channel")
 		return
 	}
-	s.Store.Audit("admin", "monitoring.channel.save", c.ID, "ok")
+	s.audit(r, "monitoring.channel.save", c.ID, "ok", nil)
 	writeJSON(w, 200, map[string]string{"id": c.ID})
 }
 func (s *Server) saveHealthMonitor(w http.ResponseWriter, r *http.Request) {
@@ -217,6 +260,14 @@ func (s *Server) saveHealthMonitor(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "monitor not found")
 		return
 	}
+	if exists && !s.canAccessMonitoringAccount(r, old.AccountID) {
+		fail(w, 404, "monitor not found")
+		return
+	}
+	m.AccountID = old.AccountID
+	if m.AccountID == "" {
+		m.AccountID = s.stampAccount(principalFrom(r))
+	}
 	if !exists {
 		if len(d.Monitors) >= 100 {
 			fail(w, 409, "maximum 100 monitors")
@@ -235,7 +286,7 @@ func (s *Server) saveHealthMonitor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	delete(d.States, m.ID)
-	s.Store.Audit("admin", "monitoring.monitor.save", m.ID, "ok")
+	s.audit(r, "monitoring.monitor.save", m.ID, "ok", nil)
 	writeJSON(w, 200, m)
 }
 func (s *Server) deleteMonitoringResource(w http.ResponseWriter, r *http.Request) {
@@ -247,6 +298,10 @@ func (s *Server) deleteMonitoringResource(w http.ResponseWriter, r *http.Request
 	c, ce := d.Channels[id]
 	m, me := d.Monitors[id]
 	if channel && !ce || !channel && !me {
+		fail(w, 404, "resource not found")
+		return
+	}
+	if channel && !s.canAccessMonitoringAccount(r, c.AccountID) || !channel && !s.canAccessMonitoringAccount(r, m.AccountID) {
 		fail(w, 404, "resource not found")
 		return
 	}
@@ -267,7 +322,7 @@ func (s *Server) deleteMonitoringResource(w http.ResponseWriter, r *http.Request
 	if !channel {
 		delete(d.States, id)
 	}
-	s.Store.Audit("admin", "monitoring.delete", id, "ok")
+	s.audit(r, "monitoring.delete", id, "ok", nil)
 	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
 func sendHealthAlert(ctx context.Context, c alertChannel, event healthEvent) string {
@@ -416,12 +471,12 @@ func (s *Server) testAlertChannel(w http.ResponseWriter, r *http.Request) {
 	d.Lock()
 	c, ok := d.Channels[r.PathValue("id")]
 	d.Unlock()
-	if !ok {
+	if !ok || !s.canAccessMonitoringAccount(r, c.AccountID) {
 		fail(w, 404, "channel not found")
 		return
 	}
 	result := sendHealthAlert(r.Context(), c, healthEvent{Name: "Test notification", Status: "TEST", At: time.Now().UTC()})
-	s.Store.Audit("admin", "monitoring.channel.test", c.ID, result)
+	s.audit(r, "monitoring.channel.test", c.ID, result, nil)
 	if result != "delivered" {
 		fail(w, 502, result)
 		return

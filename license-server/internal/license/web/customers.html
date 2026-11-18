@@ -14,10 +14,10 @@
     <a class="console-logo" href="/plans" aria-label="CloFix Licenses"><img src="/clofix-logo.png" alt="CloFix"></a>
     <a class="console-home" href="/plans">Licenses</a>
     <nav class="console-nav" aria-label="License management">
-      <a href="/plans" data-license-nav>Plans <span id="nav-plan-count">—</span></a>
-      <a href="/customers" data-license-nav>Customers <span id="nav-customer-count">—</span></a>
+      <a href="/plans" data-license-nav>Plans <span id="nav-plan-count">-</span></a>
+      <a href="/customers" data-license-nav>Customers <span id="nav-customer-count">-</span></a>
       <a href="/issue" data-license-nav>Issue</a>
-      <a href="/licenses" data-license-nav>Issued <span id="nav-license-count">—</span></a>
+      <a href="/licenses" data-license-nav>Issued <span id="nav-license-count">-</span></a>
     </nav>
     <div class="console-actions">
       <span class="muted">Company console</span>
@@ -41,11 +41,11 @@
       </div>
     </header>
     <div class="cards" aria-label="Customer counts">
-      <div class="stat"><div class="stat-label">Organizations</div><div class="stat-value" id="count-customers">—</div><div class="stat-note">Managed customers</div></div>
-      <div class="stat"><div class="stat-label">With licenses</div><div class="stat-value" id="count-with-licenses">—</div><div class="stat-note">At least one issued key</div></div>
-      <div class="stat"><div class="stat-label">Active licenses</div><div class="stat-value" id="count-active">—</div><div class="stat-note">Across all customers</div></div>
-      <div class="stat"><div class="stat-label">Total licenses</div><div class="stat-value" id="count-total">—</div><div class="stat-note">Created keys</div></div>
-      <div class="stat"><div class="stat-label">Plans</div><div class="stat-value" id="count-plans">—</div><div class="stat-note">Available templates</div></div>
+      <div class="stat"><div class="stat-label">Organizations</div><div class="stat-value" id="count-customers">-</div><div class="stat-note">Managed customers</div></div>
+      <div class="stat"><div class="stat-label">With licenses</div><div class="stat-value" id="count-with-licenses">-</div><div class="stat-note">At least one issued key</div></div>
+      <div class="stat"><div class="stat-label">Active licenses</div><div class="stat-value" id="count-active">-</div><div class="stat-note">Across all customers</div></div>
+      <div class="stat"><div class="stat-label">Total licenses</div><div class="stat-value" id="count-total">-</div><div class="stat-note">Created keys</div></div>
+      <div class="stat"><div class="stat-label">Plans</div><div class="stat-value" id="count-plans">-</div><div class="stat-note">Available templates</div></div>
     </div>
     <section class="panel">
       <div class="section-head">
@@ -68,9 +68,9 @@
       <span class="site-footer-sep" aria-hidden="true">·</span>
       <span>CloFix License Server</span>
       <span class="site-footer-sep" aria-hidden="true">·</span>
-      <span id="footer-host">—</span>
+      <span id="footer-host">-</span>
       <span class="site-footer-sep" aria-hidden="true">·</span>
-      <time id="footer-clock">—</time>
+      <time id="footer-clock">-</time>
     </div>
   </footer>
 </div>
@@ -152,10 +152,10 @@ function renderCustomers(){
     const notes=(c.notes||'').slice(0,80)+(c.notes&&c.notes.length>80?'…':'');
     row(table,[
       c.name,
-      c.contact||'—',
+      c.contact||'-',
       button(String(licenseCountFor(c))+' licenses',()=>{location.href='/licenses?customer='+encodeURIComponent(c.id);},'small-btn'),
-      c.updated?new Date(c.updated).toLocaleString():'—',
-      notes||'—',
+      c.updated?new Date(c.updated).toLocaleString():'-',
+      notes||'-',
       actions
     ]);
   }

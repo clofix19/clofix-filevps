@@ -18,10 +18,10 @@
       <div class="settings-section" id="cks-clusters" data-settings-panel aria-labelledby="cks-heading-clusters">
         <h2 id="cks-heading-clusters" class="visually-hidden" tabindex="-1">Clusters</h2>
         <div class="stats-grid database-stats">
-          <article class="stat-card"><span>Clusters</span><strong id="cks-cluster-count">—</strong><small id="cks-cluster-note">Loading inventory…</small></article>
-          <article class="stat-card"><span>Running</span><strong id="cks-ready-count">—</strong><small id="cks-ready-note">Checking health…</small></article>
-          <article class="stat-card"><span>Ready workers</span><strong id="cks-worker-count">—</strong><small id="cks-worker-note">Checking Kubernetes capability…</small></article>
-          <article class="stat-card"><span>Active jobs</span><strong id="cks-job-count">—</strong><small id="cks-job-note">Checking activity…</small></article>
+          <article class="stat-card"><span>Clusters</span><strong id="cks-cluster-count">-</strong><small id="cks-cluster-note">Loading inventory…</small></article>
+          <article class="stat-card"><span>Running</span><strong id="cks-ready-count">-</strong><small id="cks-ready-note">Checking health…</small></article>
+          <article class="stat-card"><span>Ready workers</span><strong id="cks-worker-count">-</strong><small id="cks-worker-note">Checking Kubernetes capability…</small></article>
+          <article class="stat-card"><span>Active jobs</span><strong id="cks-job-count">-</strong><small id="cks-job-note">Checking activity…</small></article>
         </div>
         <div class="panel"><div class="section-head"><div><h3>Clusters</h3><p class="muted" id="cks-compat-note">Loading compatibility…</p></div><button class="secondary" id="cks-refresh" type="button">Refresh</button></div><div class="table-wrap"><table id="cks-clusters-table"></table></div></div>
         <div class="panel" id="cks-cluster-panel" hidden>
@@ -32,10 +32,10 @@
             <button class="danger" id="cks-delete" type="button">Delete cluster</button>
           </div>
           <div class="resource-grid">
-            <div><strong>Version</strong><span id="cks-metric-version">—</span></div>
-            <div><strong>Mode</strong><span id="cks-metric-mode">—</span></div>
-            <div><strong>API</strong><span id="cks-metric-api">—</span></div>
-            <div><strong>Nodes</strong><span id="cks-metric-nodes">—</span></div>
+            <div><strong>Version</strong><span id="cks-metric-version">-</span></div>
+            <div><strong>Mode</strong><span id="cks-metric-mode">-</span></div>
+            <div><strong>API</strong><span id="cks-metric-api">-</span></div>
+            <div><strong>Nodes</strong><span id="cks-metric-nodes">-</span></div>
           </div>
           <h4>Nodes</h4>
           <div class="table-wrap"><table id="cks-nodes-table"></table></div>
@@ -227,7 +227,7 @@
       <div class="form-field" data-cks-kind="deployment,statefulset,daemonset,service,ingress,hpa,networkpolicy"><label id="cks-res-selector-label">App label<input id="cks-res-selector" placeholder="nginx"></label></div>
       <div class="form-field" data-cks-kind="pv,pvc"><label>Storage<input id="cks-res-storage" value="1Gi"></label></div>
       <div class="form-field" data-cks-kind="cronjob"><label>Schedule<input id="cks-res-schedule" value="0 * * * *"></label></div>
-      <div class="form-field form-span" data-cks-kind="secret,configmap"><label id="cks-res-data-label">Data (KEY=value per line)<textarea id="cks-res-data" rows="4" placeholder="USERNAME=demo&#10;PASSWORD=change-me"></textarea></label></div>
+      <div class="form-field form-span" data-cks-kind="secret,configmap"><label id="cks-res-data-label">Data (KEY=value per line)<textarea id="cks-res-data" rows="4" placeholder="USERNAME=demo&#10;PASSWORD=sec:sec-aaaaaaaa"></textarea></label></div>
     </div>
     <p class="muted" id="cks-res-hint">Choose a kind to see the matching fields.</p>
     <button class="primary" id="cks-res-save" type="submit">Create</button>

@@ -66,6 +66,7 @@ type Server struct {
 	securityCenter    *securityCenterStore
 	docker            *dockerStore
 	waf               *wafStore
+	secrets           *secretsStore
 	metricsHistory    *metricsHistoryStore
 
 	placeMu         sync.Mutex
@@ -96,7 +97,7 @@ func New(s store.Store, ca *pki.CA, adminToken, uiDir string) *Server {
 	if dataDir == "" {
 		dataDir = "/var/lib/clofix-controller"
 	}
-	server := &Server{license: loadControllerLicense(dataDir), monitoring: loadMonitoring(dataDir), balancers: loadBalancers(dataDir), applications: loadServerless(dataDir), billing: loadBilling(dataDir), dns: loadDNS(dataDir), vpcs: loadVPCs(dataDir), sshKeys: loadSSHKeys(dataDir), logs: loadLogs(dataDir), firewall: loadFirewall(dataDir), efs: loadEFS(dataDir), clusters: loadClusterServices(dataDir), securityCenter: loadSecurityCenter(dataDir), waf: loadWAF(dataDir), metricsHistory: loadMetricsHistory(dataDir), Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), S3MasterAddress: os.Getenv("CLOFIX_S3_MASTER_ADDRESS"), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}, backups: map[string]proto.BackupInfo{}, certificates: loadCertificates(dataDir), platform: loadPlatform(dataDir), images: loadImageCatalog(dataDir), s3Pool: loadS3PoolSettings(dataDir)}
+	server := &Server{license: loadControllerLicense(dataDir), monitoring: loadMonitoring(dataDir), balancers: loadBalancers(dataDir), applications: loadServerless(dataDir), billing: loadBilling(dataDir), dns: loadDNS(dataDir), vpcs: loadVPCs(dataDir), sshKeys: loadSSHKeys(dataDir), logs: loadLogs(dataDir), firewall: loadFirewall(dataDir), efs: loadEFS(dataDir), clusters: loadClusterServices(dataDir), securityCenter: loadSecurityCenter(dataDir), waf: loadWAF(dataDir), secrets: loadSecrets(dataDir), metricsHistory: loadMetricsHistory(dataDir), Store: s, CA: ca, AdminToken: adminToken, Sched: scheduler.DefaultConfig(), UIDir: uiDir, S3: objectstore.New(dataDir), S3MasterAddress: os.Getenv("CLOFIX_S3_MASTER_ADDRESS"), failures: map[string][]time.Time{}, usage: map[string]proto.InstanceMetrics{}, services: map[string][]proto.ServiceStatus{}, serviceInstalls: map[string]map[string]string{}, volumeFileWait: map[string]volumeFileWaiter{}, backups: map[string]proto.BackupInfo{}, certificates: loadCertificates(dataDir), platform: loadPlatform(dataDir), images: loadImageCatalog(dataDir), s3Pool: loadS3PoolSettings(dataDir)}
 	server.initDatabases(dataDir)
 	server.initKubernetes(dataDir)
 	server.initDocker(dataDir)
@@ -136,6 +137,7 @@ func (s *Server) AdminHandler() http.Handler {
 	s.firewallRoutes(mux)
 	s.wafRoutes(mux)
 	s.securityRoutes(mux)
+	s.secretsRoutes(mux)
 	s.efsRoutes(mux)
 	s.clusterServiceRoutes(mux)
 	s.loadBalancerRoutes(mux)
@@ -183,6 +185,8 @@ func (s *Server) AdminHandler() http.Handler {
 	mux.HandleFunc("DELETE /api/iam/users/{id}", s.auth(s.deleteIAMUser))
 	mux.HandleFunc("GET /api/iam/users/{id}/keys", s.auth(s.listIAMUserKeys))
 	mux.HandleFunc("POST /api/iam/users/{id}/keys", s.auth(s.createIAMUserKey))
+	mux.HandleFunc("POST /api/iam/users/{id}/keys/{key}/suspend", s.auth(s.suspendIAMUserKey))
+	mux.HandleFunc("POST /api/iam/users/{id}/keys/{key}/resume", s.auth(s.resumeIAMUserKey))
 	mux.HandleFunc("DELETE /api/iam/users/{id}/keys/{key}", s.auth(s.revokeIAMUserKey))
 	mux.HandleFunc("GET /api/iam/groups", s.auth(s.listIAMGroups))
 	mux.HandleFunc("POST /api/iam/groups", s.auth(s.saveIAMGroup))
@@ -237,6 +241,7 @@ func (s *Server) AdminHandler() http.Handler {
 	mux.HandleFunc("POST /api/instances/{id}/protection", s.auth(s.setProtectionMode))
 	mux.HandleFunc("POST /api/instances/{id}/ssh-login", s.auth(s.setSSHLoginBlocked))
 	mux.HandleFunc("POST /api/instances/{id}/password", s.auth(s.setInstancePassword))
+	mux.HandleFunc("POST /api/instances/{id}/hostname", s.auth(s.setInstanceHostname))
 	mux.HandleFunc("POST /api/instances/{id}/delete-protection", s.auth(s.setDeleteProtection))
 	mux.HandleFunc("POST /api/instances/{id}/waf", s.auth(s.setWAFCategory))
 	mux.HandleFunc("PUT /api/instances/{id}/waf/error-pages", s.auth(s.setWAFErrorPages))
@@ -337,7 +342,7 @@ func (s *Server) setWAFCategory(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "could not queue WAF rule update")
 		return
 	}
-	s.Store.Audit("admin", "instance.waf."+in.Category, id, fmt.Sprintf("enabled=%t", *in.Enabled))
+	s.audit(r, "instance.waf."+in.Category, id, fmt.Sprintf("enabled=%t", *in.Enabled), nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "category": in.Category, "enabled": *in.Enabled, "queued": true})
 }
 
@@ -432,7 +437,7 @@ func (s *Server) setWAFErrorPages(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "could not queue WAF error page update")
 		return
 	}
-	s.Store.Audit("admin", "instance.waf.error_pages", id, "queued")
+	s.audit(r, "instance.waf.error_pages", id, "queued", nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "pages": merged, "queued": true})
 }
 
@@ -534,6 +539,10 @@ func uiPage(route string) (page, title, instanceID string, ok bool) {
 		return "vpc", "VPC", "", true
 	case "/iam":
 		return "iam", "Identity and Access Management", "", true
+	case "/audit":
+		return "audit", "Audit Trail", "", true
+	case "/secrets":
+		return "secrets", "Secrets Manager", "", true
 	case "/profile":
 		return "profile", "My Profile", "", true
 	case "/users":
@@ -618,7 +627,7 @@ func (s *Server) setProtectionMode(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "could not queue protection update")
 		return
 	}
-	s.Store.Audit("admin", "instance.protection", id, fmt.Sprintf("enabled=%t", *in.Enabled))
+	s.audit(r, "instance.protection", id, fmt.Sprintf("enabled=%t", *in.Enabled), nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "protection_mode": *in.Enabled, "queued": true, "restart_required": inst.State == proto.StateRunning})
 }
 
@@ -658,8 +667,59 @@ func (s *Server) setInstancePassword(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "could not queue password update")
 		return
 	}
-	s.Store.Audit("admin", "instance.password", id, "queued")
+	s.audit(r, "instance.password", id, "queued", nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "queued": true})
+}
+
+func (s *Server) setInstanceHostname(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !apiInstanceID.MatchString(id) {
+		fail(w, http.StatusBadRequest, "invalid instance id")
+		return
+	}
+	var in struct {
+		Hostname string `json:"hostname"`
+		Name     string `json:"name"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&in); err != nil {
+		fail(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	raw := strings.TrimSpace(in.Hostname)
+	if raw == "" {
+		raw = strings.TrimSpace(in.Name)
+	}
+	if raw == "" {
+		fail(w, http.StatusBadRequest, "VPS name is required")
+		return
+	}
+	label := dnsLabel(raw)
+	if label == "" {
+		fail(w, http.StatusBadRequest, "VPS name must be a hostname-safe label (letters, digits, hyphen)")
+		return
+	}
+	s.placeMu.Lock()
+	defer s.placeMu.Unlock()
+	inst, err := s.Store.GetInstance(id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "instance not found")
+		return
+	}
+	if inst.State == proto.StateDeleting {
+		fail(w, http.StatusConflict, "cannot rename while VPS is deleting")
+		return
+	}
+	if strings.TrimSpace(inst.Spec.Hostname) == label {
+		writeJSON(w, http.StatusOK, map[string]any{"id": id, "hostname": label, "unchanged": true})
+		return
+	}
+	inst.Spec.Hostname = label
+	if err := s.Store.SaveInstance(inst); err != nil {
+		fail(w, http.StatusInternalServerError, "could not save VPS name")
+		return
+	}
+	s.audit(r, "instance.hostname", id, label, nil)
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "hostname": label, "instance": inst})
 }
 
 func (s *Server) setSSHLoginBlocked(w http.ResponseWriter, r *http.Request) {
@@ -706,7 +766,7 @@ func (s *Server) setSSHLoginBlocked(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "could not queue SSH login policy update")
 		return
 	}
-	s.Store.Audit("admin", "instance.ssh_login", id, fmt.Sprintf("blocked=%t", *in.Enabled))
+	s.audit(r, "instance.ssh_login", id, fmt.Sprintf("blocked=%t", *in.Enabled), nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "ssh_login_blocked": *in.Enabled, "queued": true, "restart_required": inst.State == proto.StateRunning})
 }
 
@@ -753,7 +813,7 @@ func (s *Server) setDeleteProtection(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "could not queue delete protection update")
 		return
 	}
-	s.Store.Audit("admin", "instance.delete_protection", id, fmt.Sprintf("enabled=%t", *in.Enabled))
+	s.audit(r, "instance.delete_protection", id, fmt.Sprintf("enabled=%t", *in.Enabled), nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "delete_protection": *in.Enabled, "queued": true})
 }
 
@@ -778,6 +838,14 @@ func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 		if platformAdminResource(resource) && p.Kind != "admin" {
 			fail(w, http.StatusForbidden, "this area is limited to CloFix administrators")
 			return
+		}
+		// Workers list is required for FileVPS/Docker/CKS placement. Enrollment and
+		// drain/activate/revoke stay platform-admin only.
+		if resource == "workers" && p.Kind != "admin" {
+			if action == "manage" || strings.HasPrefix(path, "/api/enrollment-tokens") {
+				fail(w, http.StatusForbidden, "worker enrollment and lifecycle are limited to CloFix administrators")
+				return
+			}
 		}
 		if strings.HasPrefix(path, "/api/load-balancers/settings") && p.Kind != "admin" {
 			fail(w, http.StatusForbidden, "NLB pool settings are limited to CloFix administrators")
@@ -820,7 +888,7 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, err.Error())
 		return
 	}
-	s.Store.Audit("admin", "enrollment-token.create", "", "ok")
+	s.audit(r, "enrollment-token.create", "", "ok", nil)
 	// Shown once; only the hash is stored.
 	writeJSON(w, 201, map[string]any{"token": tok, "expires": exp})
 }
@@ -849,7 +917,7 @@ func (s *Server) setStatus(status string) http.HandlerFunc {
 			fail(w, 404, "worker not found")
 			return
 		}
-		s.Store.Audit("admin", "worker."+status, id, "ok")
+		s.audit(r, "worker."+status, id, "ok", nil)
 		writeJSON(w, 200, map[string]string{"id": id, "status": status})
 	}
 }
@@ -925,7 +993,7 @@ func (s *Server) createVolume(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "could not queue volume creation")
 		return
 	}
-	s.Store.Audit("admin", "volume.create", v.ID, v.WorkerID)
+	s.audit(r, "volume.create", v.ID, v.WorkerID, nil)
 	writeJSON(w, http.StatusAccepted, v)
 }
 
@@ -963,7 +1031,7 @@ func (s *Server) editVolume(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "could not update volume")
 		return
 	}
-	s.Store.Audit("admin", "volume.edit", id, in.Name)
+	s.audit(r, "volume.edit", id, in.Name, nil)
 	writeJSON(w, http.StatusOK, v)
 }
 
@@ -1005,7 +1073,7 @@ func (s *Server) deleteVolume(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "could not queue volume deletion")
 		return
 	}
-	s.Store.Audit("admin", "volume.delete", id, "queued; data removal requested")
+	s.audit(r, "volume.delete", id, "queued; data removal requested", nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "queued": true, "data_deleted": true})
 }
 
@@ -1085,7 +1153,7 @@ func (s *Server) attachVolume(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "could not queue volume attachment")
 		return
 	}
-	s.Store.Audit("admin", "volume.attach", id, inst.ID+":"+in.GuestPath)
+	s.audit(r, "volume.attach", id, inst.ID+":"+in.GuestPath, nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "state": "ATTACHING", "restart_required": inst.State == proto.StateRunning})
 }
 
@@ -1147,7 +1215,7 @@ func (s *Server) detachVolume(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "could not queue volume detach")
 		return
 	}
-	s.Store.Audit("admin", "volume.detach", id, inst.ID)
+	s.audit(r, "volume.detach", id, inst.ID, nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "state": "DETACHING", "restart_required": inst.State == proto.StateRunning, "data_retained": true})
 }
 
@@ -1277,7 +1345,7 @@ func (s *Server) writeVolumeFile(w http.ResponseWriter, r *http.Request) {
 		fail(w, code, message)
 		return
 	}
-	s.Store.Audit("admin", "volume.file.write", r.PathValue("id"), name)
+	s.audit(r, "volume.file.write", r.PathValue("id"), name, nil)
 	writeJSON(w, http.StatusOK, map[string]any{"saved": true, "path": name, "size": len(content)})
 }
 
@@ -1294,7 +1362,7 @@ func (s *Server) createVolumeFolder(w http.ResponseWriter, r *http.Request) {
 		fail(w, code, message)
 		return
 	}
-	s.Store.Audit("admin", "volume.folder.create", r.PathValue("id"), input.Path)
+	s.audit(r, "volume.folder.create", r.PathValue("id"), input.Path, nil)
 	writeJSON(w, http.StatusCreated, map[string]any{"created": true, "path": input.Path})
 }
 
@@ -1309,7 +1377,7 @@ func (s *Server) deleteVolumeFile(w http.ResponseWriter, r *http.Request) {
 		fail(w, code, message)
 		return
 	}
-	s.Store.Audit("admin", "volume.file.delete", r.PathValue("id"), name)
+	s.audit(r, "volume.file.delete", r.PathValue("id"), name, nil)
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "path": name})
 }
 
@@ -1348,7 +1416,7 @@ func (s *Server) moveVolumeObject(w http.ResponseWriter, r *http.Request) {
 		fail(w, code, message)
 		return
 	}
-	s.Store.Audit("admin", "volume.file.move", r.PathValue("id"), src+" -> "+dest)
+	s.audit(r, "volume.file.move", r.PathValue("id"), src+" -> "+dest, nil)
 	writeJSON(w, http.StatusOK, map[string]any{"moved": true, "from": src, "to": dest})
 }
 
@@ -1443,8 +1511,20 @@ func (s *Server) updateInstanceResources(w http.ResponseWriter, r *http.Request)
 		fail(w, http.StatusInternalServerError, "could not queue VPS resource update")
 		return
 	}
-	s.Store.Audit("admin", "instance.resources.update", id, "queued")
+	s.audit(r, "instance.resources.update", id, "queued", nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "queued": true, "restart_required": wasRunning, "disk_quota_enforced": false})
+}
+
+func (s *Server) canAccessS3Connection(r *http.Request, accountID string) bool {
+	p := principalFrom(r)
+	if p.Kind == "admin" {
+		return true
+	}
+	// Legacy connections without account_id are platform-only.
+	if accountID == "" {
+		return false
+	}
+	return s.canAccessAccount(p, accountID)
 }
 
 func (s *Server) listS3Connections(w http.ResponseWriter, r *http.Request) {
@@ -1460,7 +1540,14 @@ func (s *Server) listS3Connections(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []objectstore.PublicConfig{}
 	}
-	writeJSON(w, http.StatusOK, items)
+	out := make([]objectstore.PublicConfig, 0, len(items))
+	for _, item := range items {
+		if !s.canAccessS3Connection(r, item.AccountID) {
+			continue
+		}
+		out = append(out, item)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // Local UI connections run from the admin container, where localhost points
@@ -1517,13 +1604,14 @@ func (s *Server) createS3Connection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c.ID = "s3-" + randHex(8)
+	c.AccountID = s.stampAccount(principalFrom(r))
 	c.Name = strings.TrimSpace(c.Name)
 	if err := s.S3.SaveConnection(c); err != nil {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.Store.Audit("admin", "storage.s3.create", c.ID, c.Name)
-	writeJSON(w, http.StatusCreated, map[string]any{"connection": objectstore.PublicConfig{ID: c.ID, Name: c.Name, Provider: c.Provider, Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, Configured: true}})
+	s.audit(r, "storage.s3.create", c.ID, c.Name, nil)
+	writeJSON(w, http.StatusCreated, map[string]any{"connection": objectstore.PublicConfig{ID: c.ID, AccountID: c.AccountID, Name: c.Name, Provider: c.Provider, Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, Configured: true}})
 }
 
 func (s *Server) updateS3Connection(w http.ResponseWriter, r *http.Request) {
@@ -1533,7 +1621,7 @@ func (s *Server) updateS3Connection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	old, err := s.S3.GetConnection(id)
-	if err != nil {
+	if err != nil || !s.canAccessS3Connection(r, old.AccountID) {
 		fail(w, http.StatusNotFound, "S3 connection not found")
 		return
 	}
@@ -1543,6 +1631,10 @@ func (s *Server) updateS3Connection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c.ID = id
+	c.AccountID = old.AccountID
+	if c.AccountID == "" {
+		c.AccountID = s.stampAccount(principalFrom(r))
+	}
 	if c.AccessKey == "" {
 		c.AccessKey = old.AccessKey
 	}
@@ -1559,8 +1651,8 @@ func (s *Server) updateS3Connection(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.Store.Audit("admin", "storage.s3.edit", id, c.Name)
-	writeJSON(w, http.StatusOK, map[string]any{"connection": objectstore.PublicConfig{ID: c.ID, Name: c.Name, Provider: c.Provider, Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, Configured: true}})
+	s.audit(r, "storage.s3.edit", id, c.Name, nil)
+	writeJSON(w, http.StatusOK, map[string]any{"connection": objectstore.PublicConfig{ID: c.ID, AccountID: c.AccountID, Name: c.Name, Provider: c.Provider, Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, Configured: true}})
 }
 
 func (s *Server) deleteS3Connection(w http.ResponseWriter, r *http.Request) {
@@ -1570,7 +1662,7 @@ func (s *Server) deleteS3Connection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	connection, err := s.S3.GetConnection(id)
-	if err != nil {
+	if err != nil || !s.canAccessS3Connection(r, connection.AccountID) {
 		fail(w, http.StatusNotFound, "S3 connection not found")
 		return
 	}
@@ -1597,7 +1689,7 @@ func (s *Server) deleteS3Connection(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	s.Store.Audit("admin", "storage.s3.delete", id, "ok")
+	s.audit(r, "storage.s3.delete", id, "ok", nil)
 	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
@@ -1608,8 +1700,9 @@ func (s *Server) s3Connection(w http.ResponseWriter, r *http.Request) objectstor
 		return objectstore.Config{}
 	}
 	c, err := s.S3.GetConnection(id)
-	if err != nil {
+	if err != nil || !s.canAccessS3Connection(r, c.AccountID) {
 		fail(w, http.StatusNotFound, "S3 connection not found")
+		return objectstore.Config{}
 	}
 	return c
 }
@@ -1713,7 +1806,7 @@ func (s *Server) putS3Object(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	s.Store.Audit("admin", "storage.s3.object.put", c.ID, key)
+	s.audit(r, "storage.s3.object.put", c.ID, key, nil)
 	writeJSON(w, http.StatusOK, map[string]any{"saved": true, "key": key, "size": len(body)})
 }
 
@@ -1736,7 +1829,7 @@ func (s *Server) createS3Folder(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	s.Store.Audit("admin", "storage.s3.folder.create", c.ID, in.Key)
+	s.audit(r, "storage.s3.folder.create", c.ID, in.Key, nil)
 	writeJSON(w, http.StatusCreated, map[string]any{"created": true, "key": in.Key})
 }
 
@@ -1755,7 +1848,7 @@ func (s *Server) deleteS3Object(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	s.Store.Audit("admin", "storage.s3.object.delete", c.ID, key)
+	s.audit(r, "storage.s3.object.delete", c.ID, key, nil)
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "key": key})
 }
 
@@ -1803,7 +1896,7 @@ func (s *Server) moveS3Object(w http.ResponseWriter, r *http.Request) {
 		fail(w, code, moveErr.Error())
 		return
 	}
-	s.Store.Audit("admin", "storage.s3.object.move", c.ID, src+" -> "+dest)
+	s.audit(r, "storage.s3.object.move", c.ID, src+" -> "+dest, nil)
 	writeJSON(w, http.StatusOK, map[string]any{"moved": true, "from": src, "to": dest})
 }
 
@@ -1834,7 +1927,7 @@ func (s *Server) saveS3Config(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.Store.Audit("admin", "storage.s3.configure", c.Bucket, "ok")
+	s.audit(r, "storage.s3.configure", c.Bucket, "ok", nil)
 	writeJSON(w, http.StatusOK, s.S3.Public())
 }
 
@@ -1877,13 +1970,13 @@ func (s *Server) mountS3(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c, err := s.S3.GetConnection(in.ConnectionID)
-	if err != nil {
+	if err != nil || !s.canAccessS3Connection(r, c.AccountID) {
 		fail(w, http.StatusConflict, "configure S3 storage first")
 		return
 	}
 	s.placeMu.Lock()
 	defer s.placeMu.Unlock()
-	inst, err := s.Store.GetInstance(id)
+	inst, err := s.getVisibleInstance(r, id)
 	if err != nil {
 		fail(w, http.StatusNotFound, "instance not found")
 		return
@@ -1923,7 +2016,7 @@ func (s *Server) mountS3(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "could not queue S3 mount")
 		return
 	}
-	s.Store.Audit("admin", "instance.s3.mount", id, in.GuestPath)
+	s.audit(r, "instance.s3.mount", id, in.GuestPath, nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "guest_path": in.GuestPath, "queued": true, "restart_required": inst.State == proto.StateRunning})
 }
 
@@ -1958,7 +2051,7 @@ func (s *Server) unmountS3(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "could not queue S3 unmount")
 		return
 	}
-	s.Store.Audit("admin", "instance.s3.unmount", id, "queued")
+	s.audit(r, "instance.s3.unmount", id, "queued", nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "queued": true, "restart_required": inst.State == proto.StateRunning})
 }
 
@@ -2114,7 +2207,7 @@ func (s *Server) serviceControl(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "could not queue service action")
 		return
 	}
-	s.Store.Audit("admin", "instance.service."+in.Action, id, name)
+	s.audit(r, "instance.service."+in.Action, id, name, nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "service": name, "action": in.Action, "queued": true})
 }
 
@@ -2216,7 +2309,7 @@ func (s *Server) installService(w http.ResponseWriter, r *http.Request) {
 	}
 	s.serviceInstalls[id][in.ServiceID] = "INSTALLING"
 	s.usageMu.Unlock()
-	s.Store.Audit("admin", "instance.service.install", id, in.ServiceID)
+	s.audit(r, "instance.service.install", id, in.ServiceID, nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "service_id": in.ServiceID, "queued": true})
 }
 
@@ -2266,7 +2359,7 @@ func (s *Server) uninstallService(w http.ResponseWriter, r *http.Request) {
 	}
 	s.serviceInstalls[id][in.ServiceID] = "UNINSTALLING"
 	s.usageMu.Unlock()
-	s.Store.Audit("admin", "instance.service.uninstall", id, in.ServiceID)
+	s.audit(r, "instance.service.uninstall", id, in.ServiceID, nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "service_id": in.ServiceID, "queued": true})
 }
 
@@ -2345,7 +2438,7 @@ func (s *Server) addPortMapping(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.Store.Audit("admin", "instance.port.add", id, fmt.Sprintf("%s %d:%d", in.Protocol, hostPort, in.GuestPort))
+	s.audit(r, "instance.port.add", id, fmt.Sprintf("%s %d:%d", in.Protocol, hostPort, in.GuestPort), nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "mapping": mapping, "address": fmt.Sprintf("localhost:%d", hostPort)})
 }
 
@@ -2394,7 +2487,7 @@ func (s *Server) writeManagedPortPublish(w http.ResponseWriter, r *http.Request,
 	if !enabled {
 		action = "instance.port.managed.unpublish"
 	}
-	s.Store.Audit("admin", action, id, strconv.Itoa(guestPort))
+	s.audit(r, action, id, strconv.Itoa(guestPort), nil)
 	hostPort := inst.Spec.SSHPort
 	switch guestPort {
 	case 80:
@@ -2464,7 +2557,7 @@ func (s *Server) updatePortMapping(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.Store.Audit("admin", "instance.port.update", id, fmt.Sprintf("%s %d:%d", in.Protocol, hostPort, in.GuestPort))
+	s.audit(r, "instance.port.update", id, fmt.Sprintf("%s %d:%d", in.Protocol, hostPort, in.GuestPort), nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "mapping": proto.PortMapping{Protocol: in.Protocol, GuestPort: in.GuestPort, HostPort: hostPort}, "address": fmt.Sprintf("localhost:%d", hostPort)})
 }
 
@@ -2500,7 +2593,7 @@ func (s *Server) deletePortMapping(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.Store.Audit("admin", "instance.port.delete", id, strconv.Itoa(hostPort))
+	s.audit(r, "instance.port.delete", id, strconv.Itoa(hostPort), nil)
 	writeJSON(w, http.StatusAccepted, map[string]string{"id": id, "removed": strconv.Itoa(hostPort)})
 }
 
@@ -2585,6 +2678,16 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "spec requires image.name, ram_mb, cpu, disk_mb")
 		return
 	}
+	if host := strings.TrimSpace(sp.Hostname); host != "" {
+		label := dnsLabel(host)
+		if label == "" {
+			fail(w, 400, "VPS name must be a hostname-safe label (letters, digits, hyphen)")
+			return
+		}
+		sp.Hostname = label
+	} else {
+		sp.Hostname = ""
+	}
 	auth := strings.ToLower(strings.TrimSpace(in.AuthMethod))
 	if auth == "" {
 		auth = "key"
@@ -2595,7 +2698,7 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 	}
 	generatedPEM := ""
 	if in.SSHKeyID != "" {
-		saved, ok := s.lookupSSHKey(in.SSHKeyID)
+		saved, ok := s.lookupSSHKeyFor(r, in.SSHKeyID)
 		if !ok {
 			fail(w, 400, "selected PEM key was not found")
 			return
@@ -2654,7 +2757,7 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 		method = "manual"
 	}
 	if err != nil {
-		s.Store.Audit("admin", "instance.create", "", "rejected: no capacity")
+		s.audit(r, "instance.create", "", "rejected: no capacity", nil)
 		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "placement": dec.Explain})
 		return
 	}
@@ -2678,13 +2781,19 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 		s.Store.UpsertWorker(wk)
 	}
 	s.Store.QueueOp(dec.WorkerID, proto.Operation{ID: inst.ID + "/create/" + randHex(4), Action: proto.ActionCreate, InstanceID: inst.ID, Spec: &sp, RootPassword: in.RootPassword})
-	s.Store.Audit("admin", "instance.create", inst.ID, "ok")
+	s.audit(r, "instance.create", inst.ID, "ok", nil)
 	if generatedPEM != "" && sp.SSHAuthorizedKey != "" {
-		key := sshPEMKey{ID: "pem-" + randHex(6), Name: "FileVPS " + inst.ID, PublicKey: sp.SSHAuthorizedKey, Created: time.Now()}
+		keyName := strings.TrimSpace(sp.Hostname)
+		if keyName == "" {
+			keyName = "FileVPS " + inst.ID
+		}
+		key := sshPEMKey{ID: "pem-" + randHex(6), AccountID: inst.AccountID, Name: keyName, PublicKey: sp.SSHAuthorizedKey, Created: time.Now().UTC()}
 		s.sshKeys.Lock()
 		s.sshKeys.Keys[key.ID] = key
 		_ = s.sshKeys.save()
 		s.sshKeys.Unlock()
+		writeJSON(w, 201, map[string]any{"instance": inst, "placement": dec.Explain, "pem": generatedPEM, "password_auth": sp.PasswordAuth, "key": key})
+		return
 	}
 	writeJSON(w, 201, map[string]any{"instance": inst, "placement": dec.Explain, "pem": generatedPEM, "password_auth": sp.PasswordAuth})
 }
@@ -2740,7 +2849,7 @@ func (s *Server) instanceOp(action string) http.HandlerFunc {
 			fail(w, http.StatusInternalServerError, "could not queue VPS action")
 			return
 		}
-		s.Store.Audit("admin", "instance."+action, id, "queued")
+		s.audit(r, "instance."+action, id, "queued", nil)
 		writeJSON(w, 202, map[string]string{"id": id, "queued": action})
 	}
 }
@@ -2802,7 +2911,7 @@ func (s *Server) retryInstance(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "could not queue retry")
 		return
 	}
-	s.Store.Audit("admin", "instance.retry", id, "queued")
+	s.audit(r, "instance.retry", id, "queued", nil)
 	writeJSON(w, http.StatusAccepted, map[string]string{"id": id, "queued": "retry"})
 }
 
@@ -3229,7 +3338,7 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 			}
 			s.Store.SaveInstance(inst)
 		}
-		s.Store.Audit(id, "op."+parts[1], inst.ID, map[bool]string{true: "ok", false: "failed"}[res.OK])
+		_ = s.Store.AuditScoped(inst.AccountID, "", id, "op."+parts[1], inst.ID, map[bool]string{true: "ok", false: "failed"}[res.OK], "")
 	}
 	s.cacheWorkerLogTails(hb.LogTails)
 	s.evaluateAutoLogTails(id)

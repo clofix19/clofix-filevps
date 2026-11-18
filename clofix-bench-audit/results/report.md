@@ -1,4 +1,4 @@
-# CloFix FileVPS — Benchmark and Security Report
+# CloFix FileVPS - Benchmark and Security Report
 
 Generated: 2026-11-05 00:44
 
@@ -19,7 +19,7 @@ This is a **reduced, non-destructive FileVPS-only** run on the local Docker Desk
 | Image | Bundled Ubuntu 24.04 FileVPS rootfs |
 | Bench sizes | `N_START=2`, `N_IDLE=2`, `DENSITY_MAX=0`, `SETTLE_S=8` |
 | Destructive probes | Not run (`--destructive` off) |
-| Incus / LXC | Not installed in this worker — no compare numbers |
+| Incus / LXC | Not installed in this worker - no compare numbers |
 | Live fleet left running | `vps-01c09f91ffda`, `vps-3ab923078227`, `vps-3f501a3975b0`, `vps-cf0489f9c217` |
 | User namespaces | Audit guests: `CLOFIX_USER_NS=true` on isolated state (`suite-isolated-audit`). Compose agent still `CLOFIX_USER_NS=false` so live UI VPS were not remounted. |
 
@@ -29,9 +29,9 @@ Re-ran `clofix-audit.sh fx` with `CLOFIX_USER_NS=true` and `CLOFIX_STATE_DIR=/va
 
 | Check | Result |
 | --- | --- |
-| I01 | **PASS** — `uid_map` `0 100000 65536` |
-| N01 | **PASS** — user (and other) namespaces differ from host |
-| X05 | **PASS** — A=`100000` B=`165536` |
+| I01 | **PASS** - `uid_map` `0 100000 65536` |
+| N01 | **PASS** - user (and other) namespaces differ from host |
+| X05 | **PASS** - A=`100000` B=`165536` |
 | Full audit FAIL count | **0** |
 
 ### SKIPPED → PASS (2026-11-03 01:51–01:56 UTC)
@@ -40,14 +40,14 @@ Re-ran `clofix-audit.sh fx` with `CLOFIX_USER_NS=true` and `CLOFIX_STATE_DIR=/va
 
 | ID | Result |
 | --- | --- |
-| L04 / REL01 | **PASS** — kill -9 guest init, `fx start` recovered, marker kept |
-| L08 | **PASS** — throw-away delete removed instance dir |
-| C03 / R10 | **PASS** — `pids.max` contained fork storm |
-| C04 / C05 | **PASS** — `nr_throttled` under `cpu.max=0.2` |
-| C07 / R14 | **PASS** — noisy-neighbour slowdown ~1.2x |
-| D05 | **PASS** — CPU + memory mix on 2 guests |
-| F04 / F06 | **PASS** — host-side symlink file read did not leak hostname |
-| K02 | **PASS** — host sysctl hardening applied for the audit run |
+| L04 / REL01 | **PASS** - kill -9 guest init, `fx start` recovered, marker kept |
+| L08 | **PASS** - throw-away delete removed instance dir |
+| C03 / R10 | **PASS** - `pids.max` contained fork storm |
+| C04 / C05 | **PASS** - `nr_throttled` under `cpu.max=0.2` |
+| C07 / R14 | **PASS** - noisy-neighbour slowdown ~1.2x |
+| D05 | **PASS** - CPU + memory mix on 2 guests |
+| F04 / F06 | **PASS** - host-side symlink file read did not leak hostname |
+| K02 | **PASS** - host sysctl hardening applied for the audit run |
 | Still SKIPPED | multi-worker (WK*), LXC/Incus compare (P*), ZRAM (M03), PHP/MySQL apps (W03/W04), live worker reboot (L05/REL02) |
 | Still WARN | I04 (no AppArmor on linuxkit), R12 (disk probe &lt; quota), K07 (SSB Vulnerable) |
 
@@ -65,14 +65,14 @@ Re-ran `clofix-audit.sh fx` with `CLOFIX_USER_NS=true` and `CLOFIX_STATE_DIR=/va
 | U01–U05 U07 U08 MO01 MO02 BL01–BL03 BL05 BL06 | **PASS** via admin/license API |
 | DB01–DB08 | **PASS** from live `/api/databases` inventory (MySQL projects + engine ads + READY backups) |
 | Still NOT RUN (12) | MO03–MO08 alerts, REL05/06/08, BL04/BL07/BL08 |
-| O06 | **SKIPPED** — Debian/CentOS images not bundled |
+| O06 | **SKIPPED** - Debian/CentOS images not bundled |
 
 
 ### WARN cleanup (2026-11-03 02:10 UTC)
 
 | ID | Result | Notes |
 | --- | --- | --- |
-| I04 | **SKIP** | Host has no AppArmor/SELinux LSM on linuxkit — profile N/A |
+| I04 | **SKIP** | Host has no AppArmor/SELinux LSM on linuxkit - profile N/A |
 | R12 | **PASS** | Probe auto-sized above `disk_mb`; stopped at 88 MiB on 128 MiB disk |
 | R13 / R15 | **PASS** | Busy-loop CPU bounded; host stayed responsive |
 | K07 | **INFO** | Nested linuxkit: SSB mitigation owned by Docker Desktop/hypervisor |
@@ -94,11 +94,11 @@ Ran `run-notrun-suites.sh` with `/tmp/clofix-worker-new` against `CLOFIX_STATE_D
 
 | Suite | Result |
 | --- | --- |
-| 01 User namespace (I01 / N01 user / X05) | **FAIL** — isolated `CLOFIX_USER_NS=true` guests die in `fx-init` (`make mounts private: operation not permitted`). linuxkit nested user ns cannot mount. Not flipped on the live fleet. |
+| 01 User namespace (I01 / N01 user / X05) | **FAIL** - isolated `CLOFIX_USER_NS=true` guests die in `fx-init` (`make mounts private: operation not permitted`). linuxkit nested user ns cannot mount. Not flipped on the live fleet. |
 | 02 Density / RAM / ZRAM / swap | **7 idle VPS** in 12s, **~1.76 MB** host RAM each. 8th create hit linuxkit loop-device limit (`layer.img`). 25/50/100 not run. `/dev/zram0` absent. `memory.swap.max=64MiB` **PASS**. |
 | 03 Resource enforcement | CPU `nr_throttled=17` under 0.2 core **PASS**. Disk write past 256 MiB **ENOSPC PASS** (`df` 229096K). Anonymous-memory OOM probe **WARN** (`oom=0`). Host stayed up. |
-| 04 Nginx / e-commerce | **SKIPPED** — bundled image has no nginx/php/mysql; routed apt would collide live 10.231 / 22000 ports. |
-| 05 Worker scheduling | **SKIPPED** — one compose worker; filling/draining it would hit the live fleet. |
+| 04 Nginx / e-commerce | **SKIPPED** - bundled image has no nginx/php/mysql; routed apt would collide live 10.231 / 22000 ports. |
+| 05 Worker scheduling | **SKIPPED** - one compose worker; filling/draining it would hit the live fleet. |
 | 06 Recovery / backup | Writable-layer **backup + restore PASS** (marker file). Worker crash, reboot, and cross-worker restore not run. |
 
 ### Priority P0 re-run (2026-11-01 09:15–09:19 UTC)
@@ -107,13 +107,13 @@ Loop bottleneck fix: create `/dev/loop8`–`loop127` so `losetup -f` can pass li
 
 | Priority | Result |
 | --- | --- |
-| 01 Native Linux root isolation | **FAIL** — still no dedicated Ubuntu worker. Isolated `user_ns=true` dies with `make mounts private: operation not permitted`. |
+| 01 Native Linux root isolation | **FAIL** - still no dedicated Ubuntu worker. Isolated `user_ns=true` dies with `make mounts private: operation not permitted`. |
 | 02 High-density VPS | **10 / 25 / 50 / 100 idle MEASURED** in 159s, **~2.56 MB** host RAM each. CPU load on 3 guests `nr_throttled_sum=34`. Nginx/PHP/MySQL density not run. |
 | 03 Real RAM + ZRAM | ZRAM **SKIPPED** (no module). Swap cap **PASS**. Guest OOM **PASS** (`oom=1 oom_kill=1`). Live fleet stayed up. |
-| 04 Real application load | **SKIPPED** — no nginx/php/mysql in the image; routed apt would collide live 10.231. |
-| 05 Multi-worker scheduler | **SKIPPED** — one compose worker. |
+| 04 Real application load | **SKIPPED** - no nginx/php/mysql in the image; routed apt would collide live 10.231. |
+| 05 Multi-worker scheduler | **SKIPPED** - one compose worker. |
 | 06 Security and recovery | Protection Mode **PASS** (`/etc` EROFS). Symlink did not expose host hostname. Backup/restore **PASS**. Worker crash not run. |
-| 07 Docker / LXC / Incus | **SKIPPED** — Incus/LXC not installed. |
+| 07 Docker / LXC / Incus | **SKIPPED** - Incus/LXC not installed. |
 
 ### Requested follow-ups (2026-11-01 09:30 UTC)
 
@@ -160,8 +160,8 @@ Development scope and automated coverage grew, but **208/208 production tests pa
 | Evidence class | Meaning | Production proof? |
 | --- | --- | --- |
 | PASS / MEASURED | Live host audit / bench | Yes (for that probe only) |
-| UNIT | Go `httptest` / package tests | No — API contract only |
-| SMOKE | Single-worker admin/template probe | No — not multi-worker / not performance |
+| UNIT | Go `httptest` / package tests | No - API contract only |
+| SMOKE | Single-worker admin/template probe | No - not multi-worker / not performance |
 | SKIPPED / NOT RUN | No honest evidence on this lab | No |
 
 Unit tests and single-worker API probes must not be counted as multi-worker or production performance tests. `./run-unit-notrun-pass.sh` now records **UNIT** / **SMOKE** / **SKIPPED** explicitly.
@@ -177,7 +177,7 @@ Engineering validation is advancing; this report is more reliable/transparent th
 | 100 networked VPS tested | Theoretical projected idle density |
 | 42 scored security **conditions** passed (not kernel certification) | Docker nginx throughput peaks |
 | Lightweight shared-OS architecture | UNIT / SMOKE as multi-worker proof |
-| | AppArmor/SELinux — still SKIPPED |
+| | AppArmor/SELinux - still SKIPPED |
 
 **Next:** demote any remaining weak PASS rows, then on a **native Ubuntu server** run `sudo ./run-compare.sh` (FileVPS vs Docker/LXC/Incus) for partner-grade evidence.
 
@@ -238,12 +238,12 @@ Stop reasons (density): CloFix FileVPS=suite D02 isolated networked density n=10
 | Kernel & OS sharing | 0 / 0 / 7 |
 | **Total** | **0 / 0 / 42** |
 
-### Findings — CloFix FileVPS
+### Findings - CloFix FileVPS
 
 | Status | ID | Check | Detail |
 |---|---|---|---|
-| INFO | K01 | Kernel shared with host (7.0.14-linuxkit) — a kernel bug affects ALL VPSes on this worker | uname guest==host 7.0.14-linuxkit (shared-kernel model) |
-| INFO | K03 | Host allows user namespaces (max=31879) — larger kernel attack surface, but required for uid mapping | user.max_user_namespaces=31879 |
+| INFO | K01 | Kernel shared with host (7.0.14-linuxkit) - a kernel bug affects ALL VPSes on this worker | uname guest==host 7.0.14-linuxkit (shared-kernel model) |
+| INFO | K03 | Host allows user namespaces (max=31879) - larger kernel attack surface, but required for uid mapping | user.max_user_namespaces=31879 |
 | INFO | K07 | Nested linuxkit lab: spec_store_bypass still Vulnerable (mitigation owned by Docker Desktop/hypervisor) | /sys/devices/system/cpu/vulnerabilities/spec_store_bypass=Vulnerable; smt=n/a |
 | INFO | O04 | OS share: host='ubuntu 24.04' VPS='ubuntu 24.04' (patching host kernel patches all VPSes; VPS userland patched separately) | /etc/os-release ID=ubuntu VERSION_ID=24.04 on host and guest |
 | SKIPPED | I04 | Host kernel has no AppArmor/SELinux LSM (e.g. linuxkit lab); guest profile N/A | /sys/kernel/security/lsm empty / no aa_status / no sestatus on linuxkit |
@@ -265,7 +265,7 @@ Stop reasons (density): CloFix FileVPS=suite D02 isolated networked density n=10
 | PASS | X03 | VPS-B processes invisible from VPS-A | B PIDs absent from A /proc |
 | PASS | X04 | No namespace shared between VPSes | A vs B ns inodes all distinct |
 | PASS | X05 | Distinct host uid ranges per VPS | A=100000 B=165536 (65536-wide maps) |
-| PASS | X06 | VPS-A cannot reach VPS-B (10.231.0.7) — inter-VPS traffic blocked | TCP to B:22 timed out / refused (bridge isolated + nft default-drop) |
+| PASS | X06 | VPS-A cannot reach VPS-B (10.231.0.7) - inter-VPS traffic blocked | TCP to B:22 timed out / refused (bridge isolated + nft default-drop) |
 | PASS | F01 | SUID binary count acceptable (0) | find -perm -4000 count=0 in guest |
 | PASS | F02 | No world-writable dirs lacking sticky bit | no 1777-missing sticky dirs under guest / |
 | PASS | F03 | /etc/shadow mode 640 | stat mode=640 |
@@ -296,11 +296,11 @@ These are the P0/P1 cases from the FileVPS QA checklist. Status comes from `benc
 
 **Evidence tiers (do not collapse into “production PASS”):**
 
-- **PASS** — live host audit / isolation / enforcement probe
-- **MEASURED** — live bench numbers (create/start/RAM/CPU loop, etc.)
-- **UNIT** — Go `httptest` / package tests (API contract; not multi-worker or live guest performance)
-- **SMOKE** — single-worker admin API / template surface check
-- **SKIPPED / NOT RUN** — multi-worker, reboot, ZRAM, LXC/Incus compare, density, destructive cases without honest evidence
+- **PASS** - live host audit / isolation / enforcement probe
+- **MEASURED** - live bench numbers (create/start/RAM/CPU loop, etc.)
+- **UNIT** - Go `httptest` / package tests (API contract; not multi-worker or live guest performance)
+- **SMOKE** - single-worker admin API / template surface check
+- **SKIPPED / NOT RUN** - multi-worker, reboot, ZRAM, LXC/Incus compare, density, destructive cases without honest evidence
 
 A catalog total of N rows is **not** an N/N production-test pass claim. Unit + single-worker smoke must not be counted as multi-worker or production performance evidence.
 
@@ -310,8 +310,8 @@ A catalog total of N rows is **not** an N/N production-test pass claim. Unit + s
 | WARN | 0 | Live probe weak/partial |
 | PASS | 67 | Live host audit/enforcement only |
 | MEASURED | 15 | Live bench metrics |
-| UNIT | 57 | Go unit / httptest — not production performance |
-| SMOKE | 47 | Single-worker API surface — not multi-worker |
+| UNIT | 57 | Go unit / httptest - not production performance |
+| SMOKE | 47 | Single-worker API surface - not multi-worker |
 | INFO | 3 | Informational |
 | SKIPPED | 19 | Not honestly evidenced on this lab |
 | NOT RUN | 0 | No probe |
@@ -323,7 +323,7 @@ _Honest live evidence on this report: **PASS 67 + MEASURED 15**. UNIT (57) and S
 
 ### Still open (not production-proven here)
 
-These remain **SKIPPED** on this lab. They are not failures — they need a dedicated multi-worker / LSM / density host before client production claims.
+These remain **SKIPPED** on this lab. They are not failures - they need a dedicated multi-worker / LSM / density host before client production claims.
 
 | Area | IDs | Why skipped here | What would prove it |
 |---|---|---|---|
@@ -368,10 +368,10 @@ CloFix Cloud engineering validation is progressing. This report is more evidence
 | O01 | Shared read-only base OS | PASS | O01=PASS · Base OS not hardlink-shared (separate copy / COW / overlay) · os-release inode A=103151 B=103151 with overlay/COW separation (writes do not cross) |
 | O02 | OverlayFS lower/upper isolation (A write not visible in B) | PASS | O02=PASS · OS-tree writes in VPS-A do not leak into VPS-B · marker under /usr or /etc in A absent in B; X01=PASS · VPS-B marker files invisible from VPS-A · marker written in B not visible via A rootfs/proc |
 | O03 | Per-VPS hostname / identity files | PASS | O03=PASS · Per-VPS identity files differ · hostname/machine-id differ between A and B |
-| O04 | Base OS image update and rollback | SMOKE | Base image cache present; rollback via re-extract not exercised · ubuntu/24.04 image cache present; rollback/re-extract NOT exercised — not a full image-update PASS |
+| O04 | Base OS image update and rollback | SMOKE | Base image cache present; rollback via re-extract not exercised · ubuntu/24.04 image cache present; rollback/re-extract NOT exercised - not a full image-update PASS |
 | O05 | Ubuntu 24.04 bundled image (this collection) | INFO | O04=INFO · OS share: host='ubuntu 24.04' VPS='ubuntu 24.04' (patching host kernel patches all VPSes; VPS userland patched separately) · /etc/os-release ID=ubuntu VERSION_ID=24.04 on host and guest |
 | O06 | Debian / CentOS-compatible image tests | SKIPPED | ubuntu/24.04 / remapped from PASS→SKIPPED (insufficient evidence) |
-| O07 | Shared kernel information leakage | INFO | K01=INFO · Kernel shared with host (7.0.14-linuxkit) — a kernel bug affects ALL VPSes on this worker · uname guest==host 7.0.14-linuxkit (shared-kernel model); K05=PASS · VPS sees its own memory view · guest MemTotal=262144 kB (≠ host MemTotal); K06=PASS · Kernel module list hidden · guest /proc/modules ≤1 usable line; I08=PASS · dmesg not readable · kernel.dmesg_restrict=1; guest dmesg denied |
+| O07 | Shared kernel information leakage | INFO | K01=INFO · Kernel shared with host (7.0.14-linuxkit) - a kernel bug affects ALL VPSes on this worker · uname guest==host 7.0.14-linuxkit (shared-kernel model); K05=PASS · VPS sees its own memory view · guest MemTotal=262144 kB (≠ host MemTotal); K06=PASS · Kernel module list hidden · guest /proc/modules ≤1 usable line; I08=PASS · dmesg not readable · kernel.dmesg_restrict=1; guest dmesg denied |
 | O08 | Guest package install and systemd compatibility | SMOKE | Guest apt not required; Docker/Library Quick Apps provide app stacks · template=wordpress / remapped from PASS→SMOKE (single-worker) |
 
 ### 3. Root & Namespace Security (P0)
@@ -434,11 +434,11 @@ CloFix Cloud engineering validation is progressing. This report is more evidence
 
 | ID | Case | Status | Evidence |
 |---|---|---|---|
-| NET01 | Per-VPS IP and network isolation | PASS | X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) — inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop) |
+| NET01 | Per-VPS IP and network isolation | PASS | X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) - inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop) |
 | NET02 | SSH login and authorized keys | PASS | SSH login with authorized key via host port · port=22004 |
 | NET03 | Host port mapping and port exhaustion | PASS | Distinct SSH host ports and guest IPs allocated · A=10.231.0.6:22004 B=10.231.0.7:22005 |
-| NET04 | Cross-VPS networking allow/deny | PASS | X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) — inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop) |
-| NET05 | Nftables / isolated veth (observed via reachability) | PASS | X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) — inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop) |
+| NET04 | Cross-VPS networking allow/deny | PASS | X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) - inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop) |
+| NET05 | Nftables / isolated veth (observed via reachability) | PASS | X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) - inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop) |
 | NET06 | Inbound / outbound connectivity | PASS | Inbound SSH via host port mapping works · port=22004 |
 | NET07 | IPv4 / IPv6 and DNS | PASS | Guest has IPv4 address (DNS may be lab-limited) · ip=10.231.0.6 dns=2606:4700:10::6814:179a example.com 2606:4700:10::ac42:93f3 example.com |
 | NET08 | High-concurrency network connections | PASS | High-concurrency SSH via host port · ok=20 fail=0 |
@@ -537,7 +537,7 @@ CloFix Cloud engineering validation is progressing. This report is more evidence
 | ID | Case | Status | Evidence |
 |---|---|---|---|
 | A01 | Guest-to-host escape regression probes | PASS | I05=PASS · Sensitive /proc,/sys paths not writable · probe write denied on /proc/sysrq-trigger /sys/kernel/uevent_helper (and similar); I06=PASS · No /dev/mem,kmem,port or block devices · guest /dev has no mem/kmem/port or host block nodes; I07=PASS · mount() denied inside container · mount(tmpfs) failed (EPERM/EACCES) under seccomp/userns; N03=PASS · No host runtime paths in mountinfo · no /var/lib/clofix-filevps, /run/docker.sock, or /var/run/docker in guest mountinfo; N04=PASS · No writable release_agent · cgroup release_agent not writable from guest; F05=PASS · mknod of block devices denied · mknod /tmp/blk b 8 0 → EPERM |
-| A02 | Cross-tenant access attempts | PASS | X01=PASS · VPS-B marker files invisible from VPS-A · marker written in B not visible via A rootfs/proc; X02=PASS · Host runtime directories not visible · guest cannot list host instances/runtime dirs; X03=PASS · VPS-B processes invisible from VPS-A · B PIDs absent from A /proc; X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) — inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop) |
+| A02 | Cross-tenant access attempts | PASS | X01=PASS · VPS-B marker files invisible from VPS-A · marker written in B not visible via A rootfs/proc; X02=PASS · Host runtime directories not visible · guest cannot list host instances/runtime dirs; X03=PASS · VPS-B processes invisible from VPS-A · B PIDs absent from A /proc; X06=PASS · VPS-A cannot reach VPS-B (10.231.0.7) - inter-VPS traffic blocked · TCP to B:22 timed out / refused (bridge isolated + nft default-drop) |
 | A03 | Command injection input validation | PASS | Malicious project name rejected by API · http=409 |
 | A04 | Privilege escalation controls | PASS | I02=PASS · No dangerous capabilities · CapEff=00000000200405ff (no SYS_MODULE/RAWIO/BOOT/TIME/PTRACE/SYS_ADMIN); I03=PASS · Seccomp filter active · NoNewPrivs=1 Seccomp=2 (filter mode); F05=PASS · mknod of block devices denied · mknod /tmp/blk b 8 0 → EPERM |
 | A05 | Wrong SSH key rejected (rate-limit / brute-force detection not proven) | SMOKE | Wrong SSH key rejected (rate-limit / brute-force detection not proven) · Wrong SSH key rejected (BatchMode) · port=22004 · auth reject only; no rate-limit/brute-force detection evidence |
@@ -580,7 +580,7 @@ CloFix Cloud engineering validation is progressing. This report is more evidence
 |---|---|---|---|
 | REL01 | Unexpected VPS process termination | PASS | Unexpected VPS process termination recovered with fx start · pid=19946 |
 | REL02 | Worker reboot / power-loss recovery | SKIPPED | workers+instances ok / remapped from PASS→SKIPPED (insufficient evidence) |
-| REL03 | Network disconnect / reconnect | SMOKE | Guest net devices present; reconnect covered by SSH retry above · Guest net iface present (cfbr0); ssh_ok=0 on this reconnect sample — SSH proven elsewhere (NET02) |
+| REL03 | Network disconnect / reconnect | SMOKE | Guest net devices present; reconnect covered by SSH retry above · Guest net iface present (cfbr0); ssh_ok=0 on this reconnect sample - SSH proven elsewhere (NET02) |
 | REL04 | Disk full and filesystem read-only | PASS | Disk fill hit ENOSPC inside quota · dd: error writing '/root/fill': No space left on device 42+0 records in 41+0 records out 42991616 bytes (43 MB, 41 MiB) copied, 0.0449164 s, 957 MB/s RC=1 |
 | REL05 | Interrupted OS image update | SMOKE | Image catalog API present; interrupted update recovers via re-pull/re-extract path · http=200 / remapped from PASS→SMOKE (single-worker) |
 | REL06 | Control-plane database outage | SMOKE | Controller health endpoint reachable; DB outage fails closed via auth/API errors · healthz=200 / remapped from PASS→SMOKE (single-worker) |

@@ -44,7 +44,7 @@ func (e *Engine) Decide(category Category, summary string) (Action, error) {
 		Summary:  summary,
 	}
 	if !e.Cfg.Enabled {
-		act.Result = "autopilot disabled — recorded only"
+		act.Result = "autopilot disabled - recorded only"
 		return act, e.record(act)
 	}
 	switch category {
@@ -64,7 +64,7 @@ func (e *Engine) Decide(category Category, summary string) (Action, error) {
 	case HighRisk, Destructive, ApprovalRequired:
 		act.Approved = false
 		act.Executed = false
-		act.Result = "approval required — not auto-executed"
+		act.Result = "approval required - not auto-executed"
 		if category == Destructive && e.Cfg.AllowDestructive {
 			act.Result = "destructive allowed by policy but still requires explicit approval API"
 		}

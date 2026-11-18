@@ -192,7 +192,7 @@ func (s *Server) createApplication(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not persist application")
 		return
 	}
-	s.Store.Audit(a.Owner, "application.create", a.ID, a.Kind)
+	s.auditAccount(r, a.Owner, "application.create", a.ID, a.Kind, nil)
 	a = safeApplication(a)
 	writeJSON(w, 201, a)
 }
@@ -286,6 +286,12 @@ func (s *Server) queueApplication(r *http.Request, kind string) (applicationRun,
 	for k, v := range secretEnv {
 		execution.Env[k] = v
 	}
+	execution.Env, err = s.resolveSecretRefs(a.Owner, execution.Env)
+	if err != nil {
+		delete(d.Runs, run.ID)
+		_ = d.save()
+		return applicationRun{}, err
+	}
 	execution.Input = input.Input
 	execution.Deadline = time.Now().Add(5 * time.Minute)
 	if err = s.Store.QueueOp(run.WorkerID, proto.Operation{ID: "execution/" + run.ID, Action: "execute", Execution: &execution}); err != nil {
@@ -295,7 +301,7 @@ func (s *Server) queueApplication(r *http.Request, kind string) (applicationRun,
 		_ = d.save()
 		return applicationRun{}, err
 	}
-	s.Store.Audit(applicationOwner(r), "application.run", a.ID, run.ID)
+	s.audit(r, "application.run", a.ID, run.ID, nil)
 	return run, nil
 }
 func (s *Server) runApplication(w http.ResponseWriter, r *http.Request) {

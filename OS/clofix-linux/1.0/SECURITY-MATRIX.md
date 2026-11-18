@@ -1,4 +1,4 @@
-# CloFix Linux 1.0.0 — Security implementation matrix
+# CloFix Linux 1.0.0 - Security implementation matrix
 
 Evidence from unit tests + `scripts/build-rootfs.sh` reports under `.build/reports/`.
 
@@ -17,7 +17,7 @@ Evidence from unit tests + `scripts/build-rootfs.sh` reports under `.build/repor
 | Rootkit Guard | PARTIAL | `internal/rootkit` | Guest checks; kernel → host |
 | Network Guard | PASS | `internal/network` | Listeners + new-port diff |
 | Vulnerability Guard | PARTIAL | `internal/vulnerability` | apt simulation; OSV optional + backport caveat |
-| Hardening | PASS | `scripts/harden-rootfs.sh`, sysctl | Dry-run/backup supported |
+| Hardening | PASS | `scripts/harden-rootfs.sh`, `config/sysctl/99-clofix-kernel-security.conf` | Guest + host baselines; dry-run/backup supported |
 | Modes / AutoPilot | PASS | `internal/policy`, `internal/response` | High-risk requires approval |
 | Security score | PASS | `internal/scoring` | Unknown ≠ pass (unit test) |
 | clofix CLI | PASS | `cmd/clofix` | Security subcommands implemented |

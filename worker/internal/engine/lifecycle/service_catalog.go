@@ -1,6 +1,6 @@
 package lifecycle
 
-// Fixed CloFix Library catalog. Package names are selected here only — never from the API.
+// Fixed CloFix Library catalog. Package names are selected here only - never from the API.
 
 func serviceCatalogPackages(serviceID string) ([]string, bool) {
 	packages, ok := map[string][]string{

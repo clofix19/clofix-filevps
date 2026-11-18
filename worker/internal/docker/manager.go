@@ -447,7 +447,7 @@ func (m *Manager) createContainer(ctx context.Context, spec dock.ContainerSpec) 
 	if _, err := m.pullImage(ctx, spec.ImageRef(), nil); err != nil {
 		// continue if already present
 		if !strings.Contains(err.Error(), "not found") {
-			// still try create — local image may exist
+			// still try create - local image may exist
 		}
 	}
 	args := []string{"create",
@@ -1229,7 +1229,9 @@ func (m *Manager) writeWAFFiles(targetID string, policy map[string]bool, pages m
 			return "", err
 		}
 		fmt.Fprintf(&conf, "error_page %s /clofix-waf-%s.html;\n", status, status)
-		fmt.Fprintf(&conf, "location = /clofix-waf-%s.html {\n  root /var/www/clofix-html;\n  internal;\n  default_type text/html;\n  charset utf-8;\n  access_log off;\n}\n", status)
+		// modsecurity off is required: otherwise the internal error_page redirect is
+		// re-inspected and nginx falls back to the stock 403 body.
+		fmt.Fprintf(&conf, "location = /clofix-waf-%s.html {\n  modsecurity off;\n  root /var/www/clofix-html;\n  internal;\n  default_type text/html;\n  charset utf-8;\n  access_log off;\n}\n", status)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "clofix-error-pages.conf"), []byte(conf.String()), 0o640); err != nil {
 		return "", err
@@ -1291,6 +1293,10 @@ f=/etc/nginx/conf.d/default.conf
 [ -f "$f" ] || exit 0
 if ! grep -q 'snippets/clofix-error-pages.conf' "$f"; then
   sed -i 's/server {/server {\n    include \/etc\/nginx\/snippets\/clofix-error-pages.conf;/' "$f"
+fi
+# Upstream 403/404/5xx should also use CloFix error pages (ModSecurity denials already do).
+if ! grep -q 'proxy_intercept_errors' "$f"; then
+  sed -i 's/location \/ {/location \/ {\n        proxy_intercept_errors on;/' "$f"
 fi
 nginx -t
 nginx -s reload
@@ -1571,10 +1577,18 @@ func (m *Manager) wafUpdate(ctx context.Context, op dock.Operation) (string, err
 	} else {
 		logs.WriteString("applied custom WAF error pages\n")
 	}
-	// Restart so CRS rule overrides are reloaded.
+	// Restart so CRS rule overrides are reloaded. If the gateway was removed
+	// (worker recreate / docker prune), recreate it for VPS edge mode.
 	out, err := m.runOn(ctx, host, "restart", proxy)
 	logs.WriteString(out)
 	if err != nil {
+		msg := strings.ToLower(err.Error() + " " + out)
+		if op.WAFMode == "vps" && (strings.Contains(msg, "no such container") || strings.Contains(msg, "no such object")) {
+			logs.WriteString("\nproxy missing - recreating VPS WAF gateway\n")
+			more, recreateErr := m.wafEnableVPS(ctx, op)
+			logs.WriteString(more)
+			return logs.String(), recreateErr
+		}
 		return logs.String(), err
 	}
 	time.Sleep(2 * time.Second)
@@ -1618,7 +1632,7 @@ func (m *Manager) runOn(ctx context.Context, dockerHost string, args ...string) 
 
 // wafEnableVPS puts OWASP CRS in front of a FileVPS HTTP publish (gateway).
 // The proxy shares the worker container network namespace (product Docker) so it can
-// bind the published host port and reach the guest on cfbr0 — no guest install.
+// bind the published host port and reach the guest on cfbr0 - no guest install.
 func (m *Manager) wafEnableVPS(ctx context.Context, op dock.Operation) (string, error) {
 	if op.WAFTargetID == "" || op.WAFBackend == "" || len(op.WAFPorts) == 0 {
 		return "", fmt.Errorf("vps WAF requires target, backend, and host port")
@@ -1644,7 +1658,7 @@ func (m *Manager) wafEnableVPS(ctx context.Context, op dock.Operation) (string, 
 		return "", fmt.Errorf("invalid WAF listen port")
 	}
 	// Overrides path is on the worker FS; product Docker on Desktop may not see it.
-	// Prefer embedding policy via a named volume under state when path is not shareable —
+	// Prefer embedding policy via a named volume under state when path is not shareable -
 	// for lab the worker state dir is not mounted into Desktop containers, so skip bind
 	// when the path is not visible to the product daemon (best-effort).
 	args := []string{"run", "-d",

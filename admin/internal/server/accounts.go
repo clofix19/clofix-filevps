@@ -104,7 +104,7 @@ func (s *Server) createAccountUser(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, "could not create user")
 		return
 	}
-	s.Store.Audit(p.Name, "account.create", acc.ID, userKind)
+	s.audit(r, "account.create", acc.ID, userKind, nil)
 	writeJSON(w, 200, map[string]any{"account": acc, "user": publicUser(user)})
 }
 
@@ -194,7 +194,7 @@ func (s *Server) updateAccountUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	s.Store.Audit(p.Name, "account.update", acc.ID, acc.Kind)
+	s.audit(r, "account.update", acc.ID, acc.Kind, nil)
 	writeJSON(w, 200, map[string]any{"account": acc, "user": publicUser(user)})
 }
 
@@ -245,7 +245,7 @@ func (s *Server) deleteAccountUser(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not delete account")
 		return
 	}
-	s.Store.Audit(p.Name, "account.delete", id, acc.Kind)
+	s.audit(r, "account.delete", id, acc.Kind, nil)
 	writeJSON(w, 200, map[string]any{"deleted": true, "id": id})
 }
 
@@ -314,7 +314,7 @@ func (s *Server) setAccountSuspended(w http.ResponseWriter, r *http.Request, sus
 			return
 		}
 		s.suspendAccountUsers(acc.ID)
-		s.Store.Audit(p.Name, "account.suspend", acc.ID, acc.Kind)
+		s.audit(r, "account.suspend", acc.ID, acc.Kind, nil)
 		writeJSON(w, 200, map[string]any{"id": acc.ID, "status": "suspended", "cascaded_iam": true})
 		return
 	}
@@ -328,7 +328,7 @@ func (s *Server) setAccountSuspended(w http.ResponseWriter, r *http.Request, sus
 		user.Status = "active"
 		_ = s.Store.SaveIAMUser(user)
 	}
-	s.Store.Audit(p.Name, "account.resume", acc.ID, acc.Kind)
+	s.audit(r, "account.resume", acc.ID, acc.Kind, nil)
 	writeJSON(w, 200, map[string]any{"id": acc.ID, "status": "active", "note": "IAM users remain inactive until re-enabled"})
 }
 
@@ -407,7 +407,7 @@ func (s *Server) stopAccountServices(w http.ResponseWriter, r *http.Request) {
 		_ = s.docker.save()
 		s.docker.mu.Unlock()
 	}
-	s.Store.Audit(p.Name, "account.stop-services", id, "billing")
+	s.audit(r, "account.stop-services", id, "billing", nil)
 	writeJSON(w, 200, map[string]any{"id": id, "stopped": stopped})
 }
 

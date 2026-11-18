@@ -1,4 +1,4 @@
-# CloFix Cloud — Client Book
+# CloFix Cloud - Client Book
 
 A practical guide for partners, root clients and IAM users: what CloFix Cloud is, every service in the console, why it is faster than a classic virtual machine, how FileVPS security works, and how storage, DNS, databases and billing work.
 
@@ -12,19 +12,19 @@ A practical guide for partners, root clients and IAM users: what CloFix Cloud is
 
 CloFix Cloud একটি **full cloud console**: FileVPS, library apps, databases, load balancer, DNS, firewall, IAM, billing, আর **CKS** (EKS-style Kubernetes)।
 
-FileVPS সাধারণ KVM/QEMU VM নয়। এটা Linux **namespace + cgroup v2 + OverlayFS** — একই worker kernel share করে, তাই:
+FileVPS সাধারণ KVM/QEMU VM নয়। এটা Linux **namespace + cgroup v2 + OverlayFS** - একই worker kernel share করে, তাই:
 
 - নতুন VPS প্রায় **২ সেকেন্ডের** মধ্যে ready
 - Create median **৩৮ ms**
 - Idle host RAM প্রতি VPS প্রায় **১.৬ MB**
 - ১০০টা networked VPS একই worker-এ উঠেছে
-- Overlay base OS share — disk খরচ খুব কম
+- Overlay base OS share - disk খরচ খুব কম
 
-Traditional cloud VM সাধারণত boot করতে **১৫–৬০ সেকেন্ড** লাগে এবং প্রতি VM-এ **১০০–৫০০+ MB** hypervisor overhead থাকে। CloFix তাই boot ও density-তে অনেক দ্রুত। এটা **hardware isolation নয়** — kernel share হয়; Isolation namespaces, seccomp, cgroup আর Protection Mode দিয়ে হয়।
+Traditional cloud VM সাধারণত boot করতে **১৫–৬০ সেকেন্ড** লাগে এবং প্রতি VM-এ **১০০–৫০০+ MB** hypervisor overhead থাকে। CloFix তাই boot ও density-তে অনেক দ্রুত। এটা **hardware isolation নয়** - kernel share হয়; Isolation namespaces, seccomp, cgroup আর Protection Mode দিয়ে হয়।
 
-**VPS security (ক্লায়েন্ট কন্ট্রোল):** নতুন FileVPS-এ Protection Mode ডিফল্ট **on** (root read-only)। SSH key/password, SSH Login Block, SSH Key-Only, Delete Protection, **Security Modes** (Standard / Hardened / Lockdown / Maintenance / Web Block), Network Quarantine, **WAF** (`/waf` — worker-shared OWASP CRS edge + binding; FileVPS/Docker), port forward রিভিউ, আর Firewall-এ CIDR allow/deny। Protection Mode HTTP attack block করে না — SQLi/RCE-এর জন্য WAF binding লাগে। এক VPS থেকে অন্য VPS-এ SSH/TCP ডিফল্টে **block**। IAM / Users দিয়ে partner–client অ্যাকাউন্ট ম্যানেজ।
+**VPS security (ক্লায়েন্ট কন্ট্রোল):** নতুন FileVPS-এ Protection Mode ডিফল্ট **on** (root read-only)। SSH key/password, SSH Login Block, SSH Key-Only, Delete Protection, **Security Modes** (Standard / Hardened / Lockdown / Maintenance / Web Block), Network Quarantine, **WAF** (`/waf` - worker-shared OWASP CRS edge + binding; FileVPS/Docker), port forward রিভিউ, আর Firewall-এ CIDR allow/deny। Protection Mode HTTP attack block করে না - SQLi/RCE-এর জন্য WAF binding লাগে। এক VPS থেকে অন্য VPS-এ SSH/TCP ডিফল্টে **block**। IAM / Users দিয়ে partner–client অ্যাকাউন্ট ম্যানেজ।
 
-**Storage ও DNS:** Volume = এক worker-এ ১:১ disk। EFS = অনেক VPS/worker-এ shared web root (CloFix S3 prefix)। S3 = object bucket + VPS mount। Backup = বন্ধ VPS-এর writable layer; same worker-এ নতুন VPS। DB service = MySQL / PostgreSQL / MongoDB / Redis, TLS, encrypted backup। DNS = `clofix.internal` zone — VPS, LB, CKS Service/Ingress, DB, app auto record।
+**Storage ও DNS:** Volume = এক worker-এ ১:১ disk। EFS = অনেক VPS/worker-এ shared web root (CloFix S3 prefix)। S3 = object bucket + VPS mount। Backup = বন্ধ VPS-এর writable layer; same worker-এ নতুন VPS। DB service = MySQL / PostgreSQL / MongoDB / Redis, TLS, encrypted backup। DNS = `clofix.internal` zone - VPS, LB, CKS Service/Ingress, DB, app auto record।
 
 CKS হলো dedicated worker-এ kubeadm cluster (EKS-এর মতো console)। FileVPS guest-এ kubelet চলে না।
 
@@ -77,7 +77,7 @@ FileVPS guests are **OS-level isolated Linux environments**. They share the work
 | **Partner** | The client accounts they manage, plus billing for those clients |
 | **CloFix admin** | Platform: workers, catalog pricing, licenses, all accounts |
 
-Register creates a root client account. Partners create clients. IAM lives under one account ID — Root and IAM users of the same account share that ID.
+Register creates a root client account. Partners create clients. IAM lives under one account ID - Root and IAM users of the same account share that ID.
 
 ---
 
@@ -113,7 +113,7 @@ CloFix FileVPS
   Create: ~38 ms          Ready: ~1.7 s     Idle host RAM: ~1.6 MB per VPS
 ```
 
-FileVPS **skips a second kernel**. That is why create, boot and idle RAM beat a hardware VM. It is the same class of idea as a system container (LXC/Incus), with CloFix’s own engine, scheduler, console and billing — not a generic LXC panel.
+FileVPS **skips a second kernel**. That is why create, boot and idle RAM beat a hardware VM. It is the same class of idea as a system container (LXC/Incus), with CloFix’s own engine, scheduler, console and billing - not a generic LXC panel.
 
 ### 4.2 Measured FileVPS numbers
 
@@ -128,7 +128,7 @@ Collected 1 November 2026 on the CloFix FileVPS engine (Ubuntu 24.04 bundled roo
 | Host processes per VPS | **1** |
 | Disk after create / running | **~0.1 MB** extra (shared base OS) |
 | Apparent rootfs vs real disk (share ratio) | **~2,335×** |
-| 100 networked VPS + SSH | **PASS** — 459 s wall, **~1.60 MB** host RAM each |
+| 100 networked VPS + SSH | **PASS** - 459 s wall, **~1.60 MB** host RAM each |
 | Guest-to-guest SSH on the bridge | **Blocked** (isolated) |
 | 25-guest Nginx load | **14,213 req/s**, p95 **2.8 ms** |
 | CPU quota under 0.2 core | Throttles as designed |
@@ -176,7 +176,7 @@ Open the console search box. This is the live product map.
 
 | Group | Pages |
 |---|---|
-| Overview | Dashboard — VPS/worker counts, CPU/RAM/disk/swap, guest and host network charts |
+| Overview | Dashboard - VPS/worker counts, CPU/RAM/disk/swap, guest and host network charts |
 | Compute | FileVPS, Library, Jobs & Functions, **Docker**, **CKS** |
 | Storage | Volumes, EFS, Object Storage (S3), Backups, Databases |
 | Networking | Load Balancers, VPC, DNS Service, Health Checks, Firewall |
@@ -205,7 +205,7 @@ Linux guests on enrolled workers.
 
 ### 6.2 Library (Quick Apps + VPS software)
 
-**Quick Apps** deploy a managed sandbox — no client VPS and no SSH box:
+**Quick Apps** deploy a managed sandbox - no client VPS and no SSH box:
 
 - Adminer, Jenkins
 - ZIP web: static HTML, PHP, Node.js, Next.js, WordPress
@@ -226,7 +226,7 @@ Docker is a separate Compute product (`/docker`). Containers run on the **worker
 
 **Backup & Restore** (`/docker#docker-backups`): create a worker-local archive of a **managed Docker volume**, restore into that volume, **Redeploy** (restore then recreate containers/apps that mount it), or **Delete** the archive. Distinct from FileVPS `/backups` (writable root snapshots). See [docs/docker.md](docs/docker.md) for APIs and production limits (no live migration, no fake “secure” without a configured scanner).
 
-### 6.4 CKS — CloFix Kubernetes Service (EKS-style)
+### 6.4 CKS - CloFix Kubernetes Service (EKS-style)
 
 CKS is the Kubernetes product in the console (`/kubernetes`, also `/cks`).
 
@@ -250,7 +250,7 @@ CKS is the Kubernetes product in the console (`/kubernetes`, also `/cks`).
 - FileVPS guests **cannot** run kubelet (shared kernel, seccomp, no cgroup delegation). `infrastructure_mode=filevps` is rejected.
 - CKS nodes are **dedicated worker machines**, not FileVPS.
 - The Kubernetes API stays on the worker. CloFix does **not** publish `6443` on the public internet.
-- `production_ready` stays **false** until live kubeadm HA is opted in on a real kubeadm host. Local Compose uses a **lab executor** (`CLOFIX_KUBERNETES_FAKE=1`) so the console can be demonstrated; that is not production Kubernetes. Do not point the Compose worker at public DNS only (`8.8.8.8`) — that breaks Docker service discovery (`admin`) and stalls heartbeats / CKS readiness.
+- `production_ready` stays **false** until live kubeadm HA is opted in on a real kubeadm host. Local Compose uses a **lab executor** (`CLOFIX_KUBERNETES_FAKE=1`) so the console can be demonstrated; that is not production Kubernetes. Do not point the Compose worker at public DNS only (`8.8.8.8`) - that breaks Docker service discovery (`admin`) and stalls heartbeats / CKS readiness.
 - No pod exec/terminal, no public kube-apiserver, Flannel not Cilium.
 
 Think of CKS as **“EKS-shaped ops on CloFix workers”**, not “Kubernetes inside every cheap VPS”.
@@ -267,7 +267,7 @@ Pick the right product first. They look similar in the menu; they are not interc
 | **EFS** | Many VPS (including other workers / LB members) share one web root | CloFix S3 prefix, bind-mounted on each worker | **Any worker**, many VPS |
 | **S3** | Object files, backups of objects, mount a bucket as a filesystem | CloFix worker pool **or** AWS / GCS / Azure gateway / custom | Mount with **s3fs** into a VPS |
 | **VPS backup** | Clone / recover a guest OS writable layer | Compressed archive on the **same** worker | Restore = **new** FileVPS, same worker |
-| **Database service** | Managed MySQL / PostgreSQL / MongoDB / Redis — not a package inside FileVPS | Isolated project on a database-capable worker | Connect over TLS; optional DNS name |
+| **Database service** | Managed MySQL / PostgreSQL / MongoDB / Redis - not a package inside FileVPS | Isolated project on a database-capable worker | Connect over TLS; optional DNS name |
 
 Volume, EFS and S3 mounts **must not overlap** the same guest path. A running VPS **restarts** when you attach or remount. Protection Mode keeps the guest **root** read-only; a mounted volume/EFS/S3 path stays writable.
 
@@ -294,7 +294,7 @@ If you mount an **empty** volume at `/var/www/html`, it hides the image’s web 
 
 One **named share** many VPS can mount, including backends on **other workers**. Files live on **CloFix S3**; each worker mounts the prefix once and bind-mounts it into attached guests.
 
-Typical pattern: load-balanced website. Attach the same share to every member at `/var/www/html`. Creating a load balancer does **not** create EFS automatically — pick an existing share on the LB form (EFS share + guest path). Changing the path remounts existing and new members.
+Typical pattern: load-balanced website. Attach the same share to every member at `/var/www/html`. Creating a load balancer does **not** create EFS automatically - pick an existing share on the LB form (EFS share + guest path). Changing the path remounts existing and new members.
 
 | Client action | What happens |
 |---|---|
@@ -312,8 +312,8 @@ Typical pattern: load-balanced website. Attach the same share to every member at
 
 Two kinds of connection:
 
-1. **CloFix S3 (default shared pool)** — each enrolled Linux worker contributes `/var/lib/clofix-filevps/s3-volume`. UI shows online storage workers, combined backing disk, and free capacity (SeaweedFS keeps ~5% free).
-2. **External S3** — Amazon S3, GCS S3 interoperability, Azure S3-compatible gateway, or any custom endpoint. Credentials are **encrypted at rest and never returned** to the browser.
+1. **CloFix S3 (default shared pool)** - each enrolled Linux worker contributes `/var/lib/clofix-filevps/s3-volume`. UI shows online storage workers, combined backing disk, and free capacity (SeaweedFS keeps ~5% free).
+2. **External S3** - Amazon S3, GCS S3 interoperability, Azure S3-compatible gateway, or any custom endpoint. Credentials are **encrypted at rest and never returned** to the browser.
 
 | Client action | What happens |
 |---|---|
@@ -327,7 +327,7 @@ Two kinds of connection:
 
 - Pool placement `000` = **one copy**. A worker disk failure can lose objects on that worker.
 - Capacity is backing filesystem size, not a reserved quota.
-- Local Compose S3 gateway is **loopback-only**. Production needs TLS and private networking (master `9333`/`19333`, volume `8080`/`18080` — do not publish those cluster ports).
+- Local Compose S3 gateway is **loopback-only**. Production needs TLS and private networking (master `9333`/`19333`, volume `8080`/`18080` - do not publish those cluster ports).
 - Docker Desktop on macOS is not a production storage node.
 
 ### 7.4 VPS backups (`/backups`)
@@ -362,7 +362,7 @@ Console: instances, logical databases, users, **encrypted** backups (central + S
 
 Runtime (operator-enabled workers only): dedicated project containers, private net, CPU/RAM/PID limits, preallocated ext4, encrypted admin credentials, ports **47000–51999**, max **128** connections per project. Customer cannot pick arbitrary images. Controller never gets a Docker socket.
 
-**Backup/restore:** AES-256-GCM streams. Restore to an existing destination needs a fresh **safety backup** (< 10 minutes, matching checksum). Full replace / selected-table cutover can be destructive and is **not** atomic rollback — recover from the safety backup if cutover fails. Engine version prefixes must match. Redis has no backup.
+**Backup/restore:** AES-256-GCM streams. Restore to an existing destination needs a fresh **safety backup** (< 10 minutes, matching checksum). Full replace / selected-table cutover can be destructive and is **not** atomic rollback - recover from the safety backup if cutover fails. Engine version prefixes must match. Redis has no backup.
 
 **Benefits:** isolated engine, TLS, IAM, encrypted backups, schedules, no SSH into a DB VPS.
 
@@ -399,8 +399,8 @@ Controller zone (default **`clofix.internal`**). This is CloFix DNS, not a publi
 
 ### 8.2 Load balancers
 
-- **ALB** — HTTP/HTTPS, path `/lb/<name>/` or a custom domain pointed at the controller
-- **NLB** — TCP, unique IP from Settings → NLB pool
+- **ALB** - HTTP/HTTPS, path `/lb/<name>/` or a custom domain pointed at the controller
+- **NLB** - TCP, unique IP from Settings → NLB pool
 - Owns backend FileVPS restored from a **ready VPS backup**; scales by health, CPU, optional hits
 - Optional **EFS share** auto-mounted on every member (default `/var/www/html`)
 - Algorithms: round robin, least connections, least response time, IP hash, URI hash, random, power of two
@@ -417,8 +417,8 @@ Controller zone (default **`clofix.internal`**). This is CloFix DNS, not a publi
 
 CloFix security has two layers clients should treat separately:
 
-1. **Engine isolation** — what the FileVPS runtime always does (namespaces, seccomp, cgroup, isolated bridge).
-2. **VPS controls** — what you turn on per guest in **Security Center**, **VPS Details**, and **Firewall**.
+1. **Engine isolation** - what the FileVPS runtime always does (namespaces, seccomp, cgroup, isolated bridge).
+2. **VPS controls** - what you turn on per guest in **Security Center**, **VPS Details**, and **Firewall**.
 
 Open **Security Center** (`/security`) for the fleet hub: transparent global score, findings ledger, audit trail (`GET /api/audit`), alerts summary, Security Modes (dry-run / apply), Network Quarantine, detection/FIM, DB/CKS panels, AutoPilot/incidents/compliance export, plus Protection Mode / SSH / Delete tables. Manage HTTP WAF on **WAF** (`/waf`). Open **VPS Details → Security** for per-guest switches, mode cards and Quarantine.
 
@@ -462,9 +462,9 @@ FileVPS is **OS-level isolation**, not a hypervisor. Guests share the worker ker
 | Devices | No `/dev/mem`, `/dev/kmem`, `/dev/port` or block devices; `mknod` of block devices denied |
 | OverlayFS | Shared read-only Ubuntu base; each VPS has its own writable layer |
 | Network | Private `10.231.0.0/16` veth; each veth is **bridge-isolated**; nftables default-drop forward |
-| Resources | CPU, RAM, swap and `pids.max` enforced per VPS — one guest cannot starve the host unbounded |
+| Resources | CPU, RAM, swap and `pids.max` enforced per VPS - one guest cannot starve the host unbounded |
 
-**Measured isolation (1 Nov 2026 FileVPS audit):** sibling VPS files and processes are invisible; inter-VPS TCP blocked; `/proc`/`sys` sensitive paths not writable; `dmesg` not readable; host runtime dirs not visible; Protection Mode `/etc` is EROFS. Production workers should keep user namespaces **on**. Local Compose may run `CLOFIX_USER_NS=false` for Docker Desktop — that is lab, not the production posture.
+**Measured isolation (1 Nov 2026 FileVPS audit):** sibling VPS files and processes are invisible; inter-VPS TCP blocked; `/proc`/`sys` sensitive paths not writable; `dmesg` not readable; host runtime dirs not visible; Protection Mode `/etc` is EROFS. Production workers should keep user namespaces **on**. Local Compose may run `CLOFIX_USER_NS=false` for Docker Desktop - that is lab, not the production posture.
 
 **Not claimed:** per-guest AppArmor/SELinux profiles are not applied. A host **kernel** bug can affect every FileVPS on that worker. Patch the worker kernel and every guest kernel is patched. This is not KVM hardware isolation.
 
@@ -485,36 +485,36 @@ These live on **VPS Details → Security** (`#detail-security`) and on **Securit
 
 #### Security Modes (per VPS + fleet)
 
-**Security Modes** are named templates that apply several live controls together (Enable / Disable on the VPS card; dry-run / apply on Security Center → Modes). Quarantine is a separate button — not a mode card. Database Protection lives under Databases, not here.
+**Security Modes** are named templates that apply several live controls together (Enable / Disable on the VPS card; dry-run / apply on Security Center → Modes). Quarantine is a separate button - not a mode card. Database Protection lives under Databases, not here.
 
 | Mode | Live controls applied | Notes |
 |---|---|---|
 | **Standard** | Protection on; SSH allowed; delete unlocked | Everyday baseline |
-| **Hardened** | Protection on; Delete Protection on; SSH allowed | Firewall CIDR / WAF marked planned — bind WAF on `/waf` and set CIDRs yourself |
+| **Hardened** | Protection on; Delete Protection on; SSH allowed | Firewall CIDR / WAF marked planned - bind WAF on `/waf` and set CIDRs yourself |
 | **Lockdown** | Protection on; Delete Protection on; SSH Login Block on | Incident lock without full Network Quarantine |
 | **Maintenance** | Protection **off**; SSH allowed | Change window for packages / WAF install |
 | **Web Block** | Protection on | Reminds you to create a **WAF binding** (`/waf`) for HTTP SQLi/XSS/RCE |
 
 Matching mode is highlighted on Details → Security. Modes do not replace Firewall CIDRs or `/waf` rule toggles.
 
-**Security Center posture cards** tell you how many VPS have Protection Mode off, SSH blocked, delete protection, missing WAF bindings, and extra forwards — a daily hygiene check alongside the global score.
+**Security Center posture cards** tell you how many VPS have Protection Mode off, SSH blocked, delete protection, missing WAF bindings, and extra forwards - a daily hygiene check alongside the global score.
 
 ### 9.3 OWASP CRS WAF (edge HTTP firewall)
 
-**Console:** **Security → WAF** (`/waf`). Each enrolled worker prepares a shared OWASP CRS engine once (CRS/ModSecurity image + `clofix-waf` network). You attach targets with **bindings** — no per-target engine reinstall and **no install inside the FileVPS guest**.
+**Console:** **Security → WAF** (`/waf`). Each enrolled worker prepares a shared OWASP CRS engine once (CRS/ModSecurity image + `clofix-waf` network). You attach targets with **bindings** - no per-target engine reinstall and **no install inside the FileVPS guest**.
 
 | Page | What you do |
 |---|---|
 | `/waf#waf-engines` | Worker engine readiness / errors |
 | `/waf#waf-bindings` | Create, open, activate/deactivate, delete bindings (FileVPS, Docker app, Docker container) |
-| `/waf/bindings/{id}` | Binding detail — Overview KPIs + charts, Traffic, Rules, Error pages |
+| `/waf/bindings/{id}` | Binding detail - Overview KPIs + charts, Traffic, Rules, Error pages |
 
 **Binding detail** (`/waf/bindings/{id}`):
 
-- **Overview** — hits, blocks, attacks, unique IPs (sparklines + traffic / IP charts). **Refresh stats** pulls ModSecurity audit from the edge (`waf-stats`) without jumping page scroll.
-- **Traffic** — top IPs, top URIs, attack types, recent deny events.
-- **Rules** — CRS category toggles for that binding (protocol/scanners, SQLi/XSS/RCE/LFI, languages, leakage, …).
-- **Error pages** — custom HTML for 403 / 404 / 406 / 429 / 500 on the edge proxy.
+- **Overview** - hits, blocks, attacks, unique IPs (sparklines + traffic / IP charts). **Refresh stats** pulls ModSecurity audit from the edge (`waf-stats`) without jumping page scroll.
+- **Traffic** - top IPs, top URIs, attack types, recent deny events.
+- **Rules** - CRS category toggles for that binding (protocol/scanners, SQLi/XSS/RCE/LFI, languages, leakage, …).
+- **Error pages** - custom HTML for 403 / 404 / 406 / 429 / 500 on the edge proxy.
 
 Toggle groups in the console (same CRS coverage as before):
 
@@ -540,11 +540,11 @@ Toggle groups in the console (same CRS coverage as before):
 | Session fixation | Session fixation |
 | Response data leakage | Generic + SQL / Java / PHP / IIS leakage (CRS 951–954xxx) |
 
-**FileVPS:** the worker gateway sits in front of guest HTTP/HTTPS. Legacy Library catalog `owasp-waf` (guest Nginx + ModSecurity) is **not** used for new edge bindings — uninstall a leftover guest install before activating edge WAF on that VPS.
+**FileVPS:** the worker gateway sits in front of guest HTTP/HTTPS. Legacy Library catalog `owasp-waf` (guest Nginx + ModSecurity) is **not** used for new edge bindings - uninstall a leftover guest install before activating edge WAF on that VPS.
 
 **Docker:** bind an application or container; the edge proxy shares the app network namespace. Docker Security still links here for OWASP CRS; managed engine + bindings live on `/waf`.
 
-**Scope (important):** the WAF inspects **HTTP/HTTPS through the bound edge path only**. It does **not** protect SSH, database ports, other guest ports, app authorization logic, or traffic that bypasses the gateway (including a custom port forward straight to the app). CRS can block legitimate requests — review after enabling groups.
+**Scope (important):** the WAF inspects **HTTP/HTTPS through the bound edge path only**. It does **not** protect SSH, database ports, other guest ports, app authorization logic, or traffic that bypasses the gateway (including a custom port forward straight to the app). CRS can block legitimate requests - review after enabling groups.
 
 **Protection Mode ≠ WAF.** Protection Mode locks the guest disk (read-only root). WAF inspects HTTP bodies/headers on the edge. Use both for a public website.
 
@@ -574,7 +574,7 @@ Rules: allow or deny, TCP / UDP / ICMP / any, optional port or range, **IPv4 CID
 | **Library catalog installs** | Fixed service IDs (Nginx, WAF, WordPress, …), not arbitrary shell as package input |
 | **Jobs & Functions** | Unprivileged UID, fresh overlay, private net, no extra VPS |
 | **Managed apps** | UID/GID 65534, read-only template, seccomp, private net, persistent `/data` only |
-| **CKS API** | Kubernetes API stays on the worker — CloFix does **not** publish `6443` |
+| **CKS API** | Kubernetes API stays on the worker - CloFix does **not** publish `6443` |
 
 ### 9.6 Recommended VPS security posture
 
@@ -607,8 +607,8 @@ Rules: allow or deny, TCP / UDP / ICMP / any, optional port or range, **IPv4 CID
 
 **Billing & Payments:** invoices, wallets, manual payments, subscriptions, refunds, credits.
 
-- **Live resources** — VPS, CKS clusters, LBs, apps, volumes, backups, S3, EFS with USD/BDT estimate
-- **Due bill** — hourly meter every minute; a 5 or 10 minute run is billed for those minutes even if you delete the resource afterwards, until invoiced
+- **Live resources** - VPS, CKS clusters, LBs, apps, volumes, backups, S3, EFS with USD/BDT estimate
+- **Due bill** - hourly meter every minute; a 5 or 10 minute run is billed for those minutes even if you delete the resource afterwards, until invoiced
 - Stopped VPS/database: **storage only**
 - Invoice PDF: CloFix brand, bill-to, period, lines, tax, USD and BDT
 - Card charges are **not** processed in this stack; gateway secrets are stored and never returned by the API
@@ -638,7 +638,7 @@ Say this to technical buyers up front.
 
 1. Sign in to the CloFix Cloud console (admin bootstrap or **Register** for a root client).
 2. Open **FileVPS → Create FileVPS**. Keep Protection Mode on unless you must install packages.
-3. Save the PEM or password when shown — the private key is one-time.
+3. Save the PEM or password when shown - the private key is one-time.
 4. Open **VPS Details → Security**, **WAF** (`/waf`), and **Firewall**: confirm Protection Mode, Security Mode (or Quarantine if needed), WAF binding + rule groups, SSH Key-Only / Login Block, SSH CIDR, and unused port forwards.
 5. Open **Instances**. FileVPS and CKS nodes appear together; search `cks` or `eks` to filter Kubernetes nodes.
 6. Add **storage** as needed: Volume (one VPS, same worker), EFS (shared web root / LB), S3 (objects + optional s3fs mount).
@@ -660,8 +660,8 @@ Operators enroll Linux workers with a one-time token and the controller CA. Clie
 |---|---|
 | **FileVPS** | CloFix OS-level Linux guest (namespaces, cgroup v2, OverlayFS) |
 | **Worker** | Enrolled Linux host that runs FileVPS, apps, DB, Docker Engine, CKS |
-| **Docker Engine** | Host dockerd product for containers/Compose — not Library Quick Apps, not DB DinD |
-| **CKS** | CloFix Kubernetes Service — EKS-style clusters on dedicated workers |
+| **Docker Engine** | Host dockerd product for containers/Compose - not Library Quick Apps, not DB DinD |
+| **CKS** | CloFix Kubernetes Service - EKS-style clusters on dedicated workers |
 | **VPS group** | CKS node pool: kubelet nodes sized like FileVPS, not FileVPS guests |
 | **Protection Mode** | Read-only guest root filesystem (default on); not an HTTP WAF |
 | **SSH Login Block** | Blocks new SSH logins to that VPS |

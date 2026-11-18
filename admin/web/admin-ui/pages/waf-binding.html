@@ -7,7 +7,7 @@
       <h2 id="wafb-title">Binding</h2>
       <p id="wafb-meta" class="muted"></p>
     </div>
-    <span class="badge" id="wafb-state">—</span>
+    <span class="badge" id="wafb-state">-</span>
   </div>
   <p class="message" id="wafb-message" role="status" aria-live="polite"></p>
   <div class="settings-layout">
@@ -24,22 +24,86 @@
           <button class="secondary" type="button" id="wafb-stats-refresh">Refresh stats</button>
         </div>
         <div class="waf-stats-grid" id="wafb-stats-kpis" aria-live="polite"></div>
+        <div class="waf-insight-grid" id="wafb-insights" aria-live="polite">
+          <article class="waf-insight" data-tone="mix">
+            <div class="waf-insight-head">
+              <div class="waf-insight-title">Traffic mix</div>
+              <div class="waf-insight-sub">Share of clean vs blocked vs attack traffic</div>
+            </div>
+            <div class="waf-insight-body">
+              <svg id="wafb-pie-mix" class="waf-donut" viewBox="0 0 120 120" role="img" aria-label="Traffic mix pie"></svg>
+              <ul class="waf-insight-legend" id="wafb-pie-mix-legend"></ul>
+            </div>
+          </article>
+          <article class="waf-insight" data-tone="amber">
+            <div class="waf-insight-head">
+              <div class="waf-insight-title">Block rate</div>
+              <div class="waf-insight-sub">Blocked requests ÷ hits</div>
+            </div>
+            <div class="waf-insight-body waf-insight-rate">
+              <svg class="waf-donut" viewBox="0 0 120 120" role="img" aria-label="Block rate">
+                <circle class="waf-donut-track" cx="60" cy="60" r="44"></circle>
+                <circle class="waf-donut-arc" id="wafb-pie-block-arc" cx="60" cy="60" r="44" pathLength="100"></circle>
+                <text class="waf-donut-num" id="wafb-pie-block-num" x="60" y="58" text-anchor="middle">-</text>
+                <text class="waf-donut-caption" x="60" y="74" text-anchor="middle">blocked</text>
+              </svg>
+              <div class="waf-insight-facts" id="wafb-pie-block-facts"></div>
+            </div>
+          </article>
+          <article class="waf-insight" data-tone="rose">
+            <div class="waf-insight-head">
+              <div class="waf-insight-title">Attack rate</div>
+              <div class="waf-insight-sub">Attack-tagged events ÷ hits</div>
+            </div>
+            <div class="waf-insight-body waf-insight-rate">
+              <svg class="waf-donut" viewBox="0 0 120 120" role="img" aria-label="Attack rate">
+                <circle class="waf-donut-track" cx="60" cy="60" r="44"></circle>
+                <circle class="waf-donut-arc" id="wafb-pie-attack-arc" cx="60" cy="60" r="44" pathLength="100"></circle>
+                <text class="waf-donut-num" id="wafb-pie-attack-num" x="60" y="58" text-anchor="middle">-</text>
+                <text class="waf-donut-caption" x="60" y="74" text-anchor="middle">attacks</text>
+              </svg>
+              <div class="waf-insight-facts" id="wafb-pie-attack-facts"></div>
+            </div>
+          </article>
+          <article class="waf-insight" data-tone="blue">
+            <div class="waf-insight-head">
+              <div class="waf-insight-title">Snapshot numbers</div>
+              <div class="waf-insight-sub">Latest edge sample</div>
+            </div>
+            <dl class="waf-insight-numbers" id="wafb-insight-numbers">
+              <div><dt>Sampled</dt><dd id="wafb-num-sampled">-</dd></div>
+              <div><dt>Clean hits</dt><dd id="wafb-num-clean">-</dd></div>
+              <div><dt>Blocks</dt><dd id="wafb-num-blocks">-</dd></div>
+              <div><dt>Attacks</dt><dd id="wafb-num-attacks">-</dd></div>
+              <div><dt>Unique IPs</dt><dd id="wafb-num-ips">-</dd></div>
+              <div><dt>Proxy</dt><dd id="wafb-num-proxy">-</dd></div>
+            </dl>
+          </article>
+        </div>
         <div class="chart-grid waf-chart-grid">
           <article class="panel chart-panel">
             <div class="chart-head">
               <div><div class="chart-title">Traffic</div><div class="chart-subtitle">Hits, blocks and attacks · sampled in this browser</div></div>
-              <div class="chart-tools"><div class="chart-current" id="chart-waf-traffic-current">—</div></div>
+              <div class="chart-tools"><div class="chart-current" id="chart-waf-traffic-current">-</div></div>
             </div>
             <svg id="chart-waf-traffic" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="WAF traffic over time"></svg>
-            <div class="chart-legend"><span><i class="legend-dot"></i>Hits</span><span><i class="legend-dot amber"></i>Blocks</span><span><i class="legend-dot blue"></i>Attacks</span></div>
+            <div class="chart-legend"><span><i class="legend-dot"></i>Hits</span><span><i class="legend-dot amber"></i>Blocks</span><span><i class="legend-dot rose"></i>Attacks</span></div>
           </article>
           <article class="panel chart-panel">
             <div class="chart-head">
               <div><div class="chart-title">Unique IPs</div><div class="chart-subtitle">Distinct client IPs in each sample</div></div>
-              <div class="chart-tools"><div class="chart-current" id="chart-waf-ips-current">—</div></div>
+              <div class="chart-tools"><div class="chart-current" id="chart-waf-ips-current">-</div></div>
             </div>
             <svg id="chart-waf-ips" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="WAF unique IPs over time"></svg>
             <div class="chart-legend"><span><i class="legend-dot blue"></i>Unique IPs</span></div>
+          </article>
+          <article class="panel chart-panel">
+            <div class="chart-head">
+              <div><div class="chart-title">Block &amp; attack rate</div><div class="chart-subtitle">Percent of hits over time</div></div>
+              <div class="chart-tools"><div class="chart-current" id="chart-waf-rates-current">-</div></div>
+            </div>
+            <svg id="chart-waf-rates" class="chart-svg" viewBox="0 0 640 220" role="img" aria-label="WAF block and attack rates"></svg>
+            <div class="chart-legend"><span><i class="legend-dot amber"></i>Block %</span><span><i class="legend-dot rose"></i>Attack %</span></div>
           </article>
         </div>
         <div class="inline-fields" style="margin-top:12px">
@@ -49,7 +113,28 @@
         </div>
       </div>
       <div class="panel settings-section" id="wafb-traffic" data-settings-panel aria-labelledby="wafb-heading-traffic" hidden>
-        <h2 id="wafb-heading-traffic" tabindex="-1">Traffic &amp; attacks</h2>
+        <div class="section-head">
+          <div>
+            <h2 id="wafb-heading-traffic" tabindex="-1">Traffic &amp; attacks</h2>
+            <p class="muted" id="wafb-traffic-note">Filter ModSecurity events by time range.</p>
+          </div>
+        </div>
+        <div class="chart-toolbar ov-toolbar">
+          <div class="chart-ranges" role="group" aria-label="Traffic time range">
+            <button type="button" data-waf-range="1h" aria-pressed="true">1h</button>
+            <button type="button" data-waf-range="6h" aria-pressed="false">6h</button>
+            <button type="button" data-waf-range="1d" aria-pressed="false">1d</button>
+            <button type="button" data-waf-range="7d" aria-pressed="false">7d</button>
+            <button type="button" data-waf-range="30d" aria-pressed="false">30d</button>
+            <button type="button" data-waf-range="all" aria-pressed="false">All</button>
+            <button type="button" data-waf-range="custom" aria-pressed="false">Custom</button>
+          </div>
+          <div class="chart-custom" id="wafb-traffic-custom" hidden>
+            <label>From <input type="datetime-local" id="wafb-traffic-from"></label>
+            <label>To <input type="datetime-local" id="wafb-traffic-to"></label>
+            <button type="button" class="small-btn" id="wafb-traffic-apply">Apply</button>
+          </div>
+        </div>
         <div class="waf-stats-panels">
           <div><h4>Top IPs</h4><div class="table-wrap"><table id="wafb-stats-ips"></table></div></div>
           <div><h4>Top URIs</h4><div class="table-wrap"><table id="wafb-stats-uris"></table></div></div>

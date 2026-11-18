@@ -63,7 +63,7 @@ func (s *Server) createBackup(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "could not queue VPS backup")
 		return
 	}
-	s.Store.Audit("admin", "backup.create", backupID, "queued")
+	s.audit(r, "backup.create", backupID, "queued", nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"backup": info, "queued": true})
 }
 
@@ -99,7 +99,7 @@ func (s *Server) deleteBackup(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "could not queue backup deletion")
 		return
 	}
-	s.Store.Audit("admin", "backup.delete", id, "queued")
+	s.audit(r, "backup.delete", id, "queued", nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "queued": true})
 }
 
@@ -248,6 +248,6 @@ func (s *Server) migrateBackup(w http.ResponseWriter, r *http.Request) {
 	backup.State = "READY"
 	s.backups[id] = backup
 	s.usageMu.Unlock()
-	s.Store.Audit(principalFrom(r).Email, "backup.migrate", id, in.WorkerID)
+	s.audit(r, "backup.migrate", id, in.WorkerID, nil)
 	writeJSON(w, 200, map[string]any{"backup": backup, "migrated": true})
 }

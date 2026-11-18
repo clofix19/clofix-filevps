@@ -1,4 +1,4 @@
-CloFix FileVPS — local stack quick reference
+CloFix FileVPS - local stack quick reference
 ============================================
 Updated for the Docker Desktop lab on this machine.
 Credentials live in `.env` / `license-server/.env` (not copied here).
@@ -13,7 +13,7 @@ Login email:   from .env → CLOFIX_ADMIN_EMAIL
 URLs:
   http://localhost:8080/login          Sign in (MFA only if enabled; rate-limited / honeypot / origin checks)
   http://localhost:8080/register       Public client registration (rate-limited; bots tripped by honeypot)
-  http://localhost:8080/profile        My Profile (own info, MFA, allow/deny IP) — all kinds
+  http://localhost:8080/profile        My Profile (own info, MFA, allow/deny IP) - all kinds
   Footer on console + auth pages: Powered by CloFix Infotech · host · local time
   http://localhost:8080/               Dashboard (after login)
   http://localhost:8080/instances      FileVPS

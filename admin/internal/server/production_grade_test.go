@@ -29,7 +29,7 @@ func TestProductionVPSControls(t *testing.T) {
 		},
 	})
 
-	// VP01 — Protection Mode default-on for new guests
+	// VP01 - Protection Mode default-on for new guests
 	create := do(h, "POST", "/api/instances", `{"spec":{"image":{"name":"ubuntu","version":"24.04"},"ram_mb":256,"swap_mb":0,"cpu":0.5,"disk_mb":1024,"ssh_authorized_key":"ssh-ed25519 QUFB user@test"}}`, tok)
 	if create.Code != 201 {
 		t.Fatalf("VP01 create: %d %s", create.Code, create.Body.String())
@@ -50,7 +50,7 @@ func TestProductionVPSControls(t *testing.T) {
 	inst.State = proto.StateStopped
 	_ = m.SaveInstance(inst)
 
-	// VP02 — SSH key-only / login block
+	// VP02 - SSH key-only / login block
 	if w := do(h, "POST", "/api/instances/"+id+"/ssh-login", `{"enabled":true}`, tok); w.Code != 202 && w.Code != 200 {
 		t.Fatalf("VP02 ssh-login: %d %s", w.Code, w.Body.String())
 	}
@@ -58,7 +58,7 @@ func TestProductionVPSControls(t *testing.T) {
 		t.Fatalf("VP02 ssh-key-only: %d %s", w.Code, w.Body.String())
 	}
 
-	// VP03 — Delete Protection blocks destroy
+	// VP03 - Delete Protection blocks destroy
 	if w := do(h, "POST", "/api/instances/"+id+"/delete-protection", `{"enabled":true}`, tok); w.Code != 202 && w.Code != 200 {
 		t.Fatalf("VP03 enable: %d %s", w.Code, w.Body.String())
 	}
@@ -66,7 +66,7 @@ func TestProductionVPSControls(t *testing.T) {
 		t.Fatalf("VP03 delete with protection want 409 got %d %s", w.Code, w.Body.String())
 	}
 
-	// VP04 — Security modes + quarantine dry-run
+	// VP04 - Security modes + quarantine dry-run
 	modes := do(h, "GET", "/api/security/modes", "", tok)
 	if modes.Code != 200 {
 		t.Fatalf("VP04 modes: %d", modes.Code)
@@ -76,7 +76,7 @@ func TestProductionVPSControls(t *testing.T) {
 		t.Fatalf("VP04 dry-run: %d %s", dry.Code, dry.Body.String())
 	}
 
-	// VP05 — cloud published port ranges
+	// VP05 - cloud published port ranges
 	ssh := 22010
 	if !proto.ValidHostSSHPort(ssh) || proto.HostHTTPPort(ssh) != 27010 || proto.HostHTTPSPort(ssh) != 32010 {
 		t.Fatalf("VP05 map wrong http=%d https=%d", proto.HostHTTPPort(ssh), proto.HostHTTPSPort(ssh))
@@ -85,19 +85,19 @@ func TestProductionVPSControls(t *testing.T) {
 		t.Fatal("VP05 custom/database bands invalid")
 	}
 
-	// VP06 — Firewall CIDR allow on mapped ports
+	// VP06 - Firewall CIDR allow on mapped ports
 	fw := do(h, "PUT", "/api/firewall/workers/wrk-vp", `{"restrict":true,"rules":[{"action":"allow","protocol":"tcp","port":22010,"source":"10.0.0.0/8"}]}`, tok)
 	if fw.Code != 200 {
 		t.Fatalf("VP06 firewall: %d %s", fw.Code, fw.Body.String())
 	}
 
-	// VP07 — Edge WAF binding for FileVPS HTTP path
+	// VP07 - Edge WAF binding for FileVPS HTTP path
 	waf := do(h, "POST", "/api/waf/bindings", `{"name":"vps-waf","target_kind":"vps","target_id":"`+id+`","activate":false}`, tok)
 	if waf.Code != 201 && waf.Code != 202 {
 		t.Fatalf("VP07 waf bind: %d %s", waf.Code, waf.Body.String())
 	}
 
-	// VP08 — writable-layer backup only when stopped
+	// VP08 - writable-layer backup only when stopped
 	running := inst
 	running.State = proto.StateRunning
 	_ = m.SaveInstance(running)
@@ -109,13 +109,13 @@ func TestProductionVPSControls(t *testing.T) {
 		t.Fatalf("VP08 stopped backup: %d %s", w.Code, w.Body.String())
 	}
 
-	// VP09 — placement capacity / cgroup fields present on worker
+	// VP09 - placement capacity / cgroup fields present on worker
 	wk := do(h, "GET", "/api/workers", "", tok)
 	if wk.Code != 200 || !strings.Contains(wk.Body.String(), "wrk-vp") {
 		t.Fatalf("VP09 workers: %d", wk.Code)
 	}
 
-	// VP10 — cross-tenant isolation (reuse register pattern)
+	// VP10 - cross-tenant isolation (reuse register pattern)
 	regA := do(h, "POST", "/api/auth/register", `{"email":"vp-a@client.test","password":"client-password-123","account_name":"VP A"}`, "")
 	regB := do(h, "POST", "/api/auth/register", `{"email":"vp-b@client.test","password":"client-password-123","account_name":"VP B"}`, "")
 	if regA.Code != 200 || regB.Code != 200 {
@@ -134,12 +134,12 @@ func TestProductionVPSControls(t *testing.T) {
 		t.Fatal("VP10 client B must not see client A VPS")
 	}
 
-	// VP11 — volume / EFS path conflict rejection
+	// VP11 - volume / EFS path conflict rejection
 	if w := do(h, "GET", "/api/volumes/vol-missing01/archive?path=../secret", "", tok); w.Code != 400 {
 		t.Fatalf("VP11 volume path: %d", w.Code)
 	}
 
-	// VP12 — IAM security:manage mapping for hardening mutations
+	// VP12 - IAM security:manage mapping for hardening mutations
 	if permissionResource("/api/instances/"+id+"/protection") != "security" {
 		t.Fatal("VP12 protection must map to security")
 	}
@@ -158,7 +158,7 @@ func TestProductionManagedDatabase(t *testing.T) {
 	memory.UpsertWorker(worker)
 	h := s.AdminHandler()
 
-	// MDB02 — engines advertised (mysql/pg/mongo/redis)
+	// MDB02 - engines advertised (mysql/pg/mongo/redis)
 	workers := do(h, "GET", "/api/workers", "", tok)
 	body := workers.Body.String()
 	for _, eng := range []string{"mysql", "postgresql", "mongodb", "redis"} {
@@ -167,7 +167,7 @@ func TestProductionManagedDatabase(t *testing.T) {
 		}
 	}
 
-	// MDB01 + MDB03 — provision + TLS CA + no plaintext job payload
+	// MDB01 + MDB03 - provision + TLS CA + no plaintext job payload
 	response := do(h, "POST", "/api/databases/projects", `{"name":"orders-prod","spec":{"engine":"mysql","version":"8.4","ram_mb":1024,"cpu":1,"disk_mb":2048}}`, tok)
 	if response.Code != 202 {
 		t.Fatalf("MDB01 create: %d %s", response.Code, response.Body.String())
@@ -181,7 +181,7 @@ func TestProductionManagedDatabase(t *testing.T) {
 	if json.Unmarshal(response.Body.Bytes(), &created) != nil || created.JobID == "" {
 		t.Fatal("MDB01 missing project/job")
 	}
-	// MDB10 — published port band
+	// MDB10 - published port band
 	if !proto.ValidHostDatabasePort(created.Project.Spec.Port) {
 		t.Fatalf("MDB10 port out of band: %d", created.Project.Spec.Port)
 	}
@@ -204,7 +204,7 @@ func TestProductionManagedDatabase(t *testing.T) {
 	if project.State != "READY" || !strings.Contains(project.CA, "BEGIN CERTIFICATE") {
 		t.Fatalf("MDB01 not READY with CA: %+v", project)
 	}
-	// DB09 / DB11 — TLS CA download + engine version pin
+	// DB09 / DB11 - TLS CA download + engine version pin
 	ca := do(h, "GET", "/api/databases/projects/"+created.Project.Spec.ID+"/ca.pem", "", tok)
 	if ca.Code != 200 || !strings.Contains(ca.Body.String(), "BEGIN CERTIFICATE") {
 		t.Fatalf("DB09 CA: %d", ca.Code)
@@ -213,7 +213,7 @@ func TestProductionManagedDatabase(t *testing.T) {
 		t.Fatalf("DB11 version pin: %s", project.Spec.Version)
 	}
 
-	// MDB04 / DB14 — license deny without entitlement
+	// MDB04 / DB14 - license deny without entitlement
 	s2, mem2 := newSrv(t)
 	mem2.UpsertWorker(databaseWorkerFixture())
 	s2.license.Lock()
@@ -224,13 +224,13 @@ func TestProductionManagedDatabase(t *testing.T) {
 	}
 
 	pid := created.Project.Spec.ID
-	// MDB05 / DB13 — reserved user + unknown inventory
+	// MDB05 / DB13 - reserved user + unknown inventory
 	bad := do(h, "POST", "/api/databases/projects/"+pid+"/operations", `{"action":"create-user","username":"clofixadmin","password":"1234567890123456","grants":{"orders":"write"}}`, tok)
 	if bad.Code != 400 {
 		t.Fatalf("MDB05/DB13 reserved user: %d %s", bad.Code, bad.Body.String())
 	}
 
-	// MDB06 / DB12 — FAILED retry requeues once (no duplicate project id)
+	// MDB06 / DB12 - FAILED retry requeues once (no duplicate project id)
 	failID := "dbp-" + strings.Repeat("c", 32)
 	s.databases.Lock()
 	fp := databaseProjectFixture(failID)
@@ -247,7 +247,7 @@ func TestProductionManagedDatabase(t *testing.T) {
 		t.Fatalf("MDB06 retry must keep same project id: %+v", retried)
 	}
 
-	// MDB07 / DB10 — READY backup carries sha256; restore gated by safety backup
+	// MDB07 / DB10 - READY backup carries sha256; restore gated by safety backup
 	bakID := "dbb-" + strings.Repeat("d", 32)
 	s.databases.Lock()
 	s.databases.Backups[bakID] = model.Backup{
@@ -269,7 +269,7 @@ func TestProductionManagedDatabase(t *testing.T) {
 	if list.Code != 200 || !strings.Contains(list.Body.String(), bakID) || !strings.Contains(list.Body.String(), strings.Repeat("a", 64)) {
 		t.Fatalf("MDB07 sha256 surface: %d %s", list.Code, list.Body.String())
 	}
-	// DB10 — restore jobs wait on safety backup SUCCEEDED+READY (claim gate)
+	// DB10 - restore jobs wait on safety backup SUCCEEDED+READY (claim gate)
 	s.databases.Lock()
 	depJob := "dbj-" + strings.Repeat("e", 32)
 	s.databases.Jobs[depJob] = model.Job{ID: depJob, ProjectID: pid, WorkerID: "wrk-database", Action: "backup", State: "RUNNING"}
@@ -282,7 +282,7 @@ func TestProductionManagedDatabase(t *testing.T) {
 		t.Fatal("DB10 safety gate should block restore while backup incomplete")
 	}
 
-	// MDB08 — schedules / jobs inventory
+	// MDB08 - schedules / jobs inventory
 	sched := do(h, "POST", "/api/databases/schedules", `{"project_id":"`+pid+`","database":"orders","cron":"0 3 * * *","retention":7,"destination":"central","enabled":true}`, tok)
 	if sched.Code != 200 && sched.Code != 201 && sched.Code != 202 {
 		t.Fatalf("MDB08 schedule: %d %s", sched.Code, sched.Body.String())
@@ -292,7 +292,7 @@ func TestProductionManagedDatabase(t *testing.T) {
 		t.Fatalf("MDB08 inventory: %s", inv.Body.String())
 	}
 
-	// MDB09 — tenant isolation
+	// MDB09 - tenant isolation
 	regA := do(h, "POST", "/api/auth/register", `{"email":"db-a@client.test","password":"client-password-123","account_name":"DB A"}`, "")
 	regB := do(h, "POST", "/api/auth/register", `{"email":"db-b@client.test","password":"client-password-123","account_name":"DB B"}`, "")
 	if regA.Code != 200 || regB.Code != 200 {
@@ -308,7 +308,7 @@ func TestProductionManagedDatabase(t *testing.T) {
 		t.Fatal("MDB09 tenant B must not see foreign project")
 	}
 
-	// DB15 — Redis prefix isolation; no native backup claim
+	// DB15 - Redis prefix isolation; no native backup claim
 	redisID := "dbp-" + strings.Repeat("h", 32)
 	s.databases.Lock()
 	rp := databaseProjectFixture(redisID)
@@ -324,7 +324,7 @@ func TestProductionManagedDatabase(t *testing.T) {
 		t.Fatalf("DB15 redis SQL schema reject: %d", w.Code)
 	}
 
-	// DB16 — stopped DB bills storage only
+	// DB16 - stopped DB bills storage only
 	stoppedID := "dbp-" + strings.Repeat("i", 32)
 	s.databases.Lock()
 	sp := databaseProjectFixture(stoppedID)

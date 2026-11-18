@@ -12,7 +12,7 @@ FROM chrislusf/seaweedfs:4.51 AS seaweed
 FROM docker:27-cli AS dockercli
 
 # Pack rootfs with empty mountpoints (tar --exclude=./proc drops the dirs themselves).
-# Ubuntu 24.04 — root-only (strip stock ubuntu user)
+# Ubuntu 24.04 - root-only (strip stock ubuntu user)
 FROM ubuntu:24.04 AS builtin-ubuntu-2404
 RUN export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y --no-install-recommends tar openssh-server iproute2 systemd \
 
@@ -29,7 +29,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -
     && tar --numeric-owner -rf /tmp/rootfs.tar -C /opt/rootfs-mps proc sys dev run tmp \
     && gzip -f /tmp/rootfs.tar
 
-# Ubuntu 22.04 — root-only
+# Ubuntu 22.04 - root-only
 FROM ubuntu:22.04 AS builtin-ubuntu-2204
 RUN export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y --no-install-recommends tar openssh-server iproute2 systemd \
 
@@ -56,7 +56,7 @@ COPY OS/clofix-linux/1.0/host-worker ./host-worker
 RUN CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o /out/clofix ./cmd/clofix \
  && CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o /out/clofix-guard ./cmd/clofix-guard
 
-# CloFix Linux 1.0 — Ubuntu 24.04 + brand + harden + Guard (root-only)
+# CloFix Linux 1.0 - Ubuntu 24.04 + brand + harden + Guard (root-only)
 FROM ubuntu:24.04 AS builtin-clofix-linux
 COPY OS/clofix-linux/1.0 /opt/clofix-linux-1.0
 COPY --from=clofix-linux-bins /out/clofix /opt/clofix-linux-1.0/dist/clofix

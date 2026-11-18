@@ -1,4 +1,4 @@
-# CloFix Linux 1.0 — Compatibility & upgrade policy
+# CloFix Linux 1.0 - Compatibility & upgrade policy
 
 ## Package origin
 

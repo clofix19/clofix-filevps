@@ -54,14 +54,14 @@ clofix-worker fx         Guest-engine CLI: create|start|exec|delete
 
 ## Main packages
 
-- `internal/agent` — mTLS heartbeat loop and operation executor.
-- `internal/capacity` — host resource, PSI, and storage capacity collection.
-- `internal/engine/cgroups` — guest CPU, memory, swap, and PID limits and usage.
-- `internal/engine/image` — image verification, caching, and safe rootfs extraction.
-- `internal/engine/lifecycle` — guest create/start/stop/delete and recovery.
-- `internal/engine/namespaces` — namespace init, root pivot, devices, and seccomp.
-- `internal/engine/network` — bridge, veth, NAT, firewall, metadata blocking, and port mappings.
-- `pkg/scheduler` — worker capacity scoring and placement.
+- `internal/agent` - mTLS heartbeat loop and operation executor.
+- `internal/capacity` - host resource, PSI, and storage capacity collection.
+- `internal/engine/cgroups` - guest CPU, memory, swap, and PID limits and usage.
+- `internal/engine/image` - image verification, caching, and safe rootfs extraction.
+- `internal/engine/lifecycle` - guest create/start/stop/delete and recovery.
+- `internal/engine/namespaces` - namespace init, root pivot, devices, and seccomp.
+- `internal/engine/network` - bridge, veth, NAT, firewall, metadata blocking, and port mappings.
+- `pkg/scheduler` - worker capacity scoring and placement.
 
 The worker uses Linux kernel facilities directly; it does not depend on Docker, containerd, runc, or LXC to run guests. Host requirements are checked at startup; cgroup v2, namespaces, OverlayFS, and root privileges are required.
 

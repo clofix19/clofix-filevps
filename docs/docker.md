@@ -52,7 +52,7 @@ Archives live under the worker Docker product state dir (`…/docker-product/bac
 
 ## Production limitations (honest)
 
-- Shared kernel with the worker host — not a hypervisor VM
+- Shared kernel with the worker host - not a hypervisor VM
 - No automatic cross-worker live migration of containers
 - Zero-downtime requires multi-replica + routed front door; single-container restart is disruptive
 - Vulnerability scanning requires a configured scanner binary (e.g. Trivy) on the worker; the API reports unavailable when missing

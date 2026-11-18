@@ -165,7 +165,7 @@ func (s *Server) saveNLBSettings(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, e.Error())
 		return
 	}
-	s.Store.Audit("admin", "load-balancer.ip-pool", "settings", "saved")
+	s.audit(r, "load-balancer.ip-pool", "settings", "saved", nil)
 	writeJSON(w, 200, settings)
 }
 func (d *loadBalancerStore) nextIP(exclude string) string {

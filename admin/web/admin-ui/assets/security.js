@@ -5,7 +5,7 @@
  let overview=null,busy=false;
 
  function fmtAt(v){
-  if(!v)return '—';
+  if(!v)return '-';
   const d=new Date(v);
   return Number.isNaN(d.getTime())?String(v):d.toLocaleString();
  }
@@ -17,9 +17,9 @@
 
  function renderScore(){
   if(!overview)return;
-  if($('security-score-value'))$('security-score-value').textContent=String(overview.score??overview.global?.score??'—');
+  if($('security-score-value'))$('security-score-value').textContent=String(overview.score??overview.global?.score??'-');
   if($('security-score-findings-count'))$('security-score-findings-count').textContent=String((overview.findings||[]).length);
-  if($('security-score-alerts'))$('security-score-alerts').textContent=String(overview.alerts?.open_24h??'—');
+  if($('security-score-alerts'))$('security-score-alerts').textContent=String(overview.alerts?.open_24h??'-');
   const userns=$('security-score-userns');
   if(userns){
    if(!overview.posture?.user_ns_known)userns.textContent='Unknown';
@@ -40,11 +40,11 @@
   if(table){
    row(table,['Scope','Asset','Delta','Reason'],true);
    const findings=overview.findings||[];
-   if(!findings.length)row(table,['No findings — score is 100','','','']);
+   if(!findings.length)row(table,['No findings - score is 100','','','']);
    findings.forEach(f=>row(table,[f.scope,f.asset,String(f.delta),f.reason]));
   }
-  if($('security-alerts-open'))$('security-alerts-open').textContent=String(overview.alerts?.open_24h??'—');
-  if($('security-alerts-total'))$('security-alerts-total').textContent=String(overview.alerts?.total??'—');
+  if($('security-alerts-open'))$('security-alerts-open').textContent=String(overview.alerts?.open_24h??'-');
+  if($('security-alerts-total'))$('security-alerts-total').textContent=String(overview.alerts?.total??'-');
  }
 
  async function renderAlerts(){
@@ -60,13 +60,20 @@
 
  async function renderAudit(){
   const table=$('security-audit-table');if(!table)return;
-  row(table,['When','Actor','Action','Target','Result'],true);
+  row(table,['When','Who','Action','Target','Result','']],true);
   try{
    const data=await api('GET','/api/audit?limit=50');
    const events=data.events||[];
-   if(!events.length)row(table,['No audit events','','','','']);
-   events.forEach(e=>row(table,[fmtAt(e.at),e.actor,e.action,e.target,e.result||'']));
-  }catch(e){row(table,[e.message,'','','','']);}
+   if(!events.length)row(table,['No audit events for this account','','','','','']);
+   events.forEach(e=>{
+    const view=document.createElement('button');view.type='button';view.className='small-btn';view.textContent='JSON';
+    view.onclick=()=>location.href='/audit';
+    const actions=document.createElement('div');actions.className='row-actions';actions.append(view);
+    const when=document.createElement('button');when.type='button';when.className='id-link';when.textContent=fmtAt(e.at);
+    when.onclick=()=>location.href='/audit';
+    row(table,[when,e.actor||'-',e.action,e.target||'-',e.result||'-',actions]);
+   });
+  }catch(e){row(table,[e.message,'','','','','']);}
  }
 
  async function renderModes(){
@@ -77,7 +84,7 @@
    const policies=(data.policies||[]).filter(p=>p.id!=='tpl-quarantine'&&p.template!=='quarantine'&&p.id!=='tpl-database_protection'&&p.template!=='database_protection');
    policies.forEach(p=>{
     const controls=Object.entries(p.controls||{}).map(([k,v])=>k+'='+v).join(', ');
-    row(table,[p.id,p.name,p.template||'—',String(p.version),controls]);
+    row(table,[p.id,p.name,p.template||'-',String(p.version),controls]);
    });
    if(!policies.length)row(table,['No policies','','','','']);
   }catch(e){row(table,[e.message,'','','','']);}
@@ -102,7 +109,7 @@
   try{
    const data=await api('GET','/api/security/detections?limit=50');
    const list=data.detections||[];
-   if(!list.length)row(table,['No detections — click Refresh detections','','','','']);
+   if(!list.length)row(table,['No detections - click Refresh detections','','','','']);
    list.forEach(d=>row(table,[fmtAt(d.at),d.type,d.severity,d.asset,(d.evidence||'').slice(0,140)]));
   }catch(e){row(table,[e.message,'','','','']);}
   const fim=$('security-fim-table');
@@ -120,8 +127,8 @@
  async function renderVulns(){
   try{
    const data=await api('GET','/api/security/vulnerabilities');
-   if($('security-db-score'))$('security-db-score').textContent=String(data.databases?.score??'—');
-   if($('security-cks-score'))$('security-cks-score').textContent=String(data.cks?.score??'—');
+   if($('security-db-score'))$('security-db-score').textContent=String(data.databases?.score??'-');
+   if($('security-cks-score'))$('security-cks-score').textContent=String(data.cks?.score??'-');
    if($('security-cks-note'))$('security-cks-note').textContent=data.cks?.cks_readiness_status?.note||'CKS Readiness Status';
    if($('security-pkg-status'))$('security-pkg-status').textContent=data.packages?.status||'Planned';
    const table=$('security-vuln-findings');
@@ -177,9 +184,9 @@
 
  async function renderAdvancedProtection(){
   const sum=overview?.protection_catalog_summary||{};
-  if($('security-prot-live'))$('security-prot-live').textContent=String(sum.live_or_ro??'—');
-  if($('security-prot-partial'))$('security-prot-partial').textContent=String(sum.partial??'—');
-  if($('security-prot-planned'))$('security-prot-planned').textContent=String(sum.planned??'—');
+  if($('security-prot-live'))$('security-prot-live').textContent=String(sum.live_or_ro??'-');
+  if($('security-prot-partial'))$('security-prot-partial').textContent=String(sum.partial??'-');
+  if($('security-prot-planned'))$('security-prot-planned').textContent=String(sum.planned??'-');
   const cat=$('security-protection-catalog');
   if(cat){
    row(cat,['#','Domain','Feature','Status','Note'],true);
@@ -257,7 +264,10 @@
    list.hidden=false;
    events.forEach(e=>{
     const li=document.createElement('li');
-    li.textContent=`${fmtAt(e.at)} · ${e.actor||'system'} · ${e.action} · ${e.target||''}${e.result?' · '+e.result:''}`;
+    const link=document.createElement('a');
+    link.href='/audit';
+    link.textContent=`${fmtAt(e.at)} · ${e.actor||'system'} · ${e.action} · ${e.target||''}${e.result?' · '+e.result:''}`;
+    li.append(link);
     list.append(li);
    });
    if(state){state.textContent='Live';state.className='badge RUNNING';}

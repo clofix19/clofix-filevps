@@ -158,7 +158,7 @@ func TestBillingInvoiceResourceLinesAndPage(t *testing.T) {
 	s.UIDir = "../../web/admin-ui"
 	h := s.AdminHandler()
 	page := do(h, "GET", "/billing", "", tok)
-	if page.Code != 200 || !strings.Contains(page.Body.String(), `id="billing-analysis"`) || !strings.Contains(page.Body.String(), `id="chart-billing-month"`) || !strings.Contains(page.Body.String(), `id="billing-invoice-detail"`) || !strings.Contains(page.Body.String(), `id="billing-inventory-table"`) || !strings.Contains(page.Body.String(), `id="billing-due-table"`) || !strings.Contains(page.Body.String(), `data-billing-range="30d"`) {
+	if page.Code != 200 || !strings.Contains(page.Body.String(), `id="billing-analysis"`) || !strings.Contains(page.Body.String(), `id="chart-billing-month"`) || !strings.Contains(page.Body.String(), `id="billing-invoice-detail"`) || !strings.Contains(page.Body.String(), `id="billing-inventory-table"`) || !strings.Contains(page.Body.String(), `id="billing-due-table"`) || !strings.Contains(page.Body.String(), `data-billing-range="30d"`) || !strings.Contains(page.Body.String(), `id="billing-invoice-owner"`) || !strings.Contains(page.Body.String(), `data-billing-manage`) {
 		t.Fatal("billing analysis UI missing", page.Code)
 	}
 	created := do(h, "POST", "/api/pricing/plans", `{"product":"vps","name":"Starter","description":"1 vCPU","currency":"USD","monthly_cents":1000,"hourly_cents":2,"cpu":1,"ram_mb":1024,"disk_mb":20480,"visible":true,"enabled":true}`, tok)
@@ -421,5 +421,130 @@ func TestBillingMeterDeletedUsageDue(t *testing.T) {
 	json.Unmarshal(again.Body.Bytes(), &ledger)
 	if ledger.Due.DueCents != 50 {
 		t.Fatalf("5-minute low-cost deleted usage: %+v %s", ledger.Due, again.Body.String())
+	}
+}
+
+func TestAdminInvoiceForClientAccount(t *testing.T) {
+	t.Setenv("CLOFIX_DATA_DIR", t.TempDir())
+	s, _ := newSrv(t)
+	h := s.AdminHandler()
+	reg := do(h, "POST", "/api/auth/register", `{"email":"bill-client@client.test","password":"client-password-123","account_name":"Bill Client Co"}`, "")
+	if reg.Code != 200 {
+		t.Fatal(reg.Body.String())
+	}
+	var out struct {
+		Account store.Account `json:"account"`
+		User    store.IAMUser `json:"user"`
+	}
+	if err := json.Unmarshal(reg.Body.Bytes(), &out); err != nil || out.Account.ID == "" {
+		t.Fatal(reg.Body.String())
+	}
+	cookie := sessionCookieFrom(reg)
+	ledger := do(h, "GET", "/api/billing", "", tok)
+	if ledger.Code != 200 {
+		t.Fatal(ledger.Body.String())
+	}
+	var adminView struct {
+		Accounts  []map[string]any `json:"accounts"`
+		CanManage bool             `json:"can_manage"`
+	}
+	if err := json.Unmarshal(ledger.Body.Bytes(), &adminView); err != nil {
+		t.Fatal(err)
+	}
+	if !adminView.CanManage {
+		t.Fatal("admin must manage billing")
+	}
+	found := false
+	for _, a := range adminView.Accounts {
+		if a["id"] == out.Account.ID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("client account missing from billing accounts: %s", ledger.Body.String())
+	}
+	inv := do(h, "POST", "/api/billing/invoices", `{"owner":"`+out.Account.ID+`","description":"Monthly retainer","amount_cents":5000}`, tok)
+	if inv.Code != 200 {
+		t.Fatal(inv.Body.String())
+	}
+	var drafted struct{ Invoice billingInvoice }
+	if err := json.Unmarshal(inv.Body.Bytes(), &drafted); err != nil || drafted.Invoice.Owner != out.Account.ID || drafted.Invoice.AmountCents != 5000 {
+		t.Fatal(inv.Body.String())
+	}
+	clientView := doCookie(h, "GET", "/api/billing", "", cookie)
+	var clientLedger struct {
+		Invoices  []billingInvoice `json:"invoices"`
+		CanManage bool             `json:"can_manage"`
+		Accounts  []map[string]any `json:"accounts"`
+	}
+	if err := json.Unmarshal(clientView.Body.Bytes(), &clientLedger); err != nil {
+		t.Fatal(err)
+	}
+	if clientLedger.CanManage {
+		t.Fatal("client must not manage platform billing")
+	}
+	if len(clientLedger.Invoices) != 1 || clientLedger.Invoices[0].ID != drafted.Invoice.ID {
+		t.Fatalf("client should see own invoice: %s", clientView.Body.String())
+	}
+	if missing := do(h, "POST", "/api/billing/invoices", `{"from_due":true}`, tok); missing.Code != 400 {
+		t.Fatalf("due invoice without client: %d %s", missing.Code, missing.Body.String())
+	}
+	denied := doCookie(h, "POST", "/api/billing/invoices", `{"owner":"`+out.Account.ID+`","description":"self bill","amount_cents":100}`, cookie)
+	if denied.Code != 403 {
+		t.Fatalf("client must not create invoices: %d %s", denied.Code, denied.Body.String())
+	}
+}
+
+func TestBillingOverviewOwnAccountOnly(t *testing.T) {
+	t.Setenv("CLOFIX_DATA_DIR", t.TempDir())
+	s, _ := newSrv(t)
+	h := s.AdminHandler()
+	regA := do(h, "POST", "/api/auth/register", `{"email":"bill-own-a@client.test","password":"client-password-123","account_name":"Own A"}`, "")
+	regB := do(h, "POST", "/api/auth/register", `{"email":"bill-own-b@client.test","password":"client-password-123","account_name":"Own B"}`, "")
+	if regA.Code != 200 || regB.Code != 200 {
+		t.Fatal(regA.Body.String(), regB.Body.String())
+	}
+	var outA, outB struct {
+		Account store.Account `json:"account"`
+	}
+	json.Unmarshal(regA.Body.Bytes(), &outA)
+	json.Unmarshal(regB.Body.Bytes(), &outB)
+	cookieA := sessionCookieFrom(regA)
+	if inv := do(h, "POST", "/api/billing/invoices", `{"owner":"`+outA.Account.ID+`","description":"A bill","amount_cents":1000}`, tok); inv.Code != 200 {
+		t.Fatal(inv.Body.String())
+	}
+	if inv := do(h, "POST", "/api/billing/invoices", `{"owner":"`+outB.Account.ID+`","description":"B bill","amount_cents":9000}`, tok); inv.Code != 200 {
+		t.Fatal(inv.Body.String())
+	}
+	view := doCookie(h, "GET", "/api/billing", "", cookieA)
+	var body struct {
+		Overview struct {
+			DraftInvoices int `json:"draft_invoices"`
+			PaidInvoices  int `json:"paid_invoices"`
+		} `json:"overview"`
+		Invoices []billingInvoice `json:"invoices"`
+		Reports  struct {
+			USDCents int64 `json:"usd_cents"`
+		} `json:"reports"`
+	}
+	if err := json.Unmarshal(view.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Invoices) != 1 || body.Invoices[0].Owner != outA.Account.ID {
+		t.Fatalf("client must only see own invoices: %s", view.Body.String())
+	}
+	if body.Overview.DraftInvoices != 1 {
+		t.Fatalf("overview must count own drafts only, got %d: %s", body.Overview.DraftInvoices, view.Body.String())
+	}
+	admin := do(h, "GET", "/api/billing", "", tok)
+	var adminBody struct {
+		Overview struct {
+			DraftInvoices int `json:"draft_invoices"`
+		} `json:"overview"`
+	}
+	json.Unmarshal(admin.Body.Bytes(), &adminBody)
+	if adminBody.Overview.DraftInvoices < 2 {
+		t.Fatalf("admin should see both drafts: %s", admin.Body.String())
 	}
 }

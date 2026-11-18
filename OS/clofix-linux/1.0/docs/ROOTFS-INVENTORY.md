@@ -1,4 +1,4 @@
-# CloFix Linux 1.0 — RootFS inventory (Phase 1)
+# CloFix Linux 1.0 - RootFS inventory (Phase 1)
 
 **Source archive:** `OS/clofix-linux/1.0/rootfs.tar.gz`  
 **Inspected:** 2026-11-17 (UTC)  
@@ -23,8 +23,8 @@
 
 | Question | Finding |
 |----------|---------|
-| Independent boot? | **No** — `boot/` present but empty of kernel/initramfs; no GRUB payload |
-| systemd PID 1 binary? | **ABSENT** (`usr/lib/systemd/systemd` missing) — container/FileVPS rootfs |
+| Independent boot? | **No** - `boot/` present but empty of kernel/initramfs; no GRUB payload |
+| systemd PID 1 binary? | **ABSENT** (`usr/lib/systemd/systemd` missing) - container/FileVPS rootfs |
 | Shared host kernel? | **Yes** (CloFix FileVPS / Docker export target) |
 | Mount requirements | Overlay lower rootfs; host provides `/proc` `/sys` `/dev` `/run` |
 
@@ -54,6 +54,7 @@
 
 1. Never assume 22.04 vs 24.04 without reading `UBUNTU_CODENAME` from the archive under inspection.
 2. Guest security features that need host kernel (immutable overlays, seccomp, cgroup kill, true rootkit kernel checks) are **host-worker** scope.
+3. Guest kernel sysctl baseline: `/etc/sysctl.d/99-clofix-kernel-security.conf` (see `docs/SHARED-KERNEL.md`). Host-global keys may be no-ops inside shared-kernel VPS; apply `99-clofix-host-kernel-security.conf` on the worker host.
 3. Preserve `UBUNTU_CODENAME` and APT GPG verification for all package operations.
 4. Do not rewrite `/etc/debian_version` for branding.
 

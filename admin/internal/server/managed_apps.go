@@ -325,7 +325,7 @@ func (s *Server) deployManagedApp(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, err.Error())
 		return
 	}
-	s.Store.Audit(a.Owner, "managed-app.deploy", a.ID, in.Template)
+	s.auditAccount(r, a.Owner, "managed-app.deploy", a.ID, in.Template, nil)
 	writeJSON(w, 202, safeManaged(a))
 }
 
@@ -440,7 +440,7 @@ func (s *Server) controlManagedApp(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, err.Error())
 		return
 	}
-	s.Store.Audit(applicationOwner(r), "managed-app."+action, a.ID, "queued")
+	s.audit(r, "managed-app."+action, a.ID, "queued", nil)
 	writeJSON(w, 202, safeManaged(a))
 }
 func (s *Server) managedAppLogs(w http.ResponseWriter, r *http.Request) {

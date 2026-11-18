@@ -208,7 +208,7 @@ func (s *Server) updateApplication(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "cannot persist version")
 		return
 	}
-	s.Store.Audit(applicationOwner(r), "application.update", a.ID, strconv.Itoa(a.Version))
+	s.audit(r, "application.update", a.ID, strconv.Itoa(a.Version), nil)
 	writeJSON(w, 200, safeApplication(a))
 }
 func (s *Server) rollbackApplication(w http.ResponseWriter, r *http.Request) {

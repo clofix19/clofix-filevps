@@ -1,0 +1,64 @@
+{{define "content"}}
+<section class="page active" id="page-audit">
+  <div class="section-head">
+    <div>
+      <p class="eyebrow">Security</p>
+      <h2>Audit Trail</h2>
+      <p id="audit-lead">Account activity for your root and IAM users. Clients keep 90 days; platform admin can view 180 days. Older rows are deleted automatically.</p>
+    </div>
+    <div class="inline-fields">
+      <button class="secondary" type="button" id="audit-refresh">Refresh</button>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="section-head">
+      <div>
+        <h2 id="audit-heading-list" tabindex="-1">Activity</h2>
+        <p id="audit-scope-note" class="muted">Account activity loads below.</p>
+      </div>
+    </div>
+    <form id="audit-filter-form" class="form-grid" style="margin-bottom:14px" aria-label="Audit filters">
+      <div class="form-field"><label for="audit-search">Search</label><input id="audit-search" type="search" placeholder="Actor, action, target, result…" autocomplete="off"></div>
+      <div class="form-field"><label for="audit-filter-action">Action</label><input id="audit-filter-action" type="text" placeholder="e.g. iam.user.save or iam.*" list="audit-action-suggestions"></div>
+      <div class="form-field"><label for="audit-filter-actor">Actor</label><input id="audit-filter-actor" type="text" placeholder="Username, email, or user id"></div>
+      <div class="form-field" id="audit-filter-account-wrap" hidden><label for="audit-filter-account">Account</label><select id="audit-filter-account"><option value="">All accounts</option></select></div>
+      <div class="form-field"><label for="audit-filter-from">From</label><input id="audit-filter-from" type="datetime-local"></div>
+      <div class="form-field"><label for="audit-filter-to">To</label><input id="audit-filter-to" type="datetime-local"></div>
+      <div class="form-field form-span inline-fields" style="align-items:flex-end">
+        <button class="primary" type="submit" id="audit-filter-apply">Apply filters</button>
+        <button class="secondary" type="button" id="audit-filter-clear">Clear</button>
+      </div>
+    </form>
+    <datalist id="audit-action-suggestions">
+      <option value="iam.*"></option>
+      <option value="instance.*"></option>
+      <option value="billing.*"></option>
+      <option value="account.create"></option>
+      <option value="auth.login"></option>
+    </datalist>
+    <div class="message" id="audit-message" role="status" aria-live="polite"></div>
+    <div class="table-wrap"><table id="audit-table" data-inline-actions></table></div>
+    <div class="inline-fields" id="audit-pager" style="justify-content:space-between;margin-top:14px" hidden>
+      <span class="muted" id="audit-pager-label">Page 1</span>
+      <div class="inline-fields">
+        <button class="secondary" type="button" id="audit-page-prev">Previous</button>
+        <button class="secondary" type="button" id="audit-page-next">Next</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<dialog class="terminal-dialog form-dialog" id="audit-detail-dialog" aria-labelledby="audit-detail-title">
+  <div class="section-head">
+    <div>
+      <h2 id="audit-detail-title">Audit event</h2>
+      <p class="muted" id="audit-detail-summary">Full event JSON: who, request, account, actor, and related resource.</p>
+    </div>
+    <button class="secondary" type="button" id="audit-detail-close">Close</button>
+  </div>
+  <pre class="log-view" id="audit-detail-json" style="max-height:min(60dvh,520px);margin:0"></pre>
+  <div class="inline-fields" style="margin-top:14px">
+    <button class="secondary" type="button" id="audit-detail-copy">Copy JSON</button>
+  </div>
+</dialog>
+{{end}}

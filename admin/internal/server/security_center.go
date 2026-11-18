@@ -290,7 +290,7 @@ func (s *Server) saveSecurityMode(w http.ResponseWriter, r *http.Request) {
 	}
 	d.Policies[id] = pol
 	_ = d.save()
-	s.Store.Audit(principalFrom(r).Name, "security.mode.save", id, "ok")
+	s.audit(r, "security.mode.save", id, "ok", nil)
 	writeJSON(w, 200, pol)
 }
 
@@ -441,8 +441,47 @@ func (s *Server) applySecurityMode(w http.ResponseWriter, r *http.Request) {
 		step["status"] = "applied"
 		applied = append(applied, step)
 	}
-	s.Store.Audit(principalFrom(r).Name, "security.mode.apply", id, "ok")
+	s.audit(r, "security.mode.apply", id, "ok", nil)
 	writeJSON(w, 200, map[string]any{"policy_id": id, "dry_run": false, "changes": applied})
+}
+
+func (s *Server) canAccessSecurityScope(r *http.Request, scope, targetID string) bool {
+	p := principalFrom(r)
+	if p.Kind == "admin" {
+		return true
+	}
+	switch strings.ToLower(scope) {
+	case "account", "project":
+		return s.canAccessAccount(p, targetID)
+	case "vps":
+		inst, err := s.Store.GetInstance(targetID)
+		return err == nil && s.canAccessAccount(p, inst.AccountID)
+	case "worker":
+		return false
+	default:
+		return s.canAccessAccount(p, targetID)
+	}
+}
+
+func (s *Server) canAccessSecurityAsset(r *http.Request, asset string) bool {
+	p := principalFrom(r)
+	if p.Kind == "admin" {
+		return true
+	}
+	asset = strings.TrimSpace(asset)
+	if asset == "" {
+		return false
+	}
+	if s.canAccessLogSourceID(r, asset) {
+		return true
+	}
+	if inst, err := s.Store.GetInstance(asset); err == nil {
+		return s.canAccessAccount(p, inst.AccountID)
+	}
+	if p.AccountID != "" && (asset == p.AccountID || strings.HasPrefix(asset, p.AccountID)) {
+		return true
+	}
+	return false
 }
 
 func (s *Server) listSecurityBindings(w http.ResponseWriter, r *http.Request) {
@@ -451,6 +490,9 @@ func (s *Server) listSecurityBindings(w http.ResponseWriter, r *http.Request) {
 	defer d.Unlock()
 	list := make([]securityBinding, 0, len(d.Bindings))
 	for _, b := range d.Bindings {
+		if !s.canAccessSecurityScope(r, b.Scope, b.TargetID) {
+			continue
+		}
 		list = append(list, b)
 	}
 	writeJSON(w, 200, map[string]any{"bindings": list})
@@ -464,6 +506,10 @@ func (s *Server) saveSecurityBinding(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.Scope == "" {
 		in.Scope = "vps"
+	}
+	if !s.canAccessSecurityScope(r, in.Scope, in.TargetID) {
+		fail(w, 404, "target not found")
+		return
 	}
 	d := s.securityCenter
 	d.Lock()
@@ -486,7 +532,8 @@ func (s *Server) deleteSecurityBinding(w http.ResponseWriter, r *http.Request) {
 	d := s.securityCenter
 	d.Lock()
 	defer d.Unlock()
-	if _, ok := d.Bindings[id]; !ok {
+	b, ok := d.Bindings[id]
+	if !ok || !s.canAccessSecurityScope(r, b.Scope, b.TargetID) {
 		fail(w, 404, "binding not found")
 		return
 	}
@@ -503,7 +550,16 @@ func (s *Server) listSecurityDetections(w http.ResponseWriter, r *http.Request) 
 	d := s.securityCenter
 	d.Lock()
 	defer d.Unlock()
-	events := append([]securityDetection(nil), d.Detections...)
+	events := make([]securityDetection, 0, len(d.Detections))
+	for _, ev := range d.Detections {
+		if !s.canAccessSecurityAsset(r, ev.Asset) {
+			continue
+		}
+		if principalFrom(r).Kind != "admin" && ev.Tenant != "" && !s.canAccessAccount(principalFrom(r), ev.Tenant) {
+			continue
+		}
+		events = append(events, ev)
+	}
 	sort.Slice(events, func(i, j int) bool { return events[i].At.After(events[j].At) })
 	if len(events) > limit {
 		events = events[:limit]
@@ -557,11 +613,18 @@ func (s *Server) refreshSecurityDetections(w http.ResponseWriter, r *http.Reques
 	_ = d.save()
 	out := append([]securityDetection{}, d.Detections...)
 	d.Unlock()
-	s.Store.Audit(principalFrom(r).Name, "security.detections.refresh", "fleet", "ok")
+	s.audit(r, "security.detections.refresh", "fleet", "ok", nil)
 	writeJSON(w, 200, map[string]any{"detections": out, "refreshed_at": now})
 }
 
 func (s *Server) listFIMBaselines(w http.ResponseWriter, r *http.Request) {
+	if principalFrom(r).Kind != "admin" {
+		writeJSON(w, 200, map[string]any{
+			"baselines": []fimBaseline{},
+			"note":      "FIM baselines are platform-scoped; contact an administrator.",
+		})
+		return
+	}
 	d := s.securityCenter
 	d.Lock()
 	defer d.Unlock()
@@ -576,6 +639,10 @@ func (s *Server) listFIMBaselines(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) upsertFIMBaseline(w http.ResponseWriter, r *http.Request) {
+	if principalFrom(r).Kind != "admin" {
+		fail(w, 403, "admin only")
+		return
+	}
 	workerID := r.PathValue("workerID")
 	var in struct {
 		Paths map[string]string `json:"paths"`
@@ -614,14 +681,17 @@ func (s *Server) upsertFIMBaseline(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getSecurityVulnerabilities(w http.ResponseWriter, r *http.Request) {
-	dbScore, dbFindings := s.databaseSecurityPanel()
-	cksScore, cksFindings := s.cksSecurityPanel()
+	dbScore, dbFindings := s.databaseSecurityPanelFor(r)
+	cksScore, cksFindings := s.cksSecurityPanelFor(r)
 	d := s.securityCenter
 	d.Lock()
 	ex := make([]vulnException, 0, len(d.Exceptions))
 	now := time.Now()
 	for _, e := range d.Exceptions {
 		if e.Expires.IsZero() || e.Expires.After(now) {
+			if principalFrom(r).Kind != "admin" && !s.canAccessSecurityAsset(r, e.Asset) {
+				continue
+			}
 			ex = append(ex, e)
 		}
 	}
@@ -640,21 +710,25 @@ func (s *Server) getSecurityVulnerabilities(w http.ResponseWriter, r *http.Reque
 		"cks": map[string]any{
 			"score":               cksScore,
 			"findings":            cksFindings,
-			"cks_readiness_status": s.cksReadinessStatus(),
+			"cks_readiness_status": s.cksReadinessStatusFor(r),
 		},
 		"exceptions": ex,
 	})
 }
 
-func (s *Server) databaseSecurityPanel() (int, []securityFinding) {
+func (s *Server) databaseSecurityPanelFor(r *http.Request) (int, []securityFinding) {
 	findings := []securityFinding{}
 	score := 100
 	if s.databases == nil {
 		return score, findings
 	}
+	scoped := securityPanelScoped(r)
 	s.databases.Lock()
 	defer s.databases.Unlock()
 	for id, p := range s.databases.Projects {
+		if scoped && !canAccessApplication(r, p.Owner) {
+			continue
+		}
 		if strings.TrimSpace(p.CA) == "" {
 			findings = append(findings, securityFinding{ID: "db-tls:" + id, Scope: "database", Asset: id, Delta: -10, Reason: "Managed DB project missing TLS CA"})
 			score -= 10
@@ -667,6 +741,9 @@ func (s *Server) databaseSecurityPanel() (int, []securityFinding) {
 	}
 	readyEncrypted := 0
 	for id, b := range s.databases.Backups {
+		if scoped && !canAccessApplication(r, b.Owner) {
+			continue
+		}
 		if len(b.EncryptedKey) > 0 && (b.State == "READY" || b.State == "ready") {
 			readyEncrypted++
 		} else if b.State == "READY" || b.State == "ready" {
@@ -681,21 +758,36 @@ func (s *Server) databaseSecurityPanel() (int, []securityFinding) {
 	return score, findings
 }
 
-func (s *Server) cksSecurityPanel() (int, []securityFinding) {
+func (s *Server) databaseSecurityPanel() (int, []securityFinding) {
+	return s.databaseSecurityPanelFor(nil)
+}
+
+func securityPanelScoped(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	p := principalFrom(r)
+	return p.Kind != "" && p.Kind != "admin"
+}
+
+func (s *Server) cksSecurityPanelFor(r *http.Request) (int, []securityFinding) {
 	findings := []securityFinding{}
 	score := 100
 	if s.kubernetes == nil {
 		return score, findings
 	}
+	scoped := securityPanelScoped(r)
 	s.kubernetes.Lock()
 	defer s.kubernetes.Unlock()
 	for id, c := range s.kubernetes.Clusters {
+		if scoped && !canAccessApplication(r, c.Owner) {
+			continue
+		}
 		st := strings.ToLower(c.State)
 		if st != "ready" && st != "running" {
 			findings = append(findings, securityFinding{ID: "cks-state:" + id, Scope: "cks", Asset: id, Delta: -5, Reason: "CKS cluster state is " + c.State})
 			score -= 5
 		}
-		// RBAC/PSS/NetworkPolicy inventory is not yet exported from workers — mark planned gaps.
 		findings = append(findings, securityFinding{ID: "cks-pss:" + id, Scope: "cks", Asset: id, Delta: -3, Reason: "Pod Security Standards inventory not yet reported (planned)"})
 		score -= 3
 		findings = append(findings, securityFinding{ID: "cks-netpol:" + id, Scope: "cks", Asset: id, Delta: -3, Reason: "NetworkPolicy inventory not yet reported (planned)"})
@@ -707,7 +799,11 @@ func (s *Server) cksSecurityPanel() (int, []securityFinding) {
 	return score, findings
 }
 
-func (s *Server) cksReadinessStatus() map[string]any {
+func (s *Server) cksSecurityPanel() (int, []securityFinding) {
+	return s.cksSecurityPanelFor(nil)
+}
+
+func (s *Server) cksReadinessStatusFor(r *http.Request) map[string]any {
 	status := map[string]any{
 		"ha_validated": false,
 		"note":         "CKS Readiness Status: HA not fully validated",
@@ -718,11 +814,15 @@ func (s *Server) cksReadinessStatus() map[string]any {
 	if s.kubernetes == nil {
 		return status
 	}
+	scoped := securityPanelScoped(r)
 	s.kubernetes.Lock()
 	defer s.kubernetes.Unlock()
-	status["clusters"] = len(s.kubernetes.Clusters)
-	ready, haReq := 0, 0
+	ready, haReq, total := 0, 0, 0
 	for _, c := range s.kubernetes.Clusters {
+		if scoped && !canAccessApplication(r, c.Owner) {
+			continue
+		}
+		total++
 		if c.HA {
 			haReq++
 		}
@@ -731,11 +831,15 @@ func (s *Server) cksReadinessStatus() map[string]any {
 			ready++
 		}
 	}
+	status["clusters"] = total
 	status["ready"] = ready
 	status["ha_requested"] = haReq
-	// HA topology may be requested, but full multi-control-plane validation is not claimed.
 	status["ha_validated"] = false
 	return status
+}
+
+func (s *Server) cksReadinessStatus() map[string]any {
+	return s.cksReadinessStatusFor(nil)
 }
 
 func (s *Server) saveVulnException(w http.ResponseWriter, r *http.Request) {
@@ -764,6 +868,21 @@ func (s *Server) listSecurityIncidents(w http.ResponseWriter, r *http.Request) {
 	defer d.Unlock()
 	list := make([]securityIncident, 0, len(d.Incidents))
 	for _, i := range d.Incidents {
+		if principalFrom(r).Kind != "admin" {
+			ok := false
+			for _, asset := range i.Assets {
+				if s.canAccessSecurityAsset(r, asset) {
+					ok = true
+					break
+				}
+			}
+			if !ok && len(i.Assets) > 0 {
+				continue
+			}
+			if !ok && len(i.Assets) == 0 {
+				continue
+			}
+		}
 		list = append(list, i)
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Updated.After(list[j].Updated) })
@@ -826,6 +945,10 @@ func (s *Server) getAutoPilot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) putAutoPilot(w http.ResponseWriter, r *http.Request) {
+	if principalFrom(r).Kind != "admin" {
+		fail(w, 403, "admin only")
+		return
+	}
 	var in autoPilotConfig
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&in); err != nil {
 		fail(w, 400, "invalid autopilot config")
@@ -853,8 +976,13 @@ func (s *Server) putAutoPilot(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getSecurityCompliance(w http.ResponseWriter, r *http.Request) {
 	overview := computeSecurityScore
+	p := principalFrom(r)
 	instances, _ := s.Store.ListInstances()
+	instances = filterInstances(instances, s.visibleAccountIDSet(p), p.Kind == "admin")
 	workers, _ := s.Store.ListWorkers()
+	if p.Kind != "admin" {
+		workers = nil
+	}
 	s.usageMu.RLock()
 	installs := map[string]map[string]string{}
 	for id, m := range s.serviceInstalls {

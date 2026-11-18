@@ -93,3 +93,40 @@ load_remote_env() {
   [ -n "$HOST" ] || { echo 'Set CLOFIX_REMOTE_IP (or CLOFIX_REMOTE_HOST)' >&2; return 1; }
   [ -n "$USER" ] || { echo 'Set CLOFIX_REMOTE_USER' >&2; return 1; }
 }
+
+# Optional separate DB host: DB_REMOTE_IP/USER/PASSWORD/PORT (falls back to CLOFIX_REMOTE_*).
+load_db_remote_env() {
+  if [ -n "${DB_REMOTE_IP:-}${DB_REMOTE_HOST:-}" ]; then
+    HOST="${DB_REMOTE_HOST:-${DB_REMOTE_IP}}"
+    USER="${DB_REMOTE_USER:-${CLOFIX_REMOTE_USER:-root}}"
+    PASS="${DB_REMOTE_PASSWORD:-${CLOFIX_REMOTE_PASSWORD:-}}"
+    KEY="${DB_REMOTE_SSH_KEY:-${CLOFIX_REMOTE_SSH_KEY:-}}"
+    PORT="${DB_REMOTE_PORT:-${CLOFIX_REMOTE_PORT:-22}}"
+  else
+    load_remote_env
+  fi
+  [ -n "$HOST" ] || { echo 'Set CLOFIX_REMOTE_IP or DB_REMOTE_IP' >&2; return 1; }
+  [ -n "$USER" ] || { echo 'Set CLOFIX_REMOTE_USER or DB_REMOTE_USER' >&2; return 1; }
+}
+
+ensure_remote_postgres() {
+  echo 'Ensuring PostgreSQL on remote…'
+  remote_sudo 'export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq
+    apt-get install -y --no-install-recommends postgresql postgresql-contrib ca-certificates
+    systemctl enable --now postgresql
+    command -v psql >/dev/null'
+}
+
+# Run SQL as postgres OS user on remote. Args: SQL string
+remote_psql_as_postgres() {
+  local sql="$1"
+  remote_sudo "sudo -u postgres psql -v ON_ERROR_STOP=1 -c $(printf '%q' "$sql")"
+}
+
+# Run a SQL file as postgres OS user on remote. Args: remote path, optional db name
+remote_psql_file_as_postgres() {
+  local path="$1"
+  local db="${2:-postgres}"
+  remote_sudo "sudo -u postgres psql -v ON_ERROR_STOP=1 -d $(printf '%q' "$db") -f $(printf '%q' "$path")"
+}

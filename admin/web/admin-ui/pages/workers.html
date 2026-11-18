@@ -13,10 +13,10 @@
             <h2 id="workers-heading-overview" class="visually-hidden" tabindex="-1">Overview</h2>
             <div class="ov-topbar">
               <div class="bit-tile-row ov-summary workers-summary">
-                <div class="bit-tile" data-bit="host-cpu"><div class="bit-kicker">CPU · WORKER</div><div class="bit-value" id="worker-stat-cpu">—</div><div class="bit-sub" id="worker-stat-cpu-note">Host CPU across active workers</div></div>
-                <div class="bit-tile" data-bit="host-ram"><div class="bit-kicker">RAM · WORKER</div><div class="bit-value" id="worker-stat-ram">—</div><div class="bit-sub" id="worker-stat-ram-note">Host memory across active workers</div></div>
-                <div class="bit-tile" data-bit="host-disk"><div class="bit-kicker">DISK · WORKER</div><div class="bit-value" id="worker-stat-disk">—</div><div class="bit-sub" id="worker-stat-disk-note">Worker filesystem capacity</div></div>
-                <div class="bit-tile" data-bit="filevps"><div class="bit-kicker">S3 · STORAGE</div><div class="bit-value" id="worker-stat-s3">—</div><div class="bit-sub" id="worker-stat-s3-note">Shared worker storage</div></div>
+                <div class="bit-tile" data-bit="host-cpu"><div class="bit-kicker">CPU · WORKER</div><div class="bit-value" id="worker-stat-cpu">-</div><div class="bit-sub" id="worker-stat-cpu-note">Host CPU across active workers</div></div>
+                <div class="bit-tile" data-bit="host-ram"><div class="bit-kicker">RAM · WORKER</div><div class="bit-value" id="worker-stat-ram">-</div><div class="bit-sub" id="worker-stat-ram-note">Host memory across active workers</div></div>
+                <div class="bit-tile" data-bit="host-disk"><div class="bit-kicker">DISK · WORKER</div><div class="bit-value" id="worker-stat-disk">-</div><div class="bit-sub" id="worker-stat-disk-note">Worker filesystem capacity</div></div>
+                <div class="bit-tile" data-bit="filevps"><div class="bit-kicker">S3 · STORAGE</div><div class="bit-value" id="worker-stat-s3">-</div><div class="bit-sub" id="worker-stat-s3-note">Shared worker storage</div></div>
               </div>
               <div class="chart-toolbar ov-toolbar"><div class="chart-ranges" role="group" aria-label="Chart time range"><button type="button" data-chart-range="1h" aria-pressed="true">1h</button><button type="button" data-chart-range="6h" aria-pressed="false">6h</button><button type="button" data-chart-range="1d" aria-pressed="false">1d</button><button type="button" data-chart-range="7d" aria-pressed="false">7d</button><button type="button" data-chart-range="30d" aria-pressed="false">30d</button><button type="button" data-chart-range="custom" aria-pressed="false">Custom</button></div><div class="chart-custom" hidden><label>From <input type="datetime-local" data-chart-from></label><label>To <input type="datetime-local" data-chart-to></label><button type="button" class="small-btn" data-chart-custom-apply>Apply</button></div></div>
             </div>
@@ -30,14 +30,14 @@
                 <section class="bit-card" data-bit="host-cpu">
                   <div class="bit-side">
                     <div class="bit-kicker">CPU · HOST</div>
-                    <div class="bit-value" id="worker-host-cpu">—</div>
-                    <div class="bit-sub" id="worker-host-cpu-note">—</div>
+                    <div class="bit-value" id="worker-host-cpu">-</div>
+                    <div class="bit-sub" id="worker-host-cpu-note">-</div>
                     <div class="bit-pie-row">
-                      <svg class="bit-pie" id="pie-worker-cpu" viewBox="0 0 72 72" role="img" aria-label="Host CPU pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-worker-cpu-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-worker-cpu-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                      <svg class="bit-pie" id="pie-worker-cpu" viewBox="0 0 72 72" role="img" aria-label="Host CPU pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-worker-cpu-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-worker-cpu-pct" x="36" y="39" text-anchor="middle">-</text></svg>
                       <div class="bit-nums">
-                        <div><span>USED</span><strong id="pie-worker-cpu-used">—</strong></div>
-                        <div><span>FREE</span><strong id="pie-worker-cpu-free">—</strong></div>
-                        <div><span>CORES</span><strong id="pie-worker-cpu-alloc">—</strong></div>
+                        <div><span>USED</span><strong id="pie-worker-cpu-used">-</strong></div>
+                        <div><span>FREE</span><strong id="pie-worker-cpu-free">-</strong></div>
+                        <div><span>CORES</span><strong id="pie-worker-cpu-alloc">-</strong></div>
                       </div>
                     </div>
                   </div>
@@ -45,14 +45,14 @@
                 <section class="bit-card" data-bit="host-ram">
                   <div class="bit-side">
                     <div class="bit-kicker">RAM · HOST</div>
-                    <div class="bit-value" id="worker-host-ram">—</div>
-                    <div class="bit-sub" id="worker-host-ram-note">—</div>
+                    <div class="bit-value" id="worker-host-ram">-</div>
+                    <div class="bit-sub" id="worker-host-ram-note">-</div>
                     <div class="bit-pie-row">
-                      <svg class="bit-pie" id="pie-worker-ram" viewBox="0 0 72 72" role="img" aria-label="Host RAM pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-worker-ram-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-worker-ram-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                      <svg class="bit-pie" id="pie-worker-ram" viewBox="0 0 72 72" role="img" aria-label="Host RAM pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-worker-ram-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-worker-ram-pct" x="36" y="39" text-anchor="middle">-</text></svg>
                       <div class="bit-nums">
-                        <div><span>USED</span><strong id="pie-worker-ram-used">—</strong></div>
-                        <div><span>FREE</span><strong id="pie-worker-ram-free">—</strong></div>
-                        <div><span>TOTAL</span><strong id="pie-worker-ram-alloc">—</strong></div>
+                        <div><span>USED</span><strong id="pie-worker-ram-used">-</strong></div>
+                        <div><span>FREE</span><strong id="pie-worker-ram-free">-</strong></div>
+                        <div><span>TOTAL</span><strong id="pie-worker-ram-alloc">-</strong></div>
                       </div>
                     </div>
                   </div>
@@ -60,14 +60,14 @@
                 <section class="bit-card" data-bit="host-disk">
                   <div class="bit-side">
                     <div class="bit-kicker">DISK · HOST</div>
-                    <div class="bit-value" id="worker-host-disk">—</div>
-                    <div class="bit-sub" id="worker-host-disk-note">—</div>
+                    <div class="bit-value" id="worker-host-disk">-</div>
+                    <div class="bit-sub" id="worker-host-disk-note">-</div>
                     <div class="bit-pie-row">
-                      <svg class="bit-pie" id="pie-worker-disk" viewBox="0 0 72 72" role="img" aria-label="Host disk pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-worker-disk-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-worker-disk-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                      <svg class="bit-pie" id="pie-worker-disk" viewBox="0 0 72 72" role="img" aria-label="Host disk pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-worker-disk-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-worker-disk-pct" x="36" y="39" text-anchor="middle">-</text></svg>
                       <div class="bit-nums">
-                        <div><span>USED</span><strong id="pie-worker-disk-used">—</strong></div>
-                        <div><span>FREE</span><strong id="pie-worker-disk-free">—</strong></div>
-                        <div><span>TOTAL</span><strong id="pie-worker-disk-alloc">—</strong></div>
+                        <div><span>USED</span><strong id="pie-worker-disk-used">-</strong></div>
+                        <div><span>FREE</span><strong id="pie-worker-disk-free">-</strong></div>
+                        <div><span>TOTAL</span><strong id="pie-worker-disk-alloc">-</strong></div>
                       </div>
                     </div>
                   </div>
@@ -84,14 +84,14 @@
                 <section class="bit-card" data-bit="worker-net">
                   <div class="bit-side">
                     <div class="bit-kicker">NET · WORKER</div>
-                    <div class="bit-value" id="chart-host-net-current">—</div>
+                    <div class="bit-value" id="chart-host-net-current">-</div>
                     <div class="bit-sub">Host uplink IN / OUT</div>
                     <div class="bit-pie-row">
-                      <svg class="bit-pie" id="pie-worker-net" viewBox="0 0 72 72" role="img" aria-label="Worker network pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-worker-net-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-worker-net-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                      <svg class="bit-pie" id="pie-worker-net" viewBox="0 0 72 72" role="img" aria-label="Worker network pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-worker-net-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-worker-net-pct" x="36" y="39" text-anchor="middle">-</text></svg>
                       <div class="bit-nums">
-                        <div><span>IN</span><strong id="pie-worker-net-used">—</strong></div>
-                        <div><span>OUT</span><strong id="pie-worker-net-free">—</strong></div>
-                        <div><span>BW</span><strong id="pie-worker-net-alloc">—</strong></div>
+                        <div><span>IN</span><strong id="pie-worker-net-used">-</strong></div>
+                        <div><span>OUT</span><strong id="pie-worker-net-free">-</strong></div>
+                        <div><span>BW</span><strong id="pie-worker-net-alloc">-</strong></div>
                       </div>
                     </div>
                   </div>
@@ -100,14 +100,14 @@
                 <section class="bit-card" data-bit="worker-bw">
                   <div class="bit-side">
                     <div class="bit-kicker">BW · WORKER</div>
-                    <div class="bit-value" id="chart-host-bw-current">—</div>
+                    <div class="bit-value" id="chart-host-bw-current">-</div>
                     <div class="bit-sub">Combined host uplink</div>
                     <div class="bit-pie-row">
-                      <svg class="bit-pie" id="pie-worker-bw" viewBox="0 0 72 72" role="img" aria-label="Worker bandwidth pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-worker-bw-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-worker-bw-pct" x="36" y="39" text-anchor="middle">—</text></svg>
+                      <svg class="bit-pie" id="pie-worker-bw" viewBox="0 0 72 72" role="img" aria-label="Worker bandwidth pie"><circle class="bit-pie-track" cx="36" cy="36" r="26"></circle><circle class="bit-pie-arc" id="pie-worker-bw-arc" cx="36" cy="36" r="26" pathLength="100"></circle><text class="bit-pie-num" id="pie-worker-bw-pct" x="36" y="39" text-anchor="middle">-</text></svg>
                       <div class="bit-nums">
-                        <div><span>IN</span><strong id="pie-worker-bw-used">—</strong></div>
-                        <div><span>OUT</span><strong id="pie-worker-bw-free">—</strong></div>
-                        <div><span>SUM</span><strong id="pie-worker-bw-alloc">—</strong></div>
+                        <div><span>IN</span><strong id="pie-worker-bw-used">-</strong></div>
+                        <div><span>OUT</span><strong id="pie-worker-bw-free">-</strong></div>
+                        <div><span>SUM</span><strong id="pie-worker-bw-alloc">-</strong></div>
                       </div>
                     </div>
                   </div>

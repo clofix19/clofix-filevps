@@ -39,7 +39,7 @@ function statusBadge(state){
     spin.setAttribute('aria-hidden','true');
     e.append(spin);
   }
-  e.append(document.createTextNode(state||'—'));
+  e.append(document.createTextNode(state||'-'));
   return e;
 }
 function topologyNote(){
@@ -156,10 +156,10 @@ function fillDetail(c){
   meta.replaceChildren();
   const bits=[
     ['Status', c.status],
-    ['Endpoints', (c.endpoints||[]).join(', ')||'—'],
-    ['RAM / node', (c.ram_mb||'—')+' MiB'],
-    ['CPU / node', String(c.cpu??'—')],
-    ['Disk / node', (c.disk_mb||'—')+' MiB'],
+    ['Endpoints', (c.endpoints||[]).join(', ')||'-'],
+    ['RAM / node', (c.ram_mb||'-')+' MiB'],
+    ['CPU / node', String(c.cpu??'-')],
+    ['Disk / node', (c.disk_mb||'-')+' MiB'],
     ['ID', c.id]
   ];
   bits.forEach(([k,v])=>{
@@ -174,7 +174,7 @@ function fillDetail(c){
   const nt=$('cs-detail-nodes');
   row(nt,['Node','Role','Status','Instance','Address'],true);
   (c.nodes||[]).forEach(n=>{
-    row(nt,[n.id,n.role||'—',statusBadge(n.status),n.instance_id||'—',n.address||'—']);
+    row(nt,[n.id,n.role||'-',statusBadge(n.status),n.instance_id||'-',n.address||'-']);
   });
   const del=$('cs-detail-delete');
   if(del)del.disabled=c.status==='DELETING';
@@ -223,7 +223,7 @@ function paintList(items){
       try{await api('DELETE','/api/cluster-services/'+c.id);listSig='';await refresh();}catch(e){msg(e.message,true);}
     };
     actions.append(open,del);
-    const endpoints=(c.endpoints||[]).slice(0,2).join(', ')+((c.endpoints||[]).length>2?'…':'')||'—';
+    const endpoints=(c.endpoints||[]).slice(0,2).join(', ')+((c.endpoints||[]).length>2?'…':'')||'-';
     const storage=c.storage==='persistent'?(c.efs_id||'EFS'):'temp';
     const statusCell=document.createElement('div');
     statusCell.append(statusBadge(c.status));
@@ -241,10 +241,10 @@ async function refresh(){
   refreshing=true;
   const run=async()=>{
     try{
-      // Global refresh() skips this page before ensureSession — load identity here.
+      // Global refresh() skips this page before ensureSession - load identity here.
       const me=typeof ensureSession==='function'?await ensureSession():(window.cfMe||cfMe||null);
       const fetches=[api('GET','/api/cluster-services'),api('GET','/api/instances')];
-      const loadWorkers=me?.kind==='admin';
+      const loadWorkers=me?.kind!=='partner';
       if(loadWorkers)fetches.push(api('GET','/api/workers'));
       const [data,vps,wks]=await Promise.all(fetches);
       const items=data.clusters||[];

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# clofix-bench.sh — performance benchmark for fx (CloFix FileVPS) | incus | lxc
+# clofix-bench.sh - performance benchmark for fx (CloFix FileVPS) | incus | lxc
 # Usage: sudo ./clofix-bench.sh <fx|incus|lxc>
 # Run on a DEDICATED TEST HOST, once per backend, same machine.
 # FileVPS uses the worker's bundled Ubuntu 24.04 image. Incus/LXC default to Debian 12
@@ -34,7 +34,7 @@ rec kernel "$(uname -r)"
 # ---- 0. warm-up (image download / cache) -----------------------------------
 echo "-- warm-up"
 w="$PFX-warm"; track "$w"
-vps_create "$w" && vps_start "$w" && wait_ready "$w" 180 || { echo "warm-up failed — check adapter in lib.sh"; exit 2; }
+vps_create "$w" && vps_start "$w" && wait_ready "$w" 180 || { echo "warm-up failed - check adapter in lib.sh"; exit 2; }
 vps_destroy "$w"; sleep 3
 
 # ---- 1. startup time -------------------------------------------------------

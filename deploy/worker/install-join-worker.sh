@@ -169,7 +169,7 @@ net.bridge.bridge-nf-call-ip6tables = 1
 SYSCTL
   sysctl --system >/dev/null || true
   if [ "$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo 0)" != "1" ]; then
-    echo 'WARNING: net.ipv4.ip_forward is not 1 — VPS↔VPS / Redis Cluster may fail' >&2
+    echo 'WARNING: net.ipv4.ip_forward is not 1 - VPS↔VPS / Redis Cluster may fail' >&2
   fi
 }
 
@@ -347,7 +347,7 @@ configure_s3_pool() {
   [ "$WITH_S3_POOL" = 1 ] || { echo '== S3 pool skipped (WITH_S3_POOL=0) =='; return 0; }
   echo '== S3 shared pool (SeaweedFS volume) =='
   if ! command -v weed >/dev/null 2>&1; then
-    echo 'weed binary missing — reinstall the worker .deb (includes SeaweedFS weed).' >&2
+    echo 'weed binary missing - reinstall the worker .deb (includes SeaweedFS weed).' >&2
     exit 1
   fi
   mkdir -p "$S3_DATA_DIR"
@@ -399,7 +399,7 @@ PY
       if nc -z -w 3 "$mhost" "$mport" 2>/dev/null; then
         echo "S3 master reachable: $mhost:$mport"
       else
-        echo "WARNING: cannot reach S3 master $mhost:$mport — set controller CLOFIX_S3_MASTER_ADDRESS to an address this host can reach (not s3pool:9333)." >&2
+        echo "WARNING: cannot reach S3 master $mhost:$mport - set controller CLOFIX_S3_MASTER_ADDRESS to an address this host can reach (not s3pool:9333)." >&2
       fi
     fi
   else
@@ -410,7 +410,7 @@ PY
 enroll_and_start() {
   ca="$1"
   if [ "$SKIP_ENROLL" = 1 ]; then
-    echo "SKIP_ENROLL=1 — package installed. Enroll manually:"
+    echo "SKIP_ENROLL=1 - package installed. Enroll manually:"
     echo "  printf '%s\\n' \"\$CLOFIX_TOKEN\" | clofix-worker enroll --controller '$CONTROLLER' --ca '$ca' --installation-id '$INSTALLATION_ID'"
     echo "  systemctl enable --now clofix-worker"
     configure_s3_pool || true

@@ -425,7 +425,7 @@ func (s *Server) createProtectionUnlock(w http.ResponseWriter, r *http.Request) 
 	d.Unlocks[u.ID] = u
 	_ = d.save()
 	d.Unlock()
-	s.Store.Audit(principalFrom(r).Name, "security.unlock", in.InstanceID, in.Control)
+	s.audit(r, "security.unlock", in.InstanceID, in.Control, nil)
 	writeJSON(w, 200, u)
 }
 
@@ -621,7 +621,7 @@ func (s *Server) applyProtectionRollback(w http.ResponseWriter, r *http.Request)
 		fail(w, 500, err.Error())
 		return
 	}
-	s.Store.Audit(principalFrom(r).Name, "security.rollback", id, rb.PolicyID)
+	s.audit(r, "security.rollback", id, rb.PolicyID, nil)
 	writeJSON(w, 200, map[string]any{"rolled_back": true, "snapshot": rb})
 }
 
@@ -748,7 +748,7 @@ func (s *Server) applyNetworkQuarantine(w http.ResponseWriter, r *http.Request) 
 		fail(w, 500, err.Error())
 		return
 	}
-	s.Store.Audit(principalFrom(r).Name, "security.quarantine", id, "ok")
+	s.audit(r, "security.quarantine", id, "ok", nil)
 	writeJSON(w, 200, map[string]any{"quarantined": true, "instance_id": id})
 }
 
@@ -996,7 +996,7 @@ func (s *Server) setSSHKeyOnly(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not queue key-only update")
 		return
 	}
-	s.Store.Audit(principalFrom(r).Name, "instance.ssh_key_only", id, strconv.FormatBool(*in.Enabled))
+	s.audit(r, "instance.ssh_key_only", id, strconv.FormatBool(*in.Enabled), nil)
 	writeJSON(w, 202, map[string]any{"id": id, "ssh_key_only": *in.Enabled, "password_auth": wantPassword, "queued": true})
 }
 
@@ -1019,7 +1019,7 @@ func (s *Server) setVolumeDeleteProtection(w http.ResponseWriter, r *http.Reques
 		fail(w, 500, "could not save volume")
 		return
 	}
-	s.Store.Audit(principalFrom(r).Name, "volume.delete_protection", id, strconv.FormatBool(*in.Enabled))
+	s.audit(r, "volume.delete_protection", id, strconv.FormatBool(*in.Enabled), nil)
 	writeJSON(w, 200, map[string]any{"id": id, "delete_protection": vol.DeleteProtection})
 }
 

@@ -10,27 +10,47 @@
     </nav>
     <div class="settings-content">
       <div class="settings-section" id="iam-users-panel" data-settings-panel aria-labelledby="iam-heading-users">
-        <div class="panel iam-notice"><strong>Account IAM</strong><p>Create sub-users for this client account. Roles stay IAM User, Read Only, or Full Administrator. Access keys remain CloFix bearer credentials (<code>CFX….secret</code>). MFA and SSO are not available yet.</p></div>
-        <div class="panel"><div class="section-head"><div><h2 id="iam-heading-users" tabindex="-1">IAM users</h2><p>Roles: IAM User uses assigned policies; Read Only can view resources; Full Administrator can manage this account.</p></div><button class="secondary" id="iam-refresh" type="button">Refresh</button></div><div class="table-wrap"><table id="iam-users-table"></table></div><div class="message" id="iam-users-message" role="status" aria-live="polite"></div></div>
-        <div class="panel"><div class="section-head"><div><h2 id="iam-user-form-title">Create IAM user</h2><p>Assign user policies directly or through groups. Full Administrator users can manage this account.</p></div></div><input id="iam-user-id" type="hidden"><div class="form-grid"><div class="form-field"><label for="iam-username">Username</label><input id="iam-username" maxlength="64" placeholder="deploy-operator" autocomplete="off"></div><div class="form-field"><label for="iam-email">Email</label><input id="iam-email" type="email" autocomplete="off"></div><div class="form-field"><label for="iam-password">Password</label><input id="iam-password" type="password" minlength="12" autocomplete="new-password" placeholder="12+ characters"></div><div class="form-field"><label for="iam-role">Role</label><select id="iam-role"><option>IAM User</option><option>Read Only</option><option>Full Administrator</option></select></div><div class="form-field"><label for="iam-status">Status</label><select id="iam-status"><option value="active">Active</option><option value="inactive">Inactive</option></select></div></div><div class="iam-assignment-grid"><div><h3>Groups</h3><div id="iam-user-groups" class="iam-check-list"></div></div><div><h3>Direct policies</h3><div id="iam-user-policies" class="iam-check-list"></div></div></div><div class="inline-fields"><button class="primary" id="iam-user-save" type="button">Create user</button><button class="secondary" id="iam-user-cancel" type="button" hidden>Cancel edit</button><span class="message" id="iam-user-form-message" role="status" aria-live="polite"></span></div></div>
+        <div class="panel iam-notice"><strong>Account IAM</strong><p>Root owns this account: change password in <a href="/profile">Profile</a>, manage your access keys below (create / suspend / delete), and create groups, policies, and IAM users for <em>this account only</em>. You cannot delete, suspend, or deactivate your own login user.</p></div>
+        <div class="panel"><div class="section-head"><div><h2 id="iam-heading-users" tabindex="-1">IAM users</h2><p>Roles: IAM User uses assigned policies; Read Only can view resources; Full Administrator can manage this account.</p></div><div class="inline-fields"><button class="primary" id="iam-user-create-open" type="button">Create IAM user</button><button class="secondary" id="iam-refresh" type="button">Refresh</button></div></div><div class="table-wrap"><table id="iam-users-table"></table></div><div class="message" id="iam-users-message" role="status" aria-live="polite"></div></div>
       </div>
       <div class="panel settings-section" id="iam-keys-panel" data-settings-panel aria-labelledby="iam-heading-keys" hidden>
-        <div class="section-head"><div><h2 id="iam-heading-keys" tabindex="-1">Access keys</h2><p>Create up to two active keys per user. Copy the secret or bearer token when created; it cannot be viewed again.</p></div></div>
-        <div class="inline-fields"><label for="iam-key-user">IAM user</label><select id="iam-key-user"><option value="">Select an active IAM user</option></select><button class="primary" id="iam-key-create" type="button">Generate access key</button></div>
+        <div class="section-head">
+          <div>
+            <h2 id="iam-heading-keys" tabindex="-1">Access keys</h2>
+            <p>Up to two active keys per user. You can create, suspend, and delete keys (including your own). Suspend disables a key; Delete removes it. The secret is shown once when generated.</p>
+          </div>
+          <div class="inline-fields">
+            <button class="primary" id="iam-key-create" type="button">Generate access key</button>
+          </div>
+        </div>
+        <div class="iam-keys-picker">
+          <div class="form-field">
+            <label for="iam-key-user">User</label>
+            <select id="iam-key-user"><option value="">Select a user</option></select>
+          </div>
+          <p class="muted" id="iam-keys-user-summary" hidden></p>
+        </div>
         <div class="message" id="iam-keys-message" role="status" aria-live="polite"></div>
-        <div id="iam-new-key" class="iam-secret" hidden><strong>Copy these credentials now</strong><p>The secret is shown once. Save it in your password manager.</p><label>Access key ID</label><code id="iam-new-access-id"></code><label>Secret access key</label><code id="iam-new-secret"></code><label>Bearer token for CloFix API</label><code id="iam-new-bearer"></code><button class="secondary" id="iam-key-copy" type="button">Copy bearer token</button><button class="small-btn" id="iam-key-dismiss" type="button">Dismiss</button></div>
-        <div class="table-wrap"><table id="iam-keys-table"></table></div>
+        <div id="iam-new-key" class="iam-secret" hidden>
+          <div class="section-head">
+            <div>
+              <strong>Copy these credentials now</strong>
+              <p class="muted">The secret is shown once. Save it in your password manager.</p>
+            </div>
+            <button class="small-btn" id="iam-key-dismiss" type="button">Dismiss</button>
+          </div>
+          <div class="form-field"><label>Access key ID</label><code id="iam-new-access-id"></code></div>
+          <div class="form-field"><label>Secret access key</label><code id="iam-new-secret"></code></div>
+          <div class="form-field"><label>Bearer token for CloFix API</label><code id="iam-new-bearer"></code></div>
+          <div class="inline-fields"><button class="secondary" id="iam-key-copy" type="button">Copy bearer token</button></div>
+        </div>
+        <h3 id="iam-keys-list-heading">Keys for selected user</h3>
+        <div class="table-wrap"><table id="iam-keys-table" data-inline-actions></table></div>
       </div>
-      <div class="panel settings-section" id="iam-groups-panel" data-settings-panel aria-labelledby="iam-group-form-title" hidden>
-        <div class="section-head"><div><h2 id="iam-group-form-title" tabindex="-1">Create group</h2><p>Groups grant their attached policies to every member.</p></div></div>
-        <input id="iam-group-id" type="hidden">
-        <div class="form-field"><label for="iam-group-name">Group name</label><input id="iam-group-name" maxlength="80" placeholder="PlatformOperators"></div>
-        <div class="form-field"><label for="iam-group-description">Description</label><input id="iam-group-description" maxlength="200" placeholder="Operators who manage application VPSs"></div>
-        <h3>Attached policies</h3>
-        <div id="iam-group-policies" class="iam-check-list"></div>
-        <div class="inline-fields"><button class="primary" id="iam-group-save" type="button">Create group</button><button class="secondary" id="iam-group-cancel" type="button" hidden>Cancel edit</button></div>
-        <div class="message" id="iam-group-message" role="status" aria-live="polite"></div>
+      <div class="panel settings-section" id="iam-groups-panel" data-settings-panel aria-labelledby="iam-heading-groups" hidden>
+        <div class="section-head"><div><h2 id="iam-heading-groups" tabindex="-1">Groups</h2><p>Groups grant their attached policies to every member. Edit or delete from the table; attach custom policies when creating or editing.</p></div><div class="inline-fields"><button class="primary" id="iam-group-create-open" type="button">Create group</button></div></div>
         <div class="table-wrap"><table id="iam-groups-table"></table></div>
+        <div class="message" id="iam-group-message" role="status" aria-live="polite"></div>
       </div>
       <div class="panel settings-section" id="iam-policies-panel" data-settings-panel aria-labelledby="iam-policy-form-title" hidden>
         <div class="section-head"><div><h2 id="iam-policy-form-title" tabindex="-1">Create policy</h2><p>Choose resource scopes by category (Global, Compute, Storage, Networking, Security, Platform), or click <strong>Use</strong> on a built-in template below. Manage includes Read. IAM administration requires the Full Administrator role or root.</p></div></div>
@@ -47,4 +67,51 @@
     </div>
   </div>
 </section>
+
+<dialog class="terminal-dialog form-dialog" id="iam-user-dialog" aria-labelledby="iam-user-form-title">
+  <div class="section-head">
+    <div>
+      <h2 id="iam-user-form-title">Create IAM user</h2>
+      <p class="muted">Assign policies directly or through groups. Full Administrator users can manage this account.</p>
+    </div>
+    <button class="secondary" id="iam-user-dialog-close" type="button">Close</button>
+  </div>
+  <input id="iam-user-id" type="hidden">
+  <div class="form-grid">
+    <div class="form-field"><label for="iam-username">Username</label><input id="iam-username" maxlength="64" placeholder="deploy-operator" autocomplete="off"></div>
+    <div class="form-field"><label for="iam-email">Email</label><input id="iam-email" type="email" autocomplete="off"></div>
+    <div class="form-field"><label for="iam-password">Password</label><input id="iam-password" type="password" minlength="12" autocomplete="new-password" placeholder="12+ characters"></div>
+    <div class="form-field"><label for="iam-role">Role</label><select id="iam-role"><option>IAM User</option><option>Read Only</option><option>Full Administrator</option></select></div>
+    <div class="form-field"><label for="iam-status">Status</label><select id="iam-status"><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
+  </div>
+  <div class="iam-assignment-grid">
+    <div><h3>Groups</h3><div id="iam-user-groups" class="iam-check-list"></div></div>
+    <div><h3>Direct policies</h3><div id="iam-user-policies" class="iam-check-list"></div></div>
+  </div>
+  <div class="inline-fields">
+    <button class="primary" id="iam-user-save" type="button">Create user</button>
+    <button class="secondary" id="iam-user-cancel" type="button">Cancel</button>
+    <span class="message" id="iam-user-form-message" role="status" aria-live="polite"></span>
+  </div>
+</dialog>
+
+<dialog class="terminal-dialog form-dialog" id="iam-group-dialog" aria-labelledby="iam-group-form-title">
+  <div class="section-head">
+    <div>
+      <h2 id="iam-group-form-title">Create group</h2>
+      <p class="muted">Attached policies apply to every member of this group. Create custom policies on the Policies tab first if the list is empty.</p>
+    </div>
+    <button class="secondary" id="iam-group-dialog-close" type="button">Close</button>
+  </div>
+  <input id="iam-group-id" type="hidden">
+  <div class="form-field"><label for="iam-group-name">Group name</label><input id="iam-group-name" maxlength="80" placeholder="PlatformOperators"></div>
+  <div class="form-field"><label for="iam-group-description">Description</label><input id="iam-group-description" maxlength="200" placeholder="Operators who manage application VPSs"></div>
+  <h3>Attached policies</h3>
+  <div id="iam-group-policies" class="iam-check-list"></div>
+  <div class="inline-fields">
+    <button class="primary" id="iam-group-save" type="button">Create group</button>
+    <button class="secondary" id="iam-group-cancel" type="button">Cancel</button>
+    <span class="message" id="iam-group-form-message" role="status" aria-live="polite"></span>
+  </div>
+</dialog>
 {{end}}

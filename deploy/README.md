@@ -1,67 +1,122 @@
 # CloFix deploy (one component at a time)
 
-Deploy in this order — each folder has its own `.env` and remote SSH settings.
+Each folder has its own `.env` with **remote SSH** (`CLOFIX_REMOTE_IP`, `USER`, `PASSWORD` or SSH key).
 
-| Step | Folder | What | Command |
-| ---: | --- | --- | --- |
-| 1 | `license/` | Company license server | `./deploy/license/deploy.sh` |
-| 2 | `admin/` | Customer controller + DB + S3 master | `./deploy/admin/deploy.sh` |
-| 3 | `worker/` | Linux FileVPS worker (`.deb` + enroll) | `./build-worker.sh deb` then `./push-join-worker.sh` |
+| Step | Folder | What | Native (no Docker) | Docker |
+| ---: | --- | --- | --- | --- |
+| 1 | `license/` | Company license server | `install-db.sh` → `deploy-native.sh` | `./deploy.sh` |
+| 2 | `admin/` | Customer controller | `install-db.sh` → `deploy-native.sh` | `./deploy.sh` |
+| 3 | `worker/` | FileVPS worker + admin join | `./deploy.sh` (`.deb` + enroll) | - |
 
 ```text
 deploy/
-  license/   .env  deploy.sh
-  admin/     .env  deploy.sh  docker-compose.yml
-  worker/    .env  build-worker.sh  push-join-worker.sh  install-join-worker.sh
-  _lib/      ssh.sh
+  _lib/ssh.sh
+  license/
+    .env.example
+    install-db.sh      # Postgres install + role/db
+    migrate-db.sh      # SQL migrate only
+    deploy-native.sh   # binary + systemd (no Docker)
+    deploy.sh          # Docker Compose path
+  admin/
+    .env.example
+    install-db.sh
+    migrate-db.sh
+    deploy-native.sh
+    deploy.sh          # Docker Compose (db + S3 + admin)
+  worker/
+    .env.example
+    build-worker.sh
+    deploy.sh          # push + join admin (calls push-join-worker.sh)
+    install-join-worker.sh
+    push-join-worker.sh
 ```
 
-## 1. License
+Password SSH needs `sshpass` on the machine running these scripts.
+
+---
+
+## Native path (recommended for bare-metal / VM)
+
+### 1. License server
 
 ```sh
 cp deploy/license/.env.example deploy/license/.env
-# set CLOFIX_REMOTE_IP, USER, PASSWORD, LICENSE_ADMIN_USER, LICENSE_ADMIN_PASSWORD
-./deploy/license/deploy.sh
+# set CLOFIX_REMOTE_IP, CLOFIX_REMOTE_USER, CLOFIX_REMOTE_PASSWORD
+# set LICENSE_ADMIN_USER, LICENSE_ADMIN_PASSWORD, LICENSE_DB_PASSWORD
+
+./deploy/license/install-db.sh      # Postgres + migrate
+# ./deploy/license/migrate-db.sh    # migrate-only later
+./deploy/license/deploy-native.sh   # build + systemd clofix-license
 ```
 
-## 2. Admin
+Health: `http://LICENSE_IP:8090/healthz`
+
+### 2. Admin controller (+ DB runtime + S3 pool)
 
 ```sh
 cp deploy/admin/.env.example deploy/admin/.env
-# set remote SSH + DB_PASSWORD + admin email/password
+# set remote SSH + CLOFIX_ADMIN_EMAIL/PASSWORD + DB_PASSWORD + S3_ACCESS_KEY/SECRET
 # set CLOFIX_LICENSE_SERVER_URL=http://LICENSE_IP:8090
-./deploy/admin/deploy.sh
+
+# One-shot (default WITH_DB_RUNTIME=1 WITH_S3_POOL=1):
+./deploy/admin/deploy-native.sh
+
+# Or step-by-step:
+./deploy/admin/deploy-db-runtime.sh   # Postgres install + migrate + systemd
+./deploy/admin/deploy-s3pool.sh       # SeaweedFS master/filer/S3 systemd
+./deploy/admin/migrate-db.sh          # schema-only later
+./deploy/admin/deploy-native.sh       # controller binary (skip runtimes: WITH_DB_RUNTIME=0 WITH_S3_POOL=0)
 ```
 
-UI: `http://ADMIN_IP:8080/` · workers mTLS: `https://ADMIN_IP:8443/`
+- UI: `http://ADMIN_IP:8080/`
+- Workers mTLS: `https://ADMIN_IP:8443/`
+- S3 master: `ADMIN_IP:9333` · S3 API: `ADMIN_IP:8333`
 
-For remote workers, prefer advertising S3 as `ADMIN_IP:9333` in worker `.env` (`CLOFIX_S3_MASTER_ADDRESS`). Inside the admin Compose network the controller can keep `s3pool:9333`.
+Optional dedicated DB host: set `DB_REMOTE_IP` / `DB_REMOTE_USER` / `DB_REMOTE_PASSWORD` in the same `.env`, then point `DB_HOST` (admin) or `LICENSE_DB_HOST` at that IP.
 
-## 3. Worker
+### 3. Worker (join admin)
 
 ```sh
 cp deploy/worker/.env.example deploy/worker/.env
-# set remote SSH + CLOFIX_CONTROLLER + CLOFIX_ADMIN_HTTP + CLOFIX_TOKEN
-# set CLOFIX_INSTALLATION_ID=ctl-…  (Admin → Settings → License; or leave blank to fetch via CLOFIX_ADMIN_HTTP)
-# set CLOFIX_S3_MASTER_ADDRESS=ADMIN_IP:9333
+# set CLOFIX_REMOTE_IP, USER, PASSWORD
+# set CLOFIX_CONTROLLER=https://ADMIN_IP:8443
+# set CLOFIX_ADMIN_HTTP=http://ADMIN_IP:8080
+# set CLOFIX_TOKEN=… (Admin UI → Workers → Enroll)
+# set CLOFIX_INSTALLATION_ID=ctl-… (or leave blank to fetch)
+# set CLOFIX_S3_MASTER_ADDRESS=ADMIN_IP:9333   # if using S3 pool
+
 cd deploy/worker
-./build-worker.sh deb
-./push-join-worker.sh
+./build-worker.sh deb    # once / after code changes
+./deploy.sh              # or: ./deploy.sh --build
+
+# Optional: isolated dockerd for managed databases (like Compose database-runtime)
+WITH_DATABASE_RUNTIME=1 ./deploy.sh
+# or later:
+./deploy-database-runtime.sh
 ```
 
-Create the token in Admin UI → **Workers → Enroll worker** before push.
+---
 
-Workers are **bound to the controller Installation ID** at build/enroll time. A worker built for another admin (`ctl-…`) is refused on enroll and heartbeat.
+## Docker path (unchanged)
 
-Password SSH needs `sshpass`. Each remote host can be different (fill that folder’s `.env`).
+```sh
+./deploy/license/deploy.sh
+./deploy/admin/deploy.sh
+cd deploy/worker && ./build-worker.sh deb && ./push-join-worker.sh
+```
 
-## Redis Cluster
+---
 
-Private multi-VPS Redis (`/redis-services`) needs **both**:
+## Notes
 
-1. **Admin** — `./deploy/admin/deploy.sh` rebuilds the controller Go API (`/api/cluster-services`). UI files are volume-mounted from `admin/web`.
-2. **Worker** — `./deploy/worker/build-worker.sh deb` then `./push-join-worker.sh` so the agent includes `configure-cluster-node` / `join-cluster`. Install enables host `ip_forward` + bridge helpers for same-VPC peer traffic.
-
-Redis itself is installed **inside** member VPS guests (not on the worker host). Endpoints are VPC-private only (`10.231.x.x:6379`); do not publish 6379 to the internet.
-
-After upgrading Redis Cluster code: redeploy admin, rebuild/push the worker `.deb`, then create or recreate clusters from the UI.
+- Native admin runtimes: `deploy-db-runtime.sh` (Postgres) + `deploy-s3pool.sh` (SeaweedFS). Both run from `deploy-native.sh` by default.
+- Worker managed-DB isolation: `deploy/worker/deploy-database-runtime.sh` (dedicated `dockerd` on `/var/run/clofix-docker/docker.sock`).
+- Admin SQL migrations live in `admin/db/migrations/*.up.sql` (also under `deploy/admin/sql/`).  
+  `migrate-db.sh` baselines old installs then applies new files (e.g. `0011_schema_parity.up.sql`).  
+  Controller `EnsureSchema()` remains a boot safety net.
+- License schema is `deploy/license/sql/001_license_state.sql` (idempotent; also auto-migrates on first start with `CLOFIX_LICENSE_DATABASE_URL`).
+- Update an existing admin DB only:
+  ```sh
+  ./deploy/admin/migrate-db.sh
+  ```
+- Workers are bound to the controller Installation ID (`ctl-…`) at build/enroll time.

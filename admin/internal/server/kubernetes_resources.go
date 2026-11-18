@@ -170,7 +170,7 @@ func (s *Server) postKubernetesIntegration(w http.ResponseWriter, r *http.Reques
 		fail(w, 503, err.Error())
 		return
 	}
-	s.Store.Audit(current.Owner, "kubernetes.integration", current.ID, item.Kind)
+	s.auditAccount(r, current.Owner, "kubernetes.integration", current.ID, item.Kind, nil)
 	writeJSON(w, 202, map[string]any{"job_id": job.ID, "integration": item})
 }
 

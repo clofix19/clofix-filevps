@@ -4,9 +4,9 @@ OS-level isolation on customer Linux hosts: namespaces, cgroup v2, OverlayFS, ve
 
 The stack is three parts:
 
-- `admin/` — customer controller (CA, enrollment, mTLS worker API, admin API, placement) plus the Admin UI and `admin/db/` migrations
-- `worker/` — one binary `clofix-worker` = agent + clofix-fx engine + scheduler (`worker/pkg/scheduler`)
-- `license-server/` — CloFix-hosted plan validation; the customer stack only calls its API
+- `admin/` - customer controller (CA, enrollment, mTLS worker API, admin API, placement) plus the Admin UI and `admin/db/` migrations
+- `worker/` - one binary `clofix-worker` = agent + clofix-fx engine + scheduler (`worker/pkg/scheduler`)
+- `license-server/` - CloFix-hosted plan validation; the customer stack only calls its API
 
 ## Run locally (Docker)
 
@@ -18,7 +18,7 @@ open http://localhost:8080/login
 
 Local Compose publishes admin UI/API on `8080`, worker mTLS on `8443`, and a loopback NLB test port on `127.0.0.1:18080`. UI files are volume-mounted (`./admin/web:/app/web:ro`); HTML/JS/CSS changes do not require an image rebuild. Go API changes do.
 
-The Compose worker defaults to `CLOFIX_KUBERNETES_FAKE=1` (lab CKS without host kubeadm — never on production workers) and `CLOFIX_USER_NS=false` (Docker Desktop). Do **not** set the worker’s DNS to public resolvers only (`8.8.8.8` / `1.1.1.1`); that breaks Docker service discovery (`admin`, `s3pool`) and stalls heartbeats / CKS readiness.
+The Compose worker defaults to `CLOFIX_KUBERNETES_FAKE=1` (lab CKS without host kubeadm - never on production workers) and `CLOFIX_USER_NS=false` (Docker Desktop). Do **not** set the worker’s DNS to public resolvers only (`8.8.8.8` / `1.1.1.1`); that breaks Docker service discovery (`admin`, `s3pool`) and stalls heartbeats / CKS readiness.
 
 The Compose worker bundles an Ubuntu 24.04 userspace for new VPSs, so the default Ubuntu image needs no URL or checksum. VPSs using the same image share its read-only base rootfs layer; each VPS has its own writable OverlayFS layer, so its file changes stay separate. Removing a VPS removes its writable layer, not the shared base image. VPSs also share the worker's Linux kernel and physical CPU and RAM. CPU, memory, swap, and process limits are enforced per VPS with cgroup v2; these are limits on shared host resources, not dedicated cores or RAM. Custom images still need a URL and SHA-256. Production workers need a matching bundled rootfs installed or a custom image URL and SHA-256.
 
@@ -28,11 +28,11 @@ Open `http://localhost:8080/login` with the bootstrap admin email and password f
 
 | Section | Pages |
 |---|---|
-| Overview | Dashboard — VPS/worker counts, guest and host CPU/RAM/disk/swap, VPS and worker network IN/OUT/bandwidth charts |
-| Compute | FileVPS, Library (Quick Apps + VPS software), Jobs & Functions, CKS (`/kubernetes` — dedicated workers; FileVPS kubelet unavailable) |
+| Overview | Dashboard - VPS/worker counts, guest and host CPU/RAM/disk/swap, VPS and worker network IN/OUT/bandwidth charts |
+| Compute | FileVPS, Library (Quick Apps + VPS software), Jobs & Functions, CKS (`/kubernetes` - dedicated workers; FileVPS kubelet unavailable) |
 | Storage | Volumes, EFS, Object Storage, Backups, Databases |
 | Networking | Load Balancers, VPC, DNS Service, Health Checks, Firewall |
-| Security | **WAF** (`/waf` — shared OWASP CRS engine + bindings), Security Center (score, modes, Protection), Users (partner / client / admin cards + create/edit/delete), IAM |
+| Security | **WAF** (`/waf` - shared OWASP CRS engine + bindings), Security Center (score, modes, Protection), Users (partner / client / admin cards + create/edit/delete), IAM |
 | Platform | Workers, Billing & Payments, Settings (General, Pricing & Plans, NLB pool, notifications, License) |
 
 IAM scopes match those resources (`instances`, `databases`, `kubernetes`, `load-balancers`, `dns`, `pricing`, `billing`, and the rest). Admin is the CloFix owner; partners manage their clients; root and IAM users stay inside one client account. **Users** (`/users`) shows partner / client / admin counts and a directory with Create, Edit, and Delete (guards block deleting your own session and unsafe last-admin cases).
@@ -43,7 +43,7 @@ New VPSs start automatically with Protection Mode enabled. The guest root filesy
 
 **Details → Security** also covers SSH Login Block, SSH Key-Only, Delete Protection, **Network Quarantine** (Protection + SSH block + delete lock + inbound restrict), and **Security Modes** (Standard, Hardened, Lockdown, Maintenance, Web Block). Modes apply those live controls together; Quarantine is a separate incident action, not a mode card. Fleet dry-run/apply lives on Security Center → Modes.
 
-**WAF** (`/waf`) is a shared **OWASP CRS** edge engine per worker (ModSecurity + CRS image / `clofix-waf` network). You do **not** reinstall the engine per target: create a **binding** for a FileVPS, Docker application, or Docker container, then activate it. Open a binding at `/waf/bindings/{id}` for KPI sparklines (hits / blocks / attacks / unique IPs), traffic tables (top IPs, URIs, attack types, recent events), CRS rule-group toggles, and custom HTML error pages (403/404/406/429/500). Stats are pulled from the edge ModSecurity audit (`waf-stats`); Refresh queues a sample without jumping the page scroll. FileVPS traffic is fronted by the worker gateway — the WAF is **not** installed inside the guest. Legacy Library catalog `owasp-waf` guest installs are obsolete for new bindings; uninstall them before attaching edge WAF. The edge inspects HTTP/HTTPS on the bound target only — not SSH or raw TCP forwards. See [book.md](book.md) §9.3.
+**WAF** (`/waf`) is a shared **OWASP CRS** edge engine per worker (ModSecurity + CRS image / `clofix-waf` network). You do **not** reinstall the engine per target: create a **binding** for a FileVPS, Docker application, or Docker container, then activate it. Open a binding at `/waf/bindings/{id}` for KPI sparklines (hits / blocks / attacks / unique IPs), traffic tables (top IPs, URIs, attack types, recent events), CRS rule-group toggles, and custom HTML error pages (403/404/406/429/500). Stats are pulled from the edge ModSecurity audit (`waf-stats`); Refresh queues a sample without jumping the page scroll. FileVPS traffic is fronted by the worker gateway - the WAF is **not** installed inside the guest. Legacy Library catalog `owasp-waf` guest installs are obsolete for new bindings; uninstall them before attaching edge WAF. The edge inspects HTTP/HTTPS on the bound target only - not SSH or raw TCP forwards. See [book.md](book.md) §9.3.
 
 Paste an SSH public key in the create form; on macOS, create one with `ssh-keygen -t ed25519` and copy `cat ~/.ssh/id_ed25519.pub`. VPS Details shows CPU, RAM, swap, and guest network IN/OUT. The Workers page shows host CPU, RAM, disk, swap, ZRAM and network. New VPSs default to a 512 MB swap limit, adjustable during creation (0 disables it). Host-wide ZRAM is optional and configured with `zram_mb` in the worker config; local Docker Desktop may not expose ZRAM devices.
 
@@ -53,7 +53,7 @@ The Backups page snapshots a stopped VPS writable root layer to compressed worke
 
 ## CKS (CloFix Kubernetes Service)
 
-`/kubernetes` (also `/cks`) manages EKS-style clusters on **dedicated CKS workers**, not FileVPS guests. From the UI: create/select clusters, Open / Resources / Kubeconfig / Edit, VPS groups (node pools) with optional autoscaling, workloads (Deployments, StatefulSets, Services, Ingress, Secrets, ConfigMaps, PVC, Jobs, HPA, NetworkPolicy, pod logs), Helm, CloFix attach (LB / FileVPS / volume / EFS / S3), add-ons, and etcd backup/upgrade. Local Compose uses the lab fake executor — see [docs/cks.md](docs/cks.md) and [book.md](book.md) §6.4.
+`/kubernetes` (also `/cks`) manages EKS-style clusters on **dedicated CKS workers**, not FileVPS guests. From the UI: create/select clusters, Open / Resources / Kubeconfig / Edit, VPS groups (node pools) with optional autoscaling, workloads (Deployments, StatefulSets, Services, Ingress, Secrets, ConfigMaps, PVC, Jobs, HPA, NetworkPolicy, pod logs), Helm, CloFix attach (LB / FileVPS / volume / EFS / S3), add-ons, and etcd backup/upgrade. Local Compose uses the lab fake executor - see [docs/cks.md](docs/cks.md) and [book.md](book.md) §6.4.
 
 ## Shared S3 storage pool
 
@@ -116,9 +116,9 @@ No enrollment secret lives in Compose files. The local worker hostname is `clofi
 
 See [deploy/README.md](deploy/README.md):
 
-1. `./deploy/license/deploy.sh` — company license server  
-2. `./deploy/admin/deploy.sh` — customer controller + DB + S3 master  
-3. `./deploy/worker/build-worker.sh deb` then `./deploy/worker/push-join-worker.sh` — Linux worker  
+1. `./deploy/license/deploy.sh` - company license server  
+2. `./deploy/admin/deploy.sh` - customer controller + DB + S3 master  
+3. `./deploy/worker/build-worker.sh deb` then `./deploy/worker/push-join-worker.sh` - Linux worker  
 
 Each step has its own `deploy/<component>/.env` (remote IP / user / password).
 
@@ -130,9 +130,9 @@ Each step has its own `deploy/<component>/.env` (remote IP / user / password).
 
 ## More documentation
 
-- [book.md](book.md) — client book (edge WAF bindings, Security Modes, CKS, Users, storage, billing)
-- [admin/README.md](admin/README.md) — IAM, backups, VPS login helper
-- [worker/README.md](worker/README.md) — worker package and fx engine
-- [docs/cks.md](docs/cks.md) — CloFix Kubernetes Service (node pools, Helm, HA, backups; FileVPS kubelet unavailable)
-- [docs/library-java-services.md](docs/library-java-services.md) — WildFly/Tomcat library services
-- [clofix-bench-audit/README.md](clofix-bench-audit/README.md) — bench/audit scripts
+- [book.md](book.md) - client book (edge WAF bindings, Security Modes, CKS, Users, storage, billing)
+- [admin/README.md](admin/README.md) - IAM, backups, VPS login helper
+- [worker/README.md](worker/README.md) - worker package and fx engine
+- [docs/cks.md](docs/cks.md) - CloFix Kubernetes Service (node pools, Helm, HA, backups; FileVPS kubelet unavailable)
+- [docs/library-java-services.md](docs/library-java-services.md) - WildFly/Tomcat library services
+- [clofix-bench-audit/README.md](clofix-bench-audit/README.md) - bench/audit scripts

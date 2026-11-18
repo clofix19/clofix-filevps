@@ -1,4 +1,4 @@
-/* CloFix FileVPS — in-browser SSH terminal (PEM or PAM). */
+/* CloFix FileVPS - in-browser SSH terminal (PEM or PAM). */
 (function () {
   const $ = (id) => document.getElementById(id);
   const RESUME_KEY = 'cf_vps_term_resume';
@@ -141,11 +141,11 @@
     if ($('vps-term-connect')) $('vps-term-connect').disabled = connected;
     if ($('vps-term-sub')) {
       $('vps-term-sub').textContent = connected
-        ? 'Live root shell — click Exit to close the session.'
+        ? 'Live root shell - click Exit to close the session.'
         : 'Interactive root shell in the browser (PEM or PAM).';
     }
     if (connected) {
-      // Fit only after the screen is visible — opening into display:none yields bad cell metrics.
+      // Fit only after the screen is visible - opening into display:none yields bad cell metrics.
       requestAnimationFrame(() => {
         fitTerm();
         requestAnimationFrame(() => {
@@ -261,7 +261,7 @@
     setConnected(false);
   }
 
-  /** User Exit only — send shell exit, then close. Browser refresh must not call this. */
+  /** User Exit only - send shell exit, then close. Browser refresh must not call this. */
   function exitTerminal() {
     if (!connected && !sessionReady && !socket) {
       setConnected(false);
@@ -283,9 +283,21 @@
     return proto + '//' + location.host + '/api/instances/' + encodeURIComponent(id) + '/terminal';
   }
 
+  function normalizeClientPEM(raw) {
+    let key = String(raw || '').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+    // Some editors wrap the base64 body; keep header/footer lines intact.
+    return key;
+  }
+
   async function connect() {
     const id = typeof selectedID === 'string' ? selectedID : '';
     if (!id) { msg('Select a VPS first.'); return; }
+    // Snapshot credentials first - refresh()/preferAuthMethod can clear the PEM
+    // textarea when rebinding the panel, which made "PEM file" login look broken
+    // while password still worked.
+    const methodAtClick = currentMethod();
+    const passwordAtClick = $('vps-term-password')?.value || lastAuth?.password || '';
+    const pemAtClick = normalizeClientPEM($('vps-term-pem')?.value || lastAuth?.private_key || '');
     // Refresh instance flags so a password just set under Access is visible.
     if (typeof refresh === 'function') {
       try { await refresh(); } catch (_) {}
@@ -297,7 +309,7 @@
     if (inst.spec?.ssh_login_blocked) { msg('SSH login is blocked for this VPS.'); return; }
 
     const auth = instanceAuth(inst);
-    let method = currentMethod();
+    let method = methodAtClick === 'password' ? 'password' : 'pem';
     if (method === 'password' && !auth.pam) {
       msg('PAM is off. Set a root password under Access → Root password, wait a few seconds, then retry.');
       return;
@@ -306,19 +318,29 @@
       msg('No authorized SSH key on this VPS. Use PAM password, or add a key under Access.');
       return;
     }
+    // Restore fields if refresh wiped them so the user still sees what will be sent.
+    if (method === 'pem' && pemAtClick && $('vps-term-pem') && !$('vps-term-pem').value.trim()) {
+      $('vps-term-pem').value = pemAtClick;
+    }
+    if (method === 'password' && passwordAtClick && $('vps-term-password') && !$('vps-term-password').value) {
+      $('vps-term-password').value = passwordAtClick;
+    }
+    // fromUser=false: keep snapshotted credentials; only sync method UI state.
+    setMethod(method, false, inst);
+    methodChosen = true;
     const payload = { method, cols: 80, rows: 24 };
     if (method === 'password') {
-      payload.password = $('vps-term-password')?.value || lastAuth?.password || '';
+      payload.password = passwordAtClick;
       if (payload.password.length < 8) { msg('Enter the root PAM password (min 8 characters).'); return; }
     } else {
-      payload.private_key = $('vps-term-pem')?.value || lastAuth?.private_key || '';
-      const key = payload.private_key.trim();
+      payload.private_key = pemAtClick;
+      const key = payload.private_key;
       if (!key) { msg('Paste or choose a private PEM key.'); return; }
       if (/^ssh-(ed25519|rsa)|ecdsa-sha2-/.test(key.split('\n')[0])) {
         msg('Paste the private PEM (BEGIN PRIVATE KEY), not the public ssh-… line.');
         return;
       }
-      if (!/BEGIN .*PRIVATE KEY/.test(key)) {
+      if (!/BEGIN [^\n]*PRIVATE KEY/.test(key)) {
         msg('Private key must include a BEGIN … PRIVATE KEY PEM block.');
         return;
       }
@@ -331,7 +353,7 @@
 
     msg('Connecting…');
     disconnect(); // close prior socket only; keep resume until Exit
-    // Show the host before open/fit — xterm metrics are wrong under display:none.
+    // Show the host before open/fit - xterm metrics are wrong under display:none.
     if ($('vps-term-login')) $('vps-term-login').hidden = true;
     if ($('vps-term-screen')) $('vps-term-screen').hidden = false;
     const t = ensureTerm();
@@ -371,7 +393,7 @@
             saveResume(id, lastAuth);
             msg('');
             if ($('vps-term-sub')) {
-              $('vps-term-sub').textContent = 'Live as root@' + id + ' — click Exit to close.';
+              $('vps-term-sub').textContent = 'Live as root@' + id + ' - click Exit to close.';
             }
             fitTerm();
             t.focus();
@@ -398,7 +420,7 @@
         setConnected(false);
         return;
       }
-      // Unexpected drop (network / page hide) — keep resume so refresh can reconnect.
+      // Unexpected drop (network / page hide) - keep resume so refresh can reconnect.
       if (connected || sessionReady) {
         sessionReady = false;
         setConnected(false);
@@ -443,6 +465,8 @@
     if (id && id !== boundInstance) {
       boundInstance = id;
       methodChosen = false;
+      // Only clear credentials when switching to a different VPS - never on
+      // the periodic refresh that connect() triggers before dialing.
       if ($('vps-term-password')) $('vps-term-password').value = '';
       if ($('vps-term-pem')) $('vps-term-pem').value = '';
       if ($('vps-term-pem-file')) $('vps-term-pem-file').value = '';
@@ -495,8 +519,17 @@
       try {
         const inst = (typeof instances !== 'undefined' ? instances : []).find((x) => x.id === selectedID);
         setMethod('pem', true, inst);
-        $('vps-term-pem').value = await file.text();
-        msg('Loaded ' + file.name);
+        const text = normalizeClientPEM(await file.text());
+        if (!/BEGIN [^\n]*PRIVATE KEY/.test(text)) {
+          msg('File does not look like a private PEM (need BEGIN … PRIVATE KEY).');
+          return;
+        }
+        if (/^ssh-(ed25519|rsa)|ecdsa-sha2-/.test(text.split('\n')[0])) {
+          msg('That file is a public key. Choose the private .pem downloaded at create time.');
+          return;
+        }
+        $('vps-term-pem').value = text;
+        msg('Loaded ' + file.name + ' (' + text.split('\n').length + ' lines)');
       } catch (err) {
         msg(err.message || 'Could not read key file');
       }

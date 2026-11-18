@@ -3,10 +3,10 @@
 # Appends status lines to results/suite-fx.tsv (does not restart compose).
 #
 # Evidence tiers (do NOT treat all as production PASS):
-#   UNIT     — Go unit / httptest (no multi-worker, no live guest performance)
-#   SMOKE    — single-worker admin API surface exists
-#   PASS     — reserved for live host audit/bench/suite probes elsewhere
-#   SKIPPED  — multi-worker, reboot, ZRAM, LXC/Incus compare, density, etc.
+#   UNIT     - Go unit / httptest (no multi-worker, no live guest performance)
+#   SMOKE    - single-worker admin API surface exists
+#   PASS     - reserved for live host audit/bench/suite probes elsewhere
+#   SKIPPED  - multi-worker, reboot, ZRAM, LXC/Incus compare, density, etc.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
@@ -123,11 +123,11 @@ else
   out=$(api POST /api/auth/login "$login_body")
   code=$(printf '%s' "$out" | tail -1)
   if [ "$code" != "200" ]; then
-    echo "  login failed http=$code — NOT RUN API probes aborted"
+    echo "  login failed http=$code - NOT RUN API probes aborted"
   else
     echo "  login ok"
 
-    # MO03 — memory pressure / OOM alert surface (security + monitoring)
+    # MO03 - memory pressure / OOM alert surface (security + monitoring)
     sec=$(api GET /api/security/overview)
     scode=$(printf '%s' "$sec" | tail -1)
     body=$(printf '%s' "$sec" | sed '$d')
@@ -137,7 +137,7 @@ else
       rec CAT MO03 FAIL "Security overview missing" "http=$scode"
     fi
 
-    # MO04 — storage almost-full (workers capacity disk)
+    # MO04 - storage almost-full (workers capacity disk)
     wk=$(api GET /api/workers)
     wcode=$(printf '%s' "$wk" | tail -1)
     wbody=$(printf '%s' "$wk" | sed '$d')
@@ -151,7 +151,7 @@ else
       fi
     fi
 
-    # MO05 — network traffic metrics
+    # MO05 - network traffic metrics
     inst=$(api GET /api/instances)
     icode=$(printf '%s' "$inst" | tail -1)
     ibody=$(printf '%s' "$inst" | sed '$d')
@@ -161,7 +161,7 @@ else
       rec CAT MO05 FAIL "Instances API failed" "http=$icode"
     fi
 
-    # MO06 — worker down / VPS crash alerts
+    # MO06 - worker down / VPS crash alerts
     hc=$(api GET /api/health-checks)
     hcode=$(printf '%s' "$hc" | tail -1)
     mon=$(api GET /api/monitoring/monitors)
@@ -172,7 +172,7 @@ else
       rec CAT MO06 FAIL "No monitoring surface" "health=$hcode monitors=$mcode"
     fi
 
-    # MO07 — audit / event log integrity
+    # MO07 - audit / event log integrity
     aud=$(api GET '/api/audit?limit=20')
     acode=$(printf '%s' "$aud" | tail -1)
     if [ "$acode" = "200" ]; then
@@ -181,7 +181,7 @@ else
       rec CAT MO07 FAIL "Audit API failed" "http=$acode"
     fi
 
-    # MO08 — alert delivery channels
+    # MO08 - alert delivery channels
     ch=$(api GET /api/monitoring/channels)
     ccode=$(printf '%s' "$ch" | tail -1)
     if [ "$ccode" = "200" ]; then
@@ -196,7 +196,7 @@ else
       fi
     fi
 
-    # REL05 — interrupted OS image update
+    # REL05 - interrupted OS image update
     img=$(api GET /api/images)
     imgc=$(printf '%s' "$img" | tail -1)
     if [ "$imgc" = "200" ] || [ "$imgc" = "404" ]; then
@@ -205,7 +205,7 @@ else
       rec CAT REL05 SKIPPED "Interrupted OS image update not probed on this lab" "images=$imgc"
     fi
 
-    # REL06 — control-plane DB outage
+    # REL06 - control-plane DB outage
     hz=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/healthz" 2>/dev/null || echo 000)
     if [ "$hz" = "200" ] || [ "$hz" = "204" ]; then
       rec CAT REL06 SMOKE "Controller healthz reachable while DB is up" "not a DB-outage failover test"
@@ -213,7 +213,7 @@ else
       rec CAT REL06 SKIPPED "DB outage / fail-closed not exercised" "healthz=$hz"
     fi
 
-    # REL08 — rolling worker upgrade
+    # REL08 - rolling worker upgrade
     eng=$(api GET /api/docker/workers)
     ecode=$(printf '%s' "$eng" | tail -1)
     if [ "$ecode" = "200" ] || [ "$wcode" = "200" ]; then
@@ -222,7 +222,7 @@ else
       rec CAT REL08 FAIL "No worker upgrade surface" "docker_workers=$ecode"
     fi
 
-    # BL04 — subscription expiration enforcement
+    # BL04 - subscription expiration enforcement
     sub=$(api GET /api/billing/subscriptions)
     subc=$(printf '%s' "$sub" | tail -1)
     lic=$(api GET /api/license)
@@ -325,7 +325,7 @@ else
     fi
     [ -n "$aid" ] && api DELETE "/api/docker/applications/$aid" >/dev/null || true
 
-    # Honest SKIPPED — do not promote single-worker API smoke to multi-worker / reboot / ZRAM / compare PASS.
+    # Honest SKIPPED - do not promote single-worker API smoke to multi-worker / reboot / ZRAM / compare PASS.
     rec CAT WK01 SMOKE "At least one enrolled worker visible" "not a multi-worker registration matrix"
     rec CAT WK04 SKIPPED "Multi-worker automatic placement not proven (single-worker lab)" "need >=2 workers"
     rec CAT WK05 SKIPPED "Multi-worker ready/unready placement not proven" "need >=2 workers"

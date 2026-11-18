@@ -67,7 +67,7 @@ if command -v chroot >/dev/null 2>&1; then
     if grep -q 'CloFix Linux' /tmp/clofix-ver-out; then pass "clofix version in chroot"
     else fail "clofix version unexpected output"; cat /tmp/clofix-ver-out; fi
   else
-    # FileVPS rootfs may lack full chroot deps on macOS host — soft note
+    # FileVPS rootfs may lack full chroot deps on macOS host - soft note
     echo "WARN: chroot clofix failed (expected on non-Linux hosts): $(cat /tmp/clofix-ver-err 2>/dev/null || true)"
   fi
 fi

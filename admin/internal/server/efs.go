@@ -145,7 +145,7 @@ func (s *Server) createEFS(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.Store.Audit(applicationOwner(r), "efs.create", id, name)
+	s.audit(r, "efs.create", id, name, nil)
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "name": name, "connection_id": conn.ID, "prefix": share.Prefix})
 }
 
@@ -178,7 +178,7 @@ func (s *Server) updateEFS(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.Store.Audit(applicationOwner(r), "efs.update", id, name)
+	s.audit(r, "efs.update", id, name, nil)
 	writeJSON(w, 200, map[string]any{"id": id, "name": name})
 }
 
@@ -203,7 +203,7 @@ func (s *Server) deleteEFS(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.Store.Audit(applicationOwner(r), "efs.delete", id, share.Name)
+	s.audit(r, "efs.delete", id, share.Name, nil)
 	writeJSON(w, 200, map[string]any{"deleted": true, "id": id})
 }
 
@@ -234,7 +234,7 @@ func (s *Server) attachEFS(w http.ResponseWriter, r *http.Request) {
 		fail(w, code, err.Error())
 		return
 	}
-	s.Store.Audit(applicationOwner(r), "efs.attach", id, in.InstanceID)
+	s.audit(r, "efs.attach", id, in.InstanceID, nil)
 	writeJSON(w, 200, map[string]any{"id": id, "instance_id": in.InstanceID, "guest_path": in.GuestPath, "queued": true, "restart_required": inst.State == proto.StateRunning})
 }
 
@@ -370,7 +370,7 @@ func (s *Server) detachEFS(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.Store.Audit(applicationOwner(r), "efs.detach", id, inst.ID)
+	s.audit(r, "efs.detach", id, inst.ID, nil)
 	writeJSON(w, 200, map[string]any{"id": id, "instance_id": inst.ID, "queued": true})
 }
 
@@ -501,7 +501,7 @@ func (s *Server) moveEFSObject(w http.ResponseWriter, r *http.Request) {
 		fail(w, code, moveErr.Error())
 		return
 	}
-	s.Store.Audit(applicationOwner(r), "efs.move", r.PathValue("id"), src+" -> "+dest)
+	s.audit(r, "efs.move", r.PathValue("id"), src+" -> "+dest, nil)
 	writeJSON(w, 200, map[string]any{"moved": true, "from": src, "to": dest})
 }
 

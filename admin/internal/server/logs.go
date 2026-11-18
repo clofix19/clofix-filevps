@@ -115,7 +115,7 @@ func (s *Server) logRoutes(m *http.ServeMux) {
 }
 
 func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
-	sources := s.logCatalog()
+	sources := s.logCatalog(r)
 	d := s.logs
 	d.Lock()
 	alerts := make([]logAlert, 0, len(d.Alerts))
@@ -127,26 +127,31 @@ func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
 		"sources":   sources,
 		"alerts":    alerts,
-		"resources": s.logResources(),
-		"channels":  s.enabledLogChannels(),
+		"resources": s.logResources(r),
+		"channels":  s.enabledLogChannels(r),
 	})
 }
 
-func (s *Server) enabledLogChannels() []map[string]any {
+func (s *Server) enabledLogChannels(r *http.Request) []map[string]any {
 	d := s.monitoring
 	d.Lock()
 	defer d.Unlock()
 	out := []map[string]any{}
 	for _, c := range d.Channels {
+		if !s.canAccessMonitoringAccount(r, c.AccountID) {
+			continue
+		}
 		out = append(out, map[string]any{"id": c.ID, "name": c.Name, "type": c.Type, "enabled": c.Enabled})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i]["name"].(string) < out[j]["name"].(string) })
 	return out
 }
 
-func (s *Server) logCatalog() []map[string]any {
+func (s *Server) logCatalog(r *http.Request) []map[string]any {
 	out := []map[string]any{}
+	p := principalFrom(r)
 	instances, _ := s.Store.ListInstances()
+	instances = filterInstances(instances, s.visibleAccountIDSet(p), p.Kind == "admin")
 	s.usageMu.RLock()
 	for _, inst := range instances {
 		out = append(out, logCatalogItem("vps:"+inst.ID, inst.ID+" instance log", "vps", inst.ID, "instance.log", "auto"))
@@ -159,10 +164,16 @@ func (s *Server) logCatalog() []map[string]any {
 	if s.applications != nil {
 		s.applications.Lock()
 		for _, a := range s.applications.Managed {
+			if !canAccessApplication(r, a.Owner) {
+				continue
+			}
 			out = append(out, logCatalogItem("app:"+a.ID, a.Name, "managed-app", a.ID, "app.log", "auto"))
 		}
 		runs := make([]applicationRun, 0, len(s.applications.Runs))
 		for _, run := range s.applications.Runs {
+			if !canAccessApplication(r, run.Owner) {
+				continue
+			}
 			runs = append(runs, run)
 		}
 		s.applications.Unlock()
@@ -177,6 +188,9 @@ func (s *Server) logCatalog() []map[string]any {
 	d := s.logs
 	d.Lock()
 	for _, src := range d.Sources {
+		if !s.canAccessLogResource(r, src.Kind, src.ResourceID) {
+			continue
+		}
 		item := logCatalogItem(src.ID, src.Name, src.Kind, src.ResourceID, src.Path, "custom")
 		if cached, ok := d.tails[src.ID]; ok {
 			item["state"] = "ready"
@@ -197,39 +211,51 @@ func logCatalogItem(id, name, kind, resource, path, origin string) map[string]an
 	return map[string]any{"id": id, "name": name, "kind": kind, "resource_id": resource, "path": path, "origin": origin, "state": "ready"}
 }
 
-func (s *Server) logResources() map[string][]map[string]string {
+func (s *Server) logResources(r *http.Request) map[string][]map[string]string {
 	out := map[string][]map[string]string{"vps": {}, "lb": {}, "database": {}, "managed-app": {}, "worker": {}}
+	p := principalFrom(r)
 	if instances, err := s.Store.ListInstances(); err == nil {
-		for _, inst := range instances {
+		for _, inst := range filterInstances(instances, s.visibleAccountIDSet(p), p.Kind == "admin") {
 			out["vps"] = append(out["vps"], map[string]string{"id": inst.ID, "name": inst.ID})
 		}
 	}
 	if s.balancers != nil {
 		s.balancers.Lock()
 		for _, lb := range s.balancers.Items {
+			if lb == nil || (p.Kind != "admin" && !s.canAccessAccount(p, lb.AccountID)) {
+				continue
+			}
 			out["lb"] = append(out["lb"], map[string]string{"id": lb.ID, "name": lb.Name})
 		}
 		s.balancers.Unlock()
 	}
 	if s.databases != nil {
 		s.databases.Lock()
-		for _, p := range s.databases.Projects {
-			out["database"] = append(out["database"], map[string]string{"id": p.Spec.ID, "name": p.Name})
+		for _, proj := range s.databases.Projects {
+			if !canAccessApplication(r, proj.Owner) {
+				continue
+			}
+			out["database"] = append(out["database"], map[string]string{"id": proj.Spec.ID, "name": proj.Name})
 		}
 		s.databases.Unlock()
 	}
 	if s.applications != nil {
 		s.applications.Lock()
 		for _, a := range s.applications.Managed {
+			if !canAccessApplication(r, a.Owner) {
+				continue
+			}
 			out["managed-app"] = append(out["managed-app"], map[string]string{"id": a.ID, "name": a.Name})
 		}
 		s.applications.Unlock()
 	}
-	if workers, err := s.Store.ListWorkers(); err == nil {
-		for _, wk := range workers {
-			out["worker"] = append(out["worker"], map[string]string{"id": wk.ID, "name": wk.Hostname})
-			if out["worker"][len(out["worker"])-1]["name"] == "" {
-				out["worker"][len(out["worker"])-1]["name"] = wk.ID
+	if p.Kind == "admin" {
+		if workers, err := s.Store.ListWorkers(); err == nil {
+			for _, wk := range workers {
+				out["worker"] = append(out["worker"], map[string]string{"id": wk.ID, "name": wk.Hostname})
+				if out["worker"][len(out["worker"])-1]["name"] == "" {
+					out["worker"][len(out["worker"])-1]["name"] = wk.ID
+				}
 			}
 		}
 	}
@@ -254,7 +280,7 @@ func (s *Server) saveLogSource(w http.ResponseWriter, r *http.Request) {
 	if cleaned, err := cleanLogPath(in.Path); err == nil {
 		in.Path = cleaned
 	}
-	if !s.logResourceExists(in.Kind, in.ResourceID) {
+	if !s.logResourceExists(in.Kind, in.ResourceID) || !s.canAccessLogResource(r, in.Kind, in.ResourceID) {
 		fail(w, 400, "resource not found")
 		return
 	}
@@ -268,7 +294,7 @@ func (s *Server) saveLogSource(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not save log source")
 		return
 	}
-	s.Store.Audit("admin", "logs.source.create", in.ID, in.Name)
+	s.audit(r, "logs.source.create", in.ID, in.Name, nil)
 	writeJSON(w, 200, in)
 }
 
@@ -361,6 +387,76 @@ func (s *Server) logResourceExists(kind, id string) bool {
 	return false
 }
 
+func (s *Server) canAccessLogResource(r *http.Request, kind, id string) bool {
+	p := principalFrom(r)
+	if p.Kind == "admin" {
+		return true
+	}
+	switch kind {
+	case "vps":
+		inst, err := s.Store.GetInstance(id)
+		return err == nil && s.canAccessAccount(p, inst.AccountID)
+	case "lb":
+		if s.balancers == nil {
+			return false
+		}
+		s.balancers.Lock()
+		b := s.balancers.Items[id]
+		s.balancers.Unlock()
+		return b != nil && s.canAccessAccount(p, b.AccountID)
+	case "database":
+		if s.databases == nil {
+			return false
+		}
+		s.databases.Lock()
+		proj, ok := s.databases.Projects[id]
+		s.databases.Unlock()
+		return ok && canAccessApplication(r, proj.Owner)
+	case "managed-app":
+		if s.applications == nil {
+			return false
+		}
+		s.applications.Lock()
+		a, ok := s.applications.Managed[id]
+		s.applications.Unlock()
+		return ok && canAccessApplication(r, a.Owner)
+	case "worker":
+		return false
+	default:
+		return false
+	}
+}
+
+func (s *Server) canAccessLogSourceID(r *http.Request, id string) bool {
+	if strings.HasPrefix(id, "vps:") {
+		parts := strings.Split(id, ":")
+		if len(parts) >= 2 {
+			return s.canAccessLogResource(r, "vps", parts[1])
+		}
+	}
+	if strings.HasPrefix(id, "app:") {
+		return s.canAccessLogResource(r, "managed-app", strings.TrimPrefix(id, "app:"))
+	}
+	if strings.HasPrefix(id, "run:") {
+		if s.applications == nil {
+			return false
+		}
+		runID := strings.TrimPrefix(id, "run:")
+		s.applications.Lock()
+		run, ok := s.applications.Runs[runID]
+		s.applications.Unlock()
+		return ok && canAccessApplication(r, run.Owner)
+	}
+	d := s.logs
+	d.Lock()
+	src, ok := d.Sources[id]
+	d.Unlock()
+	if ok {
+		return s.canAccessLogResource(r, src.Kind, src.ResourceID)
+	}
+	return principalFrom(r).Kind == "admin"
+}
+
 func (s *Server) deleteLogSource(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !logCustomID.MatchString(id) {
@@ -369,7 +465,13 @@ func (s *Server) deleteLogSource(w http.ResponseWriter, r *http.Request) {
 	}
 	d := s.logs
 	d.Lock()
-	if _, ok := d.Sources[id]; !ok {
+	src, ok := d.Sources[id]
+	if !ok {
+		d.Unlock()
+		fail(w, 404, "source not found")
+		return
+	}
+	if !s.canAccessLogResource(r, src.Kind, src.ResourceID) {
 		d.Unlock()
 		fail(w, 404, "source not found")
 		return
@@ -382,7 +484,7 @@ func (s *Server) deleteLogSource(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not delete log source")
 		return
 	}
-	s.Store.Audit("admin", "logs.source.delete", id, "ok")
+	s.audit(r, "logs.source.delete", id, "ok", nil)
 	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
 
@@ -437,7 +539,7 @@ func (s *Server) saveLogAlert(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not save alert")
 		return
 	}
-	s.Store.Audit("admin", "logs.alert.save", in.ID, in.Name)
+	s.audit(r, "logs.alert.save", in.ID, in.Name, nil)
 	writeJSON(w, 200, in)
 }
 
@@ -457,7 +559,7 @@ func (s *Server) deleteLogAlert(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not delete alert")
 		return
 	}
-	s.Store.Audit("admin", "logs.alert.delete", id, "ok")
+	s.audit(r, "logs.alert.delete", id, "ok", nil)
 	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
 
@@ -471,6 +573,10 @@ func (s *Server) getLogAlertEvents(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getLogTail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !s.canAccessLogSourceID(r, id) {
+		fail(w, 404, "source not found")
+		return
+	}
 	text, errMsg, ok := s.readLogTail(id)
 	if !ok {
 		fail(w, 404, "source not found")
@@ -483,6 +589,10 @@ func (s *Server) getLogTail(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) downloadLogTail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !s.canAccessLogSourceID(r, id) {
+		fail(w, 404, "source not found")
+		return
+	}
 	text, _, ok := s.readLogTail(id)
 	if !ok {
 		fail(w, 404, "source not found")
@@ -504,7 +614,7 @@ func (s *Server) getLogAnalysis(w http.ResponseWriter, r *http.Request) {
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
 	rows := []map[string]any{}
 	totals := map[string]int{"lines": 0, "errors": 0, "warns": 0, "matches": 0}
-	for _, src := range s.logCatalog() {
+	for _, src := range s.logCatalog(r) {
 		id, _ := src["id"].(string)
 		text, _, ok := s.readLogTail(id)
 		if !ok {

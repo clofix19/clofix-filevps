@@ -111,7 +111,7 @@
   if(compat){
    const gate=state.production_gate||{};
    const workers=(state.ready_workers||[]).length;
-   compat.textContent=workers?(gate.reason||(state.production_ready?'Production gate: ready.':'Lab CKS ready — manage clusters below.')):'Clusters stay listed from inventory; create/scale need a live CKS worker.';
+   compat.textContent=workers?(gate.reason||(state.production_ready?'Production gate: ready.':'Lab CKS ready - manage clusters below.')):'Clusters stay listed from inventory; create/scale need a live CKS worker.';
   }
   create.disabled=!(state.ready_workers||[]).length;create.title=create.disabled?'A CKS-ready worker is required.':'';
   const table=get('cks-clusters-table');row(table,['Name','Version','Mode','Nodes','Status','Actions'],true);
@@ -128,9 +128,9 @@
   get('cks-cluster-panel').hidden=!current;
   if(current){
    get('cks-cluster-title').textContent=current.name;
-   get('cks-cluster-meta').textContent=`${current.id} · control plane ${current.control_plane_worker_id||'—'}`;
-   get('cks-metric-version').textContent=current.version||'—';
-   get('cks-metric-mode').textContent=current.infrastructure_mode||'—';
+   get('cks-cluster-meta').textContent=`${current.id} · control plane ${current.control_plane_worker_id||'-'}`;
+   get('cks-metric-version').textContent=current.version||'-';
+   get('cks-metric-mode').textContent=current.infrastructure_mode||'-';
    get('cks-metric-api').textContent=current.api_endpoint||'Private worker API (not published)';
    const liveNodes=(current.nodes||[]).filter(node=>node.state!=='DELETED');
    get('cks-metric-nodes').textContent=String(liveNodes.length)+(current.ha?' · HA':'');
@@ -139,7 +139,7 @@
    liveNodes.forEach(node=>{
     const actions=document.createElement('div');actions.className='row-actions';
     actions.append(action('Update',()=>openNodeForm(node)));
-    row(nodes,[node.role,node.hostname||node.worker_id,node.cpu||current.node_pool?.cpu||'—',node.ram_mb||current.node_pool?.ram_mb||'—',node.disk_mb||current.node_pool?.disk_mb||'—',badge(node.state),actions]);
+    row(nodes,[node.role,node.hostname||node.worker_id,node.cpu||current.node_pool?.cpu||'-',node.ram_mb||current.node_pool?.ram_mb||'-',node.disk_mb||current.node_pool?.disk_mb||'-',badge(node.state),actions]);
    });
    fillNsFilter(current);
    const nsTable=get('cks-ns-table');row(nsTable,['Name','Actions'],true);
@@ -165,7 +165,7 @@
    deployList.forEach(item=>{
     const actions=resourceActions('Deployment',item);
     actions.prepend(action('Restart',async()=>{watch(await api('POST',`/api/v1/kubernetes/clusters/${current.id}/workloads`,{action:'restart',kind:item.kind||'Deployment',namespace:item.namespace,name:item.name}));message('Restart queued.');}));
-    actions.prepend(action('Scale',async()=>{const replicas=Number(prompt('Replicas',item.replicas||1));if(!Number.isFinite(replicas))return;watch(await api('POST',`/api/v1/kubernetes/clusters/${current.id}/workloads`,{action:'scale',kind:'Deployment',namespace:item.namespace,name:item.name,replicas}));message('Scale queued.');}));
+    actions.prepend(action('Scale',async()=>{const raw=await window.cfPrompt('Replicas',String(item.replicas||1),{title:'Scale deployment',label:'Replicas',confirm:'Scale'});const replicas=Number(raw);if(!Number.isFinite(replicas))return;watch(await api('POST',`/api/v1/kubernetes/clusters/${current.id}/workloads`,{action:'scale',kind:'Deployment',namespace:item.namespace,name:item.name,replicas}));message('Scale queued.');}));
     row(deploys,[item.namespace,item.name,`${item.ready||0}/${item.replicas||0}`,actions]);
    });
    const sts=get('cks-sts-table');row(sts,['Namespace','Name','Ready','Actions'],true);
@@ -174,7 +174,7 @@
    stsList.forEach(item=>{
     const actions=resourceActions('StatefulSet',item);
     actions.prepend(action('Restart',async()=>{watch(await api('POST',`/api/v1/kubernetes/clusters/${current.id}/workloads`,{action:'restart',kind:'StatefulSet',namespace:item.namespace,name:item.name}));message('StatefulSet restart queued.');}));
-    actions.prepend(action('Scale',async()=>{const replicas=Number(prompt('Replicas',item.replicas||1));if(!Number.isFinite(replicas))return;watch(await api('POST',`/api/v1/kubernetes/clusters/${current.id}/workloads`,{action:'scale',kind:'StatefulSet',namespace:item.namespace,name:item.name,replicas}));message('StatefulSet scale queued.');}));
+    actions.prepend(action('Scale',async()=>{const raw=await window.cfPrompt('Replicas',String(item.replicas||1),{title:'Scale StatefulSet',label:'Replicas',confirm:'Scale'});const replicas=Number(raw);if(!Number.isFinite(replicas))return;watch(await api('POST',`/api/v1/kubernetes/clusters/${current.id}/workloads`,{action:'scale',kind:'StatefulSet',namespace:item.namespace,name:item.name,replicas}));message('StatefulSet scale queued.');}));
     row(sts,[item.namespace,item.name,`${item.ready||0}/${item.replicas||0}`,actions]);
    });
    if(get('cks-rs-table'))workloadRows(get('cks-rs-table'),['Namespace','Name','Ready','Actions'],current.inventory?.replica_sets,'No ReplicaSets.',item=>{
@@ -190,8 +190,8 @@
    workloadRows(get('cks-ing-table'),['Namespace','Name','URL','Actions'],current.inventory?.ingresses,'No ingress.',item=>[item.namespace,item.name,item.url||'',resourceActions(item.kind||'Ingress',item)]);
    workloadRows(get('cks-secret-table'),['Namespace','Name','Actions'],current.inventory?.secrets,'No secrets.',item=>[item.namespace,item.name,resourceActions('Secret',item)]);
    workloadRows(get('cks-cm-table'),['Namespace','Name','Actions'],current.inventory?.config_maps,'No config maps.',item=>[item.namespace,item.name,resourceActions('ConfigMap',item)]);
-   workloadRows(get('cks-pv-table'),['Name','Storage','Actions'],current.inventory?.persistent_volumes,'No PersistentVolumes.',item=>[item.name,item.storage||'—',resourceActions('PersistentVolume',item)]);
-   workloadRows(get('cks-pvc-table'),['Namespace','Name','Storage','Actions'],current.inventory?.persistent_volume_claims,'No PersistentVolumeClaims.',item=>[item.namespace,item.name,item.storage||'—',resourceActions('PersistentVolumeClaim',item)]);
+   workloadRows(get('cks-pv-table'),['Name','Storage','Actions'],current.inventory?.persistent_volumes,'No PersistentVolumes.',item=>[item.name,item.storage||'-',resourceActions('PersistentVolume',item)]);
+   workloadRows(get('cks-pvc-table'),['Namespace','Name','Storage','Actions'],current.inventory?.persistent_volume_claims,'No PersistentVolumeClaims.',item=>[item.namespace,item.name,item.storage||'-',resourceActions('PersistentVolumeClaim',item)]);
    const jobItems=[...(current.inventory?.jobs||[]),...(current.inventory?.cron_jobs||[])];
    workloadRows(get('cks-k8sjob-table'),['Kind','Namespace','Name','Actions'],jobItems,'No jobs.',item=>[item.kind||'Job',item.namespace,item.name,resourceActions(item.kind||'Job',item)]);
    workloadRows(get('cks-hpa-table'),['Namespace','Name','Actions'],current.inventory?.hpa,'No HPA.',item=>[item.namespace,item.name,resourceActions(item.kind||'HorizontalPodAutoscaler',item)]);
@@ -200,34 +200,34 @@
    const attached=get('cks-integrate-table');row(attached,['Kind','CloFix resource','Kubernetes','Namespace','Status','URL'],true);
    const integrations=current.integrations||[];
    if(!integrations.length)row(attached,['No CloFix LB, VPS, volume, EFS or S3 attachments yet.','','','','','']);
-   integrations.forEach(item=>row(attached,[item.kind,item.name||item.resource_id,item.k8s_kind+'/'+item.k8s_name,item.namespace||'default',item.status||'—',item.url||'']));
+   integrations.forEach(item=>row(attached,[item.kind,item.name||item.resource_id,item.k8s_kind+'/'+item.k8s_name,item.namespace||'default',item.status||'-',item.url||'']));
    get('cks-logs').textContent=current.inventory?.logs||'Select a pod to request logs.';
    const pools=get('cks-pools-table');row(pools,['Name','Kind','Count','CPU','RAM','Disk','Actions'],true);
    const poolList=current.node_pools&&current.node_pools.length?current.node_pools:[current.node_pool].filter(Boolean);
    if(!poolList.length)row(pools,['No VPS groups or node pools.','','','','','','']);
    poolList.forEach(pool=>{
     const actions=document.createElement('div');actions.className='row-actions';
-    actions.append(action('Scale',async()=>{const count=Number(prompt('Desired VPS count',pool.count||1));if(!Number.isFinite(count))return;watch(await api('POST',`/api/v1/kubernetes/clusters/${current.id}/node-pools/${encodeURIComponent(pool.id)}/scale`,{count}));message('VPS group scale queued.');await refresh();}));
-    if(pool.name!=='default')actions.append(action('Delete',async()=>{if(prompt('Type DELETE to remove this VPS group')!=='DELETE')return;watch(await api('DELETE',`/api/v1/kubernetes/clusters/${current.id}/node-pools/${encodeURIComponent(pool.id)}`));message('VPS group deletion queued.');await refresh();}));
+    actions.append(action('Scale',async()=>{const raw=await window.cfPrompt('Desired VPS count',String(pool.count||1),{title:'Scale VPS group',label:'Count',confirm:'Scale'});const count=Number(raw);if(!Number.isFinite(count))return;watch(await api('POST',`/api/v1/kubernetes/clusters/${current.id}/node-pools/${encodeURIComponent(pool.id)}/scale`,{count}));message('VPS group scale queued.');await refresh();}));
+    if(pool.name!=='default')actions.append(action('Delete',async()=>{if(await window.cfPrompt('Type DELETE to remove this VPS group','',{title:'Delete VPS group',label:'Confirmation',confirm:'Delete',hint:'Type DELETE exactly.'})!=='DELETE')return;watch(await api('DELETE',`/api/v1/kubernetes/clusters/${current.id}/node-pools/${encodeURIComponent(pool.id)}`));message('VPS group deletion queued.');await refresh();}));
     const countLabel=pool.autoscaling?`${pool.count} (auto ${pool.min||0}-${pool.max||pool.count})`:pool.count;
    row(pools,[pool.name,pool.kind==='vps-group'?'VPS group':'Node pool',countLabel,pool.cpu,pool.ram_mb,pool.disk_mb,actions]);
    });
    const helm=get('cks-helm-table');row(helm,['Release','Namespace','Chart','Status'],true);
    const helmList=current.helm||current.inventory?.helm||[];
    if(!helmList.length)row(helm,['No Helm releases.','','','']);
-   helmList.forEach(item=>row(helm,[item.name,item.namespace||'default',item.chart||'—',item.status||'—']));
+   helmList.forEach(item=>row(helm,[item.name,item.namespace||'default',item.chart||'-',item.status||'-']));
    const addons=get('cks-addon-table');row(addons,['Kind','Name','Namespace'],true);
    const addonItems=[...(current.inventory?.volumes||[]),...(current.inventory?.storage_classes||[]).map(item=>({...item,kind:item.kind||'StorageClass'})),...(current.inventory?.ingresses||[]),...(current.inventory?.rbac||[]),...(current.inventory?.hpa||[])];
    if(!addonItems.length)row(addons,['No storage, ingress, RBAC or HPA objects yet.','','']);
-   addonItems.forEach(item=>row(addons,[item.kind||'—',item.name,item.namespace||'default']));
+   addonItems.forEach(item=>row(addons,[item.kind||'-',item.name,item.namespace||'default']));
    const backups=get('cks-backup-table');row(backups,['Backup','State','Size','Digest'],true);
    const backupList=current.backups||[];
    if(!backupList.length)row(backups,['No etcd backups.','','','']);
-   backupList.forEach(item=>row(backups,[item.id,badge(item.state),item.size_bytes||0,item.digest||'—']));
+   backupList.forEach(item=>row(backups,[item.id,badge(item.state),item.size_bytes||0,item.digest||'-']));
    const events=get('cks-events-table');row(events,['When','Level','Message'],true);
    const eventList=current.events||[];
    if(!eventList.length)row(events,['No cluster events.','','']);
-   eventList.slice().reverse().forEach(event=>row(events,[event.at?new Date(event.at).toLocaleString():'—',event.level||'info',event.message||'']));
+   eventList.slice().reverse().forEach(event=>row(events,[event.at?new Date(event.at).toLocaleString():'-',event.level||'info',event.message||'']));
   }
   const jobs=get('cks-jobs-table');row(jobs,['Action','Cluster','State','Error'],true);
   const list=(state.jobs||[]).filter(job=>!selected||job.cluster_id===selected);
@@ -282,7 +282,7 @@
  };
  get('cks-delete').onclick=async()=>{
   const current=cluster();if(!current)return;
-  if(prompt('Type DELETE to remove this cluster')!=='DELETE')return;
+  if(await window.cfPrompt('Type DELETE to remove this cluster','',{title:'Delete cluster',label:'Confirmation',confirm:'Delete',hint:'Type DELETE exactly.'})!=='DELETE')return;
   try{watch(await api('DELETE',`/api/v1/kubernetes/clusters/${current.id}`));message('Deletion queued.');await refresh();}catch(error){message(error.message);}
  };
  get('cks-toggle-protection').onclick=async()=>{
@@ -362,7 +362,7 @@
  };
  get('cks-upgrade').onclick=async()=>{
   const current=cluster();if(!current)return;
-  const version=prompt('Target Kubernetes version',current.version||'1.32');if(!version)return;
+  const version=await window.cfPrompt('Target Kubernetes version',current.version||'1.32',{title:'Upgrade cluster',label:'Version',confirm:'Upgrade'});if(!version)return;
   try{watch(await api('POST',`/api/v1/kubernetes/clusters/${current.id}/upgrade`,{version}));message('Upgrade queued.');await refresh();}
   catch(error){message(error.message);}
  };
@@ -385,14 +385,14 @@
   const selector=get('cks-res-selector-label');
   if(selector)selector.firstChild.textContent=kind==='ingress'?'Backend service':kind==='hpa'?'Target deployment':kind==='service'?'Selector (app label)':'App label';
   const data=get('cks-res-data-label');
-  if(data)data.firstChild.textContent=kind==='secret'?'Secret data (KEY=value per line)':'Config data (KEY=value per line)';
+  if(data)data.firstChild.textContent=kind==='secret'?'Secret data (KEY=value; sec: refs OK)':'Config data (KEY=value per line)';
   const hints={
    namespace:'Creates a Kubernetes namespace.',
    deployment:'Runs a container replica set. Image, replicas and port apply to the pod template.',
    statefulset:'Ordered pods with stable names. Replicas, image and port apply.',
    daemonset:'One pod per node.',
    service:'Exposes pods that match the app label.',
-   secret:'Stores KEY=value pairs. Inventory shows the name only. On edit, leave data blank to keep keys or enter KEY=value to set them.',
+   secret:'Stores KEY=value pairs. Values may use sec:sec-… or {{secret:name}} refs from Secrets Manager. Inventory shows the name only. On edit, leave data blank to keep keys or enter KEY=value to set them.',
    configmap:'Stores KEY=value configuration for pods. On edit, leave blank to keep keys.',
    pv:'Cluster-scoped volume. Bind a matching PVC in a namespace.',
    pvc:'Namespace claim against a PersistentVolume or StorageClass.',

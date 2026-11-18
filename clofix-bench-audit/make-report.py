@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""make-report.py — merge results/*.tsv into report.md and report.html
+"""make-report.py - merge results/*.tsv into report.md and report.html
 Usage: python3 make-report.py [results_dir] [output.md]
 """
 import sys, glob, os, re, statistics as st, datetime, collections, html
@@ -62,7 +62,7 @@ def enrich_bench_density_from_suite(bench):
         return bench
     for b, d in bench.items():
         cur = first(d, "density_vps_count")
-        if cur and cur not in ("skipped", "0", "—"):
+        if cur and cur not in ("skipped", "0", "-"):
             # Already have a live density run in bench-*.tsv
             continue
         d["density_vps_count"] = [str(n)]
@@ -122,7 +122,7 @@ def first(d, k):
 
 def fmt(v, unit="", integer=False):
     if v is None:
-        return "—"
+        return "-"
     if isinstance(v, float):
         if integer or abs(v - round(v)) < 1e-9:
             return f"{int(round(v)):,}{unit}"
@@ -135,7 +135,7 @@ def cell(d, k, unit="", integer=False):
     if n is not None:
         return fmt(n, unit, integer=integer)
     v = first(d, k)
-    return v if v else "—"
+    return v if v else "-"
 
 
 def backends_used(bench, audit):
@@ -145,7 +145,7 @@ def backends_used(bench, audit):
 
 def ratio(a, b, lower_better=True):
     if a is None or b in (None, 0):
-        return "—"
+        return "-"
     r = a / b
     if lower_better:
         return f"{(1 - r) * 100:+.0f}% {'better' if r < 0.95 else ('worse' if r > 1.05 else 'same')}".replace("+-", "-")
@@ -197,8 +197,8 @@ def bench_section(bench):
         if compare:
             row += " " + " | ".join(ratio(vals["fx"], vals[o], lower) for o in bs if o != "fx") + " |"
         L.append(row)
-    L += ["", "OS share mode: " + ", ".join(f"{NAMES[b]}={first(bench[b],'os_share_mode') or '—'}" for b in bs)]
-    L += ["", "Stop reasons (density): " + ", ".join(f"{NAMES[b]}={first(bench[b],'density_stop_reason') or '—'}" for b in bs), ""]
+    L += ["", "OS share mode: " + ", ".join(f"{NAMES[b]}={first(bench[b],'os_share_mode') or '-'}" for b in bs)]
+    L += ["", "Stop reasons (density): " + ", ".join(f"{NAMES[b]}={first(bench[b],'density_stop_reason') or '-'}" for b in bs), ""]
     if compare:
         L += ["_better = FileVPS better by >5%, worse = FileVPS worse by >5%, same = within ±5%. For lower-is-better metrics, a positive percent means FileVPS uses less._", ""]
     return L
@@ -236,11 +236,11 @@ def catalog_section(bench, audit):
         "",
         "**Evidence tiers (do not collapse into “production PASS”):**",
         "",
-        "- **PASS** — live host audit / isolation / enforcement probe",
-        "- **MEASURED** — live bench numbers (create/start/RAM/CPU loop, etc.)",
-        "- **UNIT** — Go `httptest` / package tests (API contract; not multi-worker or live guest performance)",
-        "- **SMOKE** — single-worker admin API / template surface check",
-        "- **SKIPPED / NOT RUN** — multi-worker, reboot, ZRAM, LXC/Incus compare, density, destructive cases without honest evidence",
+        "- **PASS** - live host audit / isolation / enforcement probe",
+        "- **MEASURED** - live bench numbers (create/start/RAM/CPU loop, etc.)",
+        "- **UNIT** - Go `httptest` / package tests (API contract; not multi-worker or live guest performance)",
+        "- **SMOKE** - single-worker admin API / template surface check",
+        "- **SKIPPED / NOT RUN** - multi-worker, reboot, ZRAM, LXC/Incus compare, density, destructive cases without honest evidence",
         "",
         "A catalog total of N rows is **not** an N/N production-test pass claim. Unit + single-worker smoke must not be counted as multi-worker or production performance evidence.",
         "",
@@ -278,8 +278,8 @@ def catalog_section(bench, audit):
         f"| WARN | {counts['WARN']} | Live probe weak/partial |",
         f"| PASS | {live_pass} | Live host audit/enforcement only |",
         f"| MEASURED | {measured} | Live bench metrics |",
-        f"| UNIT | {unit} | Go unit / httptest — not production performance |",
-        f"| SMOKE | {smoke} | Single-worker API surface — not multi-worker |",
+        f"| UNIT | {unit} | Go unit / httptest - not production performance |",
+        f"| SMOKE | {smoke} | Single-worker API surface - not multi-worker |",
         f"| INFO | {counts['INFO']} | Informational |",
         f"| SKIPPED | {counts['SKIPPED']} | Not honestly evidenced on this lab |",
         f"| NOT RUN | {counts['NOT RUN']} | No probe |",
@@ -291,7 +291,7 @@ def catalog_section(bench, audit):
         "",
         "### Still open (not production-proven here)",
         "",
-        "These remain **SKIPPED** on this lab. They are not failures — they need a dedicated multi-worker / LSM / density host before client production claims.",
+        "These remain **SKIPPED** on this lab. They are not failures - they need a dedicated multi-worker / LSM / density host before client production claims.",
         "",
         "| Area | IDs | Why skipped here | What would prove it |",
         "|---|---|---|---|",
@@ -343,7 +343,7 @@ def audit_section(audit):
     L.append("| **Total** | " + " | ".join(f"**{tot[b]['FAIL']} / {tot[b]['WARN']} / {tot[b]['PASS']}**" for b in bs) + " |")
     L.append("")
     for b in bs:
-        L += [f"### Findings — {NAMES[b]}", ""]
+        L += [f"### Findings - {NAMES[b]}", ""]
         icon = {"FAIL": "FAIL", "WARN": "WARN", "PASS": "PASS", "INFO": "INFO", "SKIP": "SKIPPED", "SKIPPED": "SKIPPED"}
         order = ["FAIL", "WARN", "INFO", "SKIP", "SKIPPED", "PASS"]
         rows = sorted(audit[b], key=lambda r: order.index(r[2]) if r[2] in order else 9)
@@ -526,9 +526,9 @@ def main():
     measured = bool(bench or audit)
     status = "Measured results from this host" if measured else "Code-backed report; runtime results not yet collected"
     used = backends_used(bench, audit)
-    title = "CloFix FileVPS — Benchmark and Security Report"
+    title = "CloFix FileVPS - Benchmark and Security Report"
     if len(used) > 1:
-        title = "CloFix FileVPS vs Incus/LXC — Benchmark and Security Report"
+        title = "CloFix FileVPS vs Incus/LXC - Benchmark and Security Report"
     L = [
         f"# {title}",
         "",

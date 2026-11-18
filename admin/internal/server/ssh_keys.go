@@ -19,6 +19,7 @@ import (
 
 type sshPEMKey struct {
 	ID        string    `json:"id"`
+	AccountID string    `json:"account_id,omitempty"`
 	Name      string    `json:"name"`
 	PublicKey string    `json:"public_key"`
 	Created   time.Time `json:"created"`
@@ -61,11 +62,26 @@ func (s *Server) sshKeyRoutes(m *http.ServeMux) {
 	m.HandleFunc("DELETE /api/ssh-keys/{id}", s.auth(s.deleteSSHKey))
 }
 
+func (s *Server) canAccessSSHKey(p iamPrincipal, key sshPEMKey) bool {
+	if p.Kind == "admin" {
+		return true
+	}
+	// Legacy keys without account_id are platform-only (not visible to tenants).
+	if key.AccountID == "" {
+		return false
+	}
+	return s.canAccessAccount(p, key.AccountID)
+}
+
 func (s *Server) listSSHKeys(w http.ResponseWriter, r *http.Request) {
+	p := principalFrom(r)
 	s.sshKeys.Lock()
 	defer s.sshKeys.Unlock()
 	out := make([]sshPEMKey, 0, len(s.sshKeys.Keys))
 	for _, k := range s.sshKeys.Keys {
+		if !s.canAccessSSHKey(p, k) {
+			continue
+		}
 		out = append(out, k)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Created.After(out[j].Created) })
@@ -86,7 +102,10 @@ func (s *Server) createSSHKey(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "name must be 1–80 characters")
 		return
 	}
-	key := sshPEMKey{ID: "pem-" + randHex(6), Name: name, Created: time.Now()}
+	p := principalFrom(r)
+	key := sshPEMKey{
+		ID: "pem-" + randHex(6), AccountID: s.stampAccount(p), Name: name, Created: time.Now().UTC(),
+	}
 	privatePEM := ""
 	if pub := strings.TrimSpace(in.PublicKey); pub != "" {
 		if !validSSHPublicKey(pub) {
@@ -110,15 +129,17 @@ func (s *Server) createSSHKey(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not save PEM key")
 		return
 	}
-	s.Store.Audit("admin", "ssh-key.create", key.ID, "ok")
+	s.audit(r, "ssh-key.create", key.ID, key.Name, nil)
 	writeJSON(w, 201, map[string]any{"key": key, "pem": privatePEM})
 }
 
 func (s *Server) deleteSSHKey(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	p := principalFrom(r)
 	s.sshKeys.Lock()
 	defer s.sshKeys.Unlock()
-	if _, ok := s.sshKeys.Keys[id]; !ok {
+	key, ok := s.sshKeys.Keys[id]
+	if !ok || !s.canAccessSSHKey(p, key) {
 		fail(w, 404, "PEM key not found")
 		return
 	}
@@ -127,7 +148,7 @@ func (s *Server) deleteSSHKey(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not delete PEM key")
 		return
 	}
-	s.Store.Audit("admin", "ssh-key.delete", id, "ok")
+	s.audit(r, "ssh-key.delete", id, key.Name, nil)
 	writeJSON(w, 200, map[string]string{"id": id, "deleted": "true"})
 }
 
@@ -136,6 +157,14 @@ func (s *Server) lookupSSHKey(id string) (sshPEMKey, bool) {
 	defer s.sshKeys.Unlock()
 	k, ok := s.sshKeys.Keys[id]
 	return k, ok
+}
+
+func (s *Server) lookupSSHKeyFor(r *http.Request, id string) (sshPEMKey, bool) {
+	k, ok := s.lookupSSHKey(id)
+	if !ok || !s.canAccessSSHKey(principalFrom(r), k) {
+		return sshPEMKey{}, false
+	}
+	return k, true
 }
 
 func generateEd25519PEM(comment string) (string, string, error) {

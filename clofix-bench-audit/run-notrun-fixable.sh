@@ -64,7 +64,7 @@ else
   if [ -z "$left" ]; then
     rec CAT L07 PASS "Failed create cleaned up; no leftover instance dir" "$(tr '\n' ' ' </tmp/cfnr-bad.err | cut -c1-160)"
   else
-    # engine may leave a failed dir — delete should still work
+    # engine may leave a failed dir - delete should still work
     CLOFIX_STATE_DIR="$ISOLATED" "$FX_BIN" fx delete "$BAD" >/dev/null 2>&1 || true
     if [ ! -d "$ISOLATED/instances/$BAD" ]; then
       rec CAT L07 PASS "Failed create left debris but delete cleaned it" ""
@@ -110,7 +110,7 @@ if vps_create "$IO" 0 && vps_start "$IO" && wait_ready "$IO" 90; then
   if [ -n "${iomax// /}" ] && [ "$iomax" != "max" ]; then
     rec CAT C06 PASS "io.max set; write completed" "io.max=$iomax write_ms=$dt"
   else
-    # No io.max in engine today — document as measured write, mark PASS for "no unbounded claim" only if disk_mb caps space.
+    # No io.max in engine today - document as measured write, mark PASS for "no unbounded claim" only if disk_mb caps space.
     rec CAT C06 PASS "No io.max throttle (engine uses disk_mb quota only); timed write ok" "write_ms=$dt io.max=${iomax:-n/a}"
   fi
 else
@@ -183,7 +183,7 @@ if vps_create "$BK" 0 && vps_start "$BK" && wait_ready "$BK" 90 && \
       rec CAT REL07 FAIL "restore create/start failed" ""
       rec CAT B07 FAIL "restore create/start failed" ""
     fi
-    # B08 cleanup — delete source + restore guests; backup files may remain by design
+    # B08 cleanup - delete source + restore guests; backup files may remain by design
     vps_destroy "$BK"; vps_destroy "$RS"
     # remove backup dirs if present
     rm -rf "$ISOLATED/backups/$BID" "$ISOLATED/backups/$BID2" \
@@ -300,7 +300,7 @@ if vps_create "$NA" 1 && vps_start "$NA" && wait_ready "$NA" 120 && \
   else
     rec CAT NET07 FAIL "No IPv4 on guest" ""
   fi
-  # high concurrency — many parallel SSH true
+  # high concurrency - many parallel SSH true
   okc=0; failc=0
   if [ "$ssh_ok" = 1 ] || [ -n "$pa" ]; then
     target_host="$ipa"; sport=""
@@ -322,7 +322,7 @@ if vps_create "$NA" 1 && vps_start "$NA" && wait_ready "$NA" 120 && \
   else
     rec CAT NET08 SKIPPED "No SSH path for concurrency test" ""
   fi
-  # port scan / isolation — A cannot reach B:22
+  # port scan / isolation - A cannot reach B:22
   if [ -n "$ipb" ]; then
     if vps_exec "$NA" "timeout 2 bash -c 'echo >/dev/tcp/$ipb/22'" >/dev/null 2>&1; then
       rec CAT NET09 WARN "Guest-A reached guest-B TCP/22" "B=$ipb"
@@ -332,7 +332,7 @@ if vps_create "$NA" 1 && vps_start "$NA" && wait_ready "$NA" 120 && \
   else
     rec CAT NET09 FAIL "No B IP for isolation probe" ""
   fi
-  # REL03 network disconnect — remove veth briefly if present
+  # REL03 network disconnect - remove veth briefly if present
   hv=$(ls /sys/class/net 2>/dev/null | grep -E "veth|cf" | head -1 || true)
   if [ -n "$hv" ]; then
     rec CAT REL03 PASS "Guest net devices present; reconnect covered by SSH retry above" "iface_sample=$hv ssh_ok=$ssh_ok"

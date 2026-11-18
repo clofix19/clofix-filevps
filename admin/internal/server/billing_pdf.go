@@ -456,7 +456,7 @@ func pdfMoney(cents int64, currency string) string {
 func pdfWrap(v string, width int) []string {
 	v = strings.Join(strings.Fields(v), " ")
 	if v == "" {
-		return []string{"—"}
+		return []string{"-"}
 	}
 	out := []string{}
 	for len(v) > width {
@@ -541,7 +541,7 @@ func pdfEscape(v string) string {
 			b.WriteByte(' ')
 		case r == '·' || r == '•' || r == '∙':
 			b.WriteString(" - ")
-		case r == '–' || r == '—' || r == '−':
+		case r == '–' || r == '-' || r == '−':
 			b.WriteByte('-')
 		case r == '×':
 			b.WriteByte('x')

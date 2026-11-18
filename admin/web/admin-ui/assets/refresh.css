@@ -206,7 +206,8 @@ tbody tr:hover td,.table-wrap tbody tr:hover td { background:var(--ui-hover); }
 .page .s3-pool-card > *:not(.stat-wave),
 .page .database-stats .stat-card > *:not(.stat-wave){position:relative; z-index:1}
 .page .stat{padding-bottom:calc(var(--card-padding) + 28px)}
-.page .database-stats .stat-card{position:relative; overflow:hidden; padding-bottom:42px}
+.page .database-stats .stat-card{position:relative; overflow:hidden; padding-bottom:16px}
+.page .database-stats .stat-card .stat-wave{display:none!important}
 .page .stat-wave path.stat-wave-fill{fill:url(#stat-wave-grad); opacity:.55}
 .page .stat-wave path.stat-wave-line{fill:none; stroke:var(--brand); stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; opacity:.9}
 .page .stat[data-wave-tone="warn"] .stat-wave path.stat-wave-line{stroke:#f0b429}
@@ -743,7 +744,7 @@ body:not(.auth-body) .shell.no-sidebar .main{padding-bottom:calc(var(--site-foot
 [data-kind="partner"] [data-home-widget="host"],[data-kind="root"] [data-home-widget="host"],[data-kind="iam"] [data-home-widget="host"]{display:none}
 [data-kind="partner"] .home-welcome a[href="/workers"],[data-kind="root"] .home-welcome a[href="/workers"],[data-kind="iam"] .home-welcome a[href="/workers"]{display:none}
 
-/* —— Smart controls: fields, selects, buttons, modals (all pages) —— */
+/* -- Smart controls: fields, selects, buttons, modals (all pages) -- */
 :root{
   --ctrl-h:34px;
   --ctrl-radius:8px;
@@ -993,7 +994,7 @@ label.check-row,
   width:15px;height:15px;min-height:0!important;accent-color:var(--brand);cursor:pointer;
 }
 
-/* Form / table spacing — consistent on every page */
+/* Form / table spacing - consistent on every page */
 .form-block,
 .page .panel > form:has(.form-field),
 .page .settings-section > form:has(.form-field),
@@ -1254,7 +1255,7 @@ details.form-field[open] > summary::before{content:'▾ '}
   .form-dialog,.terminal-dialog{width:calc(100vw - 16px);border-radius:12px}
 }
 
-/* Docker: many sidebar sections — keep nav usable without blowing the layout */
+/* Docker: many sidebar sections - keep nav usable without blowing the layout */
 #page-docker > .section-head > .row-actions{
   margin-left:auto;
   flex:0 0 auto;
@@ -1270,7 +1271,7 @@ details.form-field[open] > summary::before{content:'▾ '}
 #page-docker .settings-section .log-view{margin:12px 0}
 #page-docker .settings-section .inline-fields{margin-top:12px}
 
-/* —— UX polish 2026-11-16 —— */
+/* -- UX polish 2026-11-16 -- */
 :root{
   --radius-sm:8px;
   --radius-md:12px;
@@ -1458,7 +1459,7 @@ body[data-page="home"] .page > .cards:not(.home-shortcuts){display:none}
   .home-shortcut:hover,.primary:hover,a.primary:hover{transform:none}
 }
 
-/* —— Chart AI style —— */
+/* -- Chart AI style -- */
 .chart-panel{
   position:relative;overflow:hidden;
   border:1px solid color-mix(in srgb,var(--brand) 18%,var(--line));
@@ -1560,7 +1561,7 @@ body[data-page="home"] .page > .cards:not(.home-shortcuts){display:none}
 @keyframes stat-wave-drift{from{transform:translateX(0)}to{transform:translateX(-10%)}}
 .page .stat-wave-drift{animation:stat-wave-drift 5.5s linear infinite}
 
-/* —— Host capacity board —— */
+/* -- Host capacity board -- */
 .home-capacity .home-widget-head{gap:8px;flex-wrap:wrap}
 .live-pill{
   display:inline-flex;align-items:center;gap:6px;
@@ -1661,7 +1662,7 @@ body[data-page="home"] .home-capacity .capacity-cards .stat{height:auto}
   .capacity-stat:hover{transform:none}
 }
 
-/* —— Hard-bit resource usage —— */
+/* -- Hard-bit resource usage -- */
 .home-usage-bit .home-widget-head h3{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.4px;text-transform:uppercase;font-size:13px}
 .hard-bit-grid{
   display:grid!important;
@@ -1761,7 +1762,7 @@ body[data-page="instances"] .bit-value{font-size:17px!important}
 :root[data-theme="light"] .bit-graph{background:#f7fbfa}
 :root[data-theme="light"] .bit-pie-track{stroke:#d5e2e8}
 
-/* —— Hard-bit tiles (rest of dashboard) —— */
+/* -- Hard-bit tiles (rest of dashboard) -- */
 .bit-tile-row,.bit-tile-grid{
   display:grid;gap:10px;margin-bottom:12px;
 }
@@ -1799,7 +1800,7 @@ body[data-page="instances"] .bit-value{font-size:17px!important}
   .bit-tile-grid{grid-template-columns:1fr}
 }
 
-/* —— FileVPS instances color upgrade —— */
+/* -- FileVPS instances color upgrade -- */
 body[data-page="instances"]{
   --inst-cyan:#5cf2d6;
   --inst-mint:#3dd6a5;
@@ -2171,7 +2172,7 @@ body[data-page="instances"] .settings-section[hidden]{
   }
 }
 
-/* —— Details overview: same hard-bit boards as FileVPS overview —— */
+/* -- Details overview: same hard-bit boards as FileVPS overview -- */
 body[data-page="details"]{
   --inst-cyan:#5cf2d6;
   --inst-mint:#3dd6a5;
@@ -2260,7 +2261,7 @@ body[data-page="details"] .detail-layout{margin-top:4px}
 }
 
 
-/* —— Global admin hard-bit theme —— */
+/* -- Global admin hard-bit theme -- */
 body:not(.auth-body){
   --inst-cyan:#5cf2d6;
   --inst-mint:#3dd6a5;
@@ -2326,7 +2327,7 @@ body:not(.auth-body) .settings-section[hidden]{
 /* Billing overview / due: no sparkline graphs */
 body[data-page="billing"] #billing-overview-stats .stat-wave,
 body[data-page="billing"] #billing-due-stats .stat-wave{display:none!important}
-/* Users: counts only — no sparkline graphs */
+/* Users: counts only - no sparkline graphs */
 body[data-page="users"] #users-stats .stat-wave{display:none!important}
 body[data-page="billing"] #billing-overview-stats .stat-card,
 body[data-page="billing"] #billing-due-stats .stat-card{padding-bottom:12px!important}
@@ -2533,7 +2534,7 @@ body:not(.auth-body) .primary{
 }
 
 
-/* —— Shared ov-board / ov-summary (all pages) —— */
+/* -- Shared ov-board / ov-summary (all pages) -- */
 body:not(.auth-body) .ov-topbar{
   display:flex;flex-direction:column;gap:10px;align-items:stretch;margin-bottom:4px;
 }
@@ -2576,7 +2577,7 @@ body:not(.auth-body) .home-usage-bit:not([hidden]){display:flex;flex-direction:c
 }
 
 
-/* —— Workers overview hard-bit (match FileVPS boards) —— */
+/* -- Workers overview hard-bit (match FileVPS boards) -- */
 body[data-page="workers"] .ov-topbar{
   display:flex;flex-direction:column;gap:10px;align-items:stretch;margin-bottom:12px;
 }
@@ -2697,7 +2698,7 @@ body[data-page="workers"] .workers-cap-grid .bit-card[data-bit="gpu"] .bit-pie-a
   body[data-page="workers"] .ov-topbar .ov-toolbar{align-self:stretch;justify-content:flex-start}
 }
 
-/* —— Smart invoice sheet —— */
+/* -- Smart invoice sheet -- */
 body[data-page="billing"] .smart-invoice{
   margin-top:16px;padding:0;overflow:hidden;
   border:1px solid color-mix(in srgb,var(--inst-cyan, #5cf2d6) 22%, var(--line));

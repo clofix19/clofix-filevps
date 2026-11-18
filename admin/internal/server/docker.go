@@ -319,6 +319,15 @@ func canAccessDocker(r *http.Request, owner string) bool {
 }
 
 func (s *Server) queueDockerJob(workerID, owner, action string, op dock.Operation) (dockerJob, error) {
+	if op.Container != nil && len(op.Container.Env) > 0 {
+		resolved, err := s.resolveSecretRefs(owner, op.Container.Env)
+		if err != nil {
+			return dockerJob{}, err
+		}
+		clone := *op.Container
+		clone.Env = resolved
+		op.Container = &clone
+	}
 	d := s.docker
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -713,7 +722,7 @@ func (s *Server) dockerEngineAction(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, err.Error())
 		return
 	}
-	s.Store.Audit(p.UserID, "docker.engine."+action, workerID, "queued")
+	s.audit(r, "docker.engine."+action, workerID, "queued", nil)
 	writeJSON(w, 202, j)
 }
 
@@ -816,7 +825,7 @@ func (s *Server) dockerCreateContainer(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, err.Error())
 		return
 	}
-	s.Store.Audit(actorID(r), "docker.container.create", id, "queued")
+	s.audit(r, "docker.container.create", id, "queued", nil)
 	writeJSON(w, 202, map[string]any{"container": c, "job": j})
 }
 
@@ -975,7 +984,7 @@ func (s *Server) dockerUpdateContainer(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, err.Error())
 		return
 	}
-	s.Store.Audit(actorID(r), "docker.container.update", id, "queued")
+	s.audit(r, "docker.container.update", id, "queued", nil)
 	writeJSON(w, 202, map[string]any{"container": c, "job": j})
 }
 
@@ -1027,7 +1036,7 @@ func (s *Server) dockerControlContainer(w http.ResponseWriter, r *http.Request) 
 		fail(w, 500, err.Error())
 		return
 	}
-	s.Store.Audit(actorID(r), "docker.container."+action, id, "queued")
+	s.audit(r, "docker.container."+action, id, "queued", nil)
 	writeJSON(w, 202, j)
 }
 
@@ -1046,7 +1055,7 @@ func (s *Server) dockerDeleteContainer(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, err.Error())
 		return
 	}
-	s.Store.Audit(actorID(r), "docker.container.delete", id, "queued")
+	s.audit(r, "docker.container.delete", id, "queued", nil)
 	writeJSON(w, 202, j)
 }
 
@@ -1121,7 +1130,7 @@ func (s *Server) dockerPullImage(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, err.Error())
 		return
 	}
-	s.Store.Audit(actorID(r), "docker.image.pull", in.Image, "queued")
+	s.audit(r, "docker.image.pull", in.Image, "queued", nil)
 	writeJSON(w, 202, j)
 }
 
@@ -1249,7 +1258,7 @@ func (s *Server) dockerCreateApp(w http.ResponseWriter, r *http.Request) {
 		GitBranch string `json:"git_branch"`
 		GitToken  string `json:"git_token"`
 		GitCredentialID string `json:"git_credential_id"`
-		GitMode   string `json:"git_mode"` // dockerfile|compose — how to bring the repo up (no raw docker run)
+		GitMode   string `json:"git_mode"` // dockerfile|compose - how to bring the repo up (no raw docker run)
 		ComposeFile string `json:"compose_file"`
 		RegistryID string `json:"registry_id"`
 		Dockerfile string `json:"dockerfile"`
@@ -1434,7 +1443,7 @@ func (s *Server) dockerCreateApp(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, err.Error())
 		return
 	}
-	s.Store.Audit(actorID(r), "docker.application.create", appID, "queued")
+	s.audit(r, "docker.application.create", appID, "queued", nil)
 	writeJSON(w, 202, map[string]any{"application": app, "job": job})
 }
 
@@ -1604,7 +1613,7 @@ func (s *Server) dockerUpdateApp(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, err.Error())
 		return
 	}
-	s.Store.Audit(actorID(r), "docker.application.update", id, "queued")
+	s.audit(r, "docker.application.update", id, "queued", nil)
 	a.WebhookSecret = ""
 	writeJSON(w, 202, map[string]any{"application": a, "job": j})
 }
@@ -1695,7 +1704,7 @@ func (s *Server) dockerDeleteApp(w http.ResponseWriter, r *http.Request) {
 			_, _ = s.queueDockerJob(c.WorkerID, c.Owner, "container-remove", dock.Operation{Action: "container-remove", Container: &c.Spec})
 		}
 	}
-	s.Store.Audit(actorID(r), "docker.application.delete", id, "ok")
+	s.audit(r, "docker.application.delete", id, "ok", nil)
 	writeJSON(w, 200, map[string]string{"status": "deleted"})
 }
 
@@ -1726,7 +1735,7 @@ func (s *Server) dockerDeployCompose(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid json")
 		return
 	}
-	// Placement reservation only — Compose services size themselves. Keep defaults low so
+	// Placement reservation only - Compose services size themselves. Keep defaults low so
 	// lab workers with FileVPS RAM committed can still schedule Docker projects.
 	if in.RAMMB <= 0 {
 		in.RAMMB = 128
@@ -1895,7 +1904,7 @@ func (s *Server) dockerCreateVolume(w http.ResponseWriter, r *http.Request) {
 	d.Volumes[id] = v
 	_ = d.save()
 	d.mu.Unlock()
-	s.Store.Audit(actorID(r), "docker.volume.create", id, "ok")
+	s.audit(r, "docker.volume.create", id, "ok", nil)
 	j, err := s.queueDockerJob(workerID, v.Owner, "volume-create", dock.Operation{Action: "volume-create", Volume: &dock.VolumeSpec{ID: id, Name: name, Owner: v.Owner, DeleteProtection: in.DeleteProtection, QuotaMB: in.QuotaMB}})
 	if err != nil {
 		fail(w, 500, err.Error())
@@ -1938,7 +1947,7 @@ func (s *Server) dockerUpdateVolume(w http.ResponseWriter, r *http.Request) {
 	d.Volumes[v.ID] = v
 	_ = d.save()
 	d.mu.Unlock()
-	s.Store.Audit(actorID(r), "docker.volume.update", v.ID, "ok")
+	s.audit(r, "docker.volume.update", v.ID, "ok", nil)
 	writeJSON(w, 200, v)
 }
 
@@ -1964,7 +1973,7 @@ func (s *Server) dockerDeleteVolume(w http.ResponseWriter, r *http.Request) {
 	delete(d.Volumes, v.ID)
 	_ = d.save()
 	d.mu.Unlock()
-	s.Store.Audit(actorID(r), "docker.volume.delete", v.ID, "ok")
+	s.audit(r, "docker.volume.delete", v.ID, "ok", nil)
 	writeJSON(w, 202, j)
 }
 
@@ -2577,7 +2586,7 @@ func (s *Server) dockerCreateBackup(w http.ResponseWriter, r *http.Request) {
 	d.Backups[id] = b
 	_ = d.save()
 	d.mu.Unlock()
-	s.Store.Audit(actorID(r), "docker.backup.create", id, v.ID)
+	s.audit(r, "docker.backup.create", id, v.ID, nil)
 	j, err := s.queueDockerJob(v.WorkerID, v.Owner, "volume-backup", dock.Operation{Action: "volume-backup", Volume: &dock.VolumeSpec{ID: v.ID}, BackupID: id})
 	if err != nil {
 		fail(w, 500, err.Error())
@@ -2622,7 +2631,7 @@ func (s *Server) dockerRestoreBackup(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, err.Error())
 		return
 	}
-	s.Store.Audit(actorID(r), "docker.backup.restore", backupID, volID)
+	s.audit(r, "docker.backup.restore", backupID, volID, nil)
 	writeJSON(w, 202, map[string]any{"job": j, "redeploy_after": in.Redeploy})
 }
 
@@ -2657,7 +2666,7 @@ func (s *Server) dockerDeleteBackup(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, err.Error())
 		return
 	}
-	s.Store.Audit(actorID(r), "docker.backup.delete", id, "queued")
+	s.audit(r, "docker.backup.delete", id, "queued", nil)
 	writeJSON(w, 202, map[string]any{"id": id, "job": j})
 }
 
@@ -2771,7 +2780,7 @@ func (s *Server) dockerCreateRegistry(w http.ResponseWriter, r *http.Request) {
 	d.Registries[id] = reg
 	_ = d.save()
 	d.mu.Unlock()
-	s.Store.Audit(actorID(r), "docker.registry.create", id, "ok")
+	s.audit(r, "docker.registry.create", id, "ok", nil)
 	writeJSON(w, 201, map[string]any{"id": id, "name": name, "server": server, "username": username})
 }
 
@@ -2805,7 +2814,7 @@ func (s *Server) dockerUpdateRegistry(w http.ResponseWriter, r *http.Request) {
 	d.Registries[reg.ID] = reg
 	_ = d.save()
 	d.mu.Unlock()
-	s.Store.Audit(actorID(r), "docker.registry.update", reg.ID, "ok")
+	s.audit(r, "docker.registry.update", reg.ID, "ok", nil)
 	writeJSON(w, 200, map[string]any{"id": reg.ID, "name": reg.Name, "server": reg.Server, "username": reg.Username})
 }
 
@@ -2821,7 +2830,7 @@ func (s *Server) dockerDeleteRegistry(w http.ResponseWriter, r *http.Request) {
 	delete(d.Registries, reg.ID)
 	_ = d.save()
 	d.mu.Unlock()
-	s.Store.Audit(actorID(r), "docker.registry.delete", reg.ID, "ok")
+	s.audit(r, "docker.registry.delete", reg.ID, "ok", nil)
 	writeJSON(w, 200, map[string]string{"status": "deleted"})
 }
 
@@ -2864,7 +2873,7 @@ func (s *Server) dockerCreateGitCredential(w http.ResponseWriter, r *http.Reques
 	d.GitCredentials[id] = g
 	_ = d.save()
 	d.mu.Unlock()
-	s.Store.Audit(actorID(r), "docker.git_credential.create", id, "ok")
+	s.audit(r, "docker.git_credential.create", id, "ok", nil)
 	writeJSON(w, 201, map[string]any{"id": id, "name": name, "host": host, "username": username, "default_url": g.DefaultURL})
 }
 
@@ -2899,7 +2908,7 @@ func (s *Server) dockerUpdateGitCredential(w http.ResponseWriter, r *http.Reques
 	d.GitCredentials[g.ID] = g
 	_ = d.save()
 	d.mu.Unlock()
-	s.Store.Audit(actorID(r), "docker.git_credential.update", g.ID, "ok")
+	s.audit(r, "docker.git_credential.update", g.ID, "ok", nil)
 	writeJSON(w, 200, map[string]any{"id": g.ID, "name": g.Name, "host": g.Host, "username": g.Username, "default_url": g.DefaultURL})
 }
 
@@ -2915,7 +2924,7 @@ func (s *Server) dockerDeleteGitCredential(w http.ResponseWriter, r *http.Reques
 	delete(d.GitCredentials, g.ID)
 	_ = d.save()
 	d.mu.Unlock()
-	s.Store.Audit(actorID(r), "docker.git_credential.delete", g.ID, "ok")
+	s.audit(r, "docker.git_credential.delete", g.ID, "ok", nil)
 	writeJSON(w, 200, map[string]string{"status": "deleted"})
 }
 

@@ -51,7 +51,7 @@
       return;
     }
     if (!window.confirm(`Delete account “${acc.name}” (${acc.id})? This removes its login users. Type-confirm next.`)) return;
-    if (window.prompt('Type DELETE to remove this account') !== 'DELETE') return;
+    if (await window.cfPrompt('Type DELETE to remove this account', '', { title: 'Delete account', label: 'Confirmation', confirm: 'Delete', hint: 'Type DELETE exactly.' }) !== 'DELETE') return;
     $('users-message').textContent = 'Deleting…';
     try {
       await api('DELETE', `/api/accounts/${encodeURIComponent(acc.id)}`);
@@ -154,11 +154,11 @@
       } else {
         const locked = document.createElement('span');
         locked.className = 'muted';
-        locked.textContent = acc.kind === 'admin' ? 'Protected' : '—';
+        locked.textContent = acc.kind === 'admin' ? 'Protected' : '-';
         actions.append(locked);
       }
       const statusLabel = acc.status === 'suspended' ? 'suspended' : 'active';
-      row(table, [acc.name, acc.id, acc.kind + (acc.user_kind ? ' · ' + acc.user_kind : ''), badge(statusLabel), acc.email || '—', acc.parent_id || '—', acc.created ? new Date(acc.created).toLocaleString() : '—', actions]);
+      row(table, [acc.name, acc.id, acc.kind + (acc.user_kind ? ' · ' + acc.user_kind : ''), badge(statusLabel), acc.email || '-', acc.parent_id || '-', acc.created ? new Date(acc.created).toLocaleString() : '-', actions]);
     });
   }
 

@@ -235,9 +235,7 @@
       timer = setTimeout(update, 50);
     }).observe(table, {childList:true});
     table.addEventListener('table-painted', () => {
-      restoreSelection();
-      filterRows();
-      refreshActions();
+      update();
     });
     document.addEventListener('click', event => {
       const details = bar.querySelector('details');

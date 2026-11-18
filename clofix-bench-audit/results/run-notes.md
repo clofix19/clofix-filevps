@@ -11,7 +11,7 @@ This is a **reduced, non-destructive FileVPS-only** run on the local Docker Desk
 | Image | Bundled Ubuntu 24.04 FileVPS rootfs |
 | Bench sizes | `N_START=2`, `N_IDLE=2`, `DENSITY_MAX=0`, `SETTLE_S=8` |
 | Destructive probes | Not run (`--destructive` off) |
-| Incus / LXC | Not installed in this worker — no compare numbers |
+| Incus / LXC | Not installed in this worker - no compare numbers |
 | Live fleet left running | `vps-01c09f91ffda`, `vps-3ab923078227`, `vps-3f501a3975b0`, `vps-cf0489f9c217` |
 | User namespaces | Audit guests: `CLOFIX_USER_NS=true` on isolated state (`suite-isolated-audit`). Compose agent still `CLOFIX_USER_NS=false` so live UI VPS were not remounted. |
 
@@ -21,9 +21,9 @@ Re-ran `clofix-audit.sh fx` with `CLOFIX_USER_NS=true` and `CLOFIX_STATE_DIR=/va
 
 | Check | Result |
 | --- | --- |
-| I01 | **PASS** — `uid_map` `0 100000 65536` |
-| N01 | **PASS** — user (and other) namespaces differ from host |
-| X05 | **PASS** — A=`100000` B=`165536` |
+| I01 | **PASS** - `uid_map` `0 100000 65536` |
+| N01 | **PASS** - user (and other) namespaces differ from host |
+| X05 | **PASS** - A=`100000` B=`165536` |
 | Full audit FAIL count | **0** |
 
 ### SKIPPED → PASS (2026-11-03 01:51–01:56 UTC)
@@ -32,14 +32,14 @@ Re-ran `clofix-audit.sh fx` with `CLOFIX_USER_NS=true` and `CLOFIX_STATE_DIR=/va
 
 | ID | Result |
 | --- | --- |
-| L04 / REL01 | **PASS** — kill -9 guest init, `fx start` recovered, marker kept |
-| L08 | **PASS** — throw-away delete removed instance dir |
-| C03 / R10 | **PASS** — `pids.max` contained fork storm |
-| C04 / C05 | **PASS** — `nr_throttled` under `cpu.max=0.2` |
-| C07 / R14 | **PASS** — noisy-neighbour slowdown ~1.2x |
-| D05 | **PASS** — CPU + memory mix on 2 guests |
-| F04 / F06 | **PASS** — host-side symlink file read did not leak hostname |
-| K02 | **PASS** — host sysctl hardening applied for the audit run |
+| L04 / REL01 | **PASS** - kill -9 guest init, `fx start` recovered, marker kept |
+| L08 | **PASS** - throw-away delete removed instance dir |
+| C03 / R10 | **PASS** - `pids.max` contained fork storm |
+| C04 / C05 | **PASS** - `nr_throttled` under `cpu.max=0.2` |
+| C07 / R14 | **PASS** - noisy-neighbour slowdown ~1.2x |
+| D05 | **PASS** - CPU + memory mix on 2 guests |
+| F04 / F06 | **PASS** - host-side symlink file read did not leak hostname |
+| K02 | **PASS** - host sysctl hardening applied for the audit run |
 | Still SKIPPED | multi-worker (WK*), LXC/Incus compare (P*), ZRAM (M03), PHP/MySQL apps (W03/W04), live worker reboot (L05/REL02) |
 | Still WARN | I04 (no AppArmor on linuxkit), R12 (disk probe &lt; quota), K07 (SSB Vulnerable) |
 
@@ -57,14 +57,14 @@ Re-ran `clofix-audit.sh fx` with `CLOFIX_USER_NS=true` and `CLOFIX_STATE_DIR=/va
 | U01–U05 U07 U08 MO01 MO02 BL01–BL03 BL05 BL06 | **PASS** via admin/license API |
 | DB01–DB08 | **PASS** from live `/api/databases` inventory (MySQL projects + engine ads + READY backups) |
 | Still NOT RUN (12) | MO03–MO08 alerts, REL05/06/08, BL04/BL07/BL08 |
-| O06 | **SKIPPED** — Debian/CentOS images not bundled |
+| O06 | **SKIPPED** - Debian/CentOS images not bundled |
 
 
 ### WARN cleanup (2026-11-03 02:10 UTC)
 
 | ID | Result | Notes |
 | --- | --- | --- |
-| I04 | **SKIP** | Host has no AppArmor/SELinux LSM on linuxkit — profile N/A |
+| I04 | **SKIP** | Host has no AppArmor/SELinux LSM on linuxkit - profile N/A |
 | R12 | **PASS** | Probe auto-sized above `disk_mb`; stopped at 88 MiB on 128 MiB disk |
 | R13 / R15 | **PASS** | Busy-loop CPU bounded; host stayed responsive |
 | K07 | **INFO** | Nested linuxkit: SSB mitigation owned by Docker Desktop/hypervisor |
@@ -86,11 +86,11 @@ Ran `run-notrun-suites.sh` with `/tmp/clofix-worker-new` against `CLOFIX_STATE_D
 
 | Suite | Result |
 | --- | --- |
-| 01 User namespace (I01 / N01 user / X05) | **FAIL** — isolated `CLOFIX_USER_NS=true` guests die in `fx-init` (`make mounts private: operation not permitted`). linuxkit nested user ns cannot mount. Not flipped on the live fleet. |
+| 01 User namespace (I01 / N01 user / X05) | **FAIL** - isolated `CLOFIX_USER_NS=true` guests die in `fx-init` (`make mounts private: operation not permitted`). linuxkit nested user ns cannot mount. Not flipped on the live fleet. |
 | 02 Density / RAM / ZRAM / swap | **7 idle VPS** in 12s, **~1.76 MB** host RAM each. 8th create hit linuxkit loop-device limit (`layer.img`). 25/50/100 not run. `/dev/zram0` absent. `memory.swap.max=64MiB` **PASS**. |
 | 03 Resource enforcement | CPU `nr_throttled=17` under 0.2 core **PASS**. Disk write past 256 MiB **ENOSPC PASS** (`df` 229096K). Anonymous-memory OOM probe **WARN** (`oom=0`). Host stayed up. |
-| 04 Nginx / e-commerce | **SKIPPED** — bundled image has no nginx/php/mysql; routed apt would collide live 10.231 / 22000 ports. |
-| 05 Worker scheduling | **SKIPPED** — one compose worker; filling/draining it would hit the live fleet. |
+| 04 Nginx / e-commerce | **SKIPPED** - bundled image has no nginx/php/mysql; routed apt would collide live 10.231 / 22000 ports. |
+| 05 Worker scheduling | **SKIPPED** - one compose worker; filling/draining it would hit the live fleet. |
 | 06 Recovery / backup | Writable-layer **backup + restore PASS** (marker file). Worker crash, reboot, and cross-worker restore not run. |
 
 ### Priority P0 re-run (2026-11-01 09:15–09:19 UTC)
@@ -99,13 +99,13 @@ Loop bottleneck fix: create `/dev/loop8`–`loop127` so `losetup -f` can pass li
 
 | Priority | Result |
 | --- | --- |
-| 01 Native Linux root isolation | **FAIL** — still no dedicated Ubuntu worker. Isolated `user_ns=true` dies with `make mounts private: operation not permitted`. |
+| 01 Native Linux root isolation | **FAIL** - still no dedicated Ubuntu worker. Isolated `user_ns=true` dies with `make mounts private: operation not permitted`. |
 | 02 High-density VPS | **10 / 25 / 50 / 100 idle MEASURED** in 159s, **~2.56 MB** host RAM each. CPU load on 3 guests `nr_throttled_sum=34`. Nginx/PHP/MySQL density not run. |
 | 03 Real RAM + ZRAM | ZRAM **SKIPPED** (no module). Swap cap **PASS**. Guest OOM **PASS** (`oom=1 oom_kill=1`). Live fleet stayed up. |
-| 04 Real application load | **SKIPPED** — no nginx/php/mysql in the image; routed apt would collide live 10.231. |
-| 05 Multi-worker scheduler | **SKIPPED** — one compose worker. |
+| 04 Real application load | **SKIPPED** - no nginx/php/mysql in the image; routed apt would collide live 10.231. |
+| 05 Multi-worker scheduler | **SKIPPED** - one compose worker. |
 | 06 Security and recovery | Protection Mode **PASS** (`/etc` EROFS). Symlink did not expose host hostname. Backup/restore **PASS**. Worker crash not run. |
-| 07 Docker / LXC / Incus | **SKIPPED** — Incus/LXC not installed. |
+| 07 Docker / LXC / Incus | **SKIPPED** - Incus/LXC not installed. |
 
 ### Requested follow-ups (2026-11-01 09:30 UTC)
 
@@ -152,8 +152,8 @@ Development scope and automated coverage grew, but **208/208 production tests pa
 | Evidence class | Meaning | Production proof? |
 | --- | --- | --- |
 | PASS / MEASURED | Live host audit / bench | Yes (for that probe only) |
-| UNIT | Go `httptest` / package tests | No — API contract only |
-| SMOKE | Single-worker admin/template probe | No — not multi-worker / not performance |
+| UNIT | Go `httptest` / package tests | No - API contract only |
+| SMOKE | Single-worker admin/template probe | No - not multi-worker / not performance |
 | SKIPPED / NOT RUN | No honest evidence on this lab | No |
 
 Unit tests and single-worker API probes must not be counted as multi-worker or production performance tests. `./run-unit-notrun-pass.sh` now records **UNIT** / **SMOKE** / **SKIPPED** explicitly.
@@ -169,7 +169,7 @@ Engineering validation is advancing; this report is more reliable/transparent th
 | 100 networked VPS tested | Theoretical projected idle density |
 | 42 scored security **conditions** passed (not kernel certification) | Docker nginx throughput peaks |
 | Lightweight shared-OS architecture | UNIT / SMOKE as multi-worker proof |
-| | AppArmor/SELinux — still SKIPPED |
+| | AppArmor/SELinux - still SKIPPED |
 
 **Next:** demote any remaining weak PASS rows, then on a **native Ubuntu server** run `sudo ./run-compare.sh` (FileVPS vs Docker/LXC/Incus) for partner-grade evidence.
 

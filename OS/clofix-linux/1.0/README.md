@@ -3,7 +3,7 @@
 Ubuntu LTS–based, CloFix-branded distribution with **CloFix Guard** security engine.
 
 - Website: https://clofix.com  
-- Current inspected artifact base: **Ubuntu noble (24.04)** — always re-detect from the archive under build.
+- Current inspected artifact base: **Ubuntu noble (24.04)** - always re-detect from the archive under build.
 
 ## Quick build (does not build FileVPS worker)
 

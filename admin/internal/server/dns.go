@@ -114,11 +114,11 @@ func (s *Server) getDNS(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not refresh DNS records")
 		return
 	}
-	targets := s.dnsTargets()
+	targets := s.dnsTargetsFor(r)
 	d := s.dns
 	d.Lock()
 	defer d.Unlock()
-	writeJSON(w, 200, dnsView(d, targets))
+	writeJSON(w, 200, s.dnsViewFor(r, d, targets))
 }
 func (s *Server) saveDNSZone(w http.ResponseWriter, r *http.Request) {
 	var in dnsZone
@@ -154,10 +154,10 @@ func (s *Server) saveDNSZone(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not refresh DNS records")
 		return
 	}
-	targets := s.dnsTargets()
+	targets := s.dnsTargetsFor(r)
 	d.Lock()
 	defer d.Unlock()
-	writeJSON(w, 200, dnsView(d, targets))
+	writeJSON(w, 200, s.dnsViewFor(r, d, targets))
 }
 
 type dnsRecordInput struct {
@@ -179,7 +179,7 @@ func decodeDNSRecordInput(w http.ResponseWriter, r *http.Request) (dnsRecordInpu
 	}
 	return in, true
 }
-func (s *Server) applyDNSRecordTarget(in *dnsRecordInput) (int, error) {
+func (s *Server) applyDNSRecordTarget(r *http.Request, in *dnsRecordInput) (int, error) {
 	in.Resource = strings.ToLower(strings.TrimSpace(in.Resource))
 	in.ResourceID = strings.TrimSpace(in.ResourceID)
 	if in.Resource == "" {
@@ -188,7 +188,7 @@ func (s *Server) applyDNSRecordTarget(in *dnsRecordInput) (int, error) {
 	if in.Resource == "manual" {
 		return 0, nil
 	}
-	target, ok := dnsFindTarget(s.dnsTargets(), in.Resource, in.ResourceID)
+	target, ok := dnsFindTarget(s.dnsTargetsFor(r), in.Resource, in.ResourceID)
 	if !ok {
 		return 404, fmt.Errorf("selected VPS, load balancer, CKS cluster, database, app or worker was not found")
 	}
@@ -213,7 +213,7 @@ func (s *Server) createDNSRecord(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not refresh DNS records")
 		return
 	}
-	if code, err := s.applyDNSRecordTarget(&in); err != nil {
+	if code, err := s.applyDNSRecordTarget(r, &in); err != nil {
 		fail(w, code, err.Error())
 		return
 	}
@@ -250,7 +250,7 @@ func (s *Server) updateDNSRecord(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not refresh DNS records")
 		return
 	}
-	if code, err := s.applyDNSRecordTarget(&in); err != nil {
+	if code, err := s.applyDNSRecordTarget(r, &in); err != nil {
 		fail(w, code, err.Error())
 		return
 	}
@@ -356,6 +356,100 @@ func dnsView(d *dnsStore, targets []dnsTarget) map[string]any {
 		},
 		"note": "Automatic A and CNAME records are created from live VPS, load balancer, CKS, database, managed app and worker inventory. Attached CloFix load balancers also get CKS aliases. This controller stores the zone; it does not listen on port 53 or publish names on the public Internet.",
 	}
+}
+
+func (s *Server) dnsViewFor(r *http.Request, d *dnsStore, targets []dnsTarget) map[string]any {
+	if principalFrom(r).Kind == "admin" {
+		return dnsView(d, targets)
+	}
+	allowed := map[string]bool{}
+	for _, t := range targets {
+		allowed[t.Resource+"\x00"+t.ID] = true
+	}
+	filtered := &dnsStore{Zone: d.Zone, Records: map[string]dnsRecord{}}
+	for id, rec := range d.Records {
+		if rec.Resource == "manual" || rec.Resource == "" {
+			continue
+		}
+		if allowed[rec.Resource+"\x00"+rec.ResourceID] {
+			filtered.Records[id] = rec
+		}
+	}
+	return dnsView(filtered, targets)
+}
+
+func (s *Server) canAccessDNSTarget(r *http.Request, resource, id string) bool {
+	p := principalFrom(r)
+	if p.Kind == "admin" {
+		return true
+	}
+	switch resource {
+	case "vps":
+		inst, err := s.Store.GetInstance(id)
+		return err == nil && s.canAccessAccount(p, inst.AccountID)
+	case "lb":
+		if s.balancers == nil {
+			return false
+		}
+		s.balancers.Lock()
+		b := s.balancers.Items[id]
+		s.balancers.Unlock()
+		return b != nil && s.canAccessAccount(p, b.AccountID)
+	case "cks":
+		clusterID := id
+		if i := strings.IndexByte(id, '/'); i > 0 {
+			clusterID = id[:i]
+		}
+		if s.kubernetes == nil {
+			return false
+		}
+		s.kubernetes.Lock()
+		c, ok := s.kubernetes.Clusters[clusterID]
+		s.kubernetes.Unlock()
+		return ok && canAccessApplication(r, c.Owner)
+	case "db":
+		if s.databases == nil {
+			return false
+		}
+		s.databases.Lock()
+		proj, ok := s.databases.Projects[id]
+		s.databases.Unlock()
+		return ok && canAccessApplication(r, proj.Owner)
+	case "app":
+		if s.applications == nil {
+			return false
+		}
+		s.applications.Lock()
+		a, ok := s.applications.Managed[id]
+		s.applications.Unlock()
+		return ok && canAccessApplication(r, a.Owner)
+	case "docker":
+		if s.docker == nil {
+			return false
+		}
+		s.docker.mu.Lock()
+		a, ok := s.docker.Applications[id]
+		s.docker.mu.Unlock()
+		return ok && canAccessDocker(r, a.Owner)
+	case "worker":
+		return false
+	default:
+		return false
+	}
+}
+
+func (s *Server) dnsTargetsFor(r *http.Request) []dnsTarget {
+	all := s.dnsTargets()
+	if principalFrom(r).Kind == "admin" {
+		return all
+	}
+	out := make([]dnsTarget, 0, len(all))
+	for _, t := range all {
+		if s.canAccessDNSTarget(r, t.Resource, t.ID) {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func (s *Server) refreshDNS() error {

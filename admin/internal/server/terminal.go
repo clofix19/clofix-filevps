@@ -144,11 +144,7 @@ func (s *Server) instanceTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeTerminalJSON(conn, terminalControlMsg{Type: "ready"})
-	actor := p.Email
-	if actor == "" {
-		actor = p.Name
-	}
-	_ = s.Store.Audit(actor, "instance.terminal", id, "shell opened")
+	s.audit(r, "instance.terminal", id, "shell opened", nil)
 
 	done := make(chan struct{})
 	go func() {
@@ -258,6 +254,9 @@ func mapSSHDialError(err error, auth terminalAuthMsg) string {
 func normalizeSSHPEM(pemBytes string) string {
 	key := strings.ReplaceAll(pemBytes, "\r\n", "\n")
 	key = strings.ReplaceAll(key, "\r", "\n")
+	key = strings.TrimSpace(key)
+	// Strip UTF-8 BOM from browser file picks / editors.
+	key = strings.TrimPrefix(key, "\ufeff")
 	return strings.TrimSpace(key)
 }
 

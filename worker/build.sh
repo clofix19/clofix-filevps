@@ -24,7 +24,7 @@ build_bin() {
   if [ -n "$INSTALL_ID" ]; then
     echo "baked Installation ID: $INSTALL_ID"
   else
-    echo "WARNING: CLOFIX_INSTALLATION_ID unset — worker must receive it via env/worker.json at enroll time" >&2
+    echo "WARNING: CLOFIX_INSTALLATION_ID unset - worker must receive it via env/worker.json at enroll time" >&2
   fi
   if [ -x dist/weed ]; then
     echo "reusing dist/weed"
@@ -43,7 +43,7 @@ build_bin() {
 }
 
 write_packaged_config() {
-  # nfpm packs dist/worker.json — stamp Installation ID when building packages.
+  # nfpm packs dist/worker.json - stamp Installation ID when building packages.
   mkdir -p dist
   if [ -n "$INSTALL_ID" ]; then
     cat > dist/worker.json <<EOF

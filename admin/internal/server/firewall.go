@@ -92,10 +92,19 @@ func (s *Server) firewallRoutes(m *http.ServeMux) {
 }
 
 func (s *Server) getFirewall(w http.ResponseWriter, r *http.Request) {
+	actor := principalFrom(r)
 	workers, _ := s.Store.ListWorkers()
 	instances, _ := s.Store.ListInstances()
+	instances = filterInstances(instances, s.visibleAccountIDSet(actor), actor.Kind == "admin")
+	allowWorkers := map[string]bool{}
+	for _, inst := range instances {
+		allowWorkers[inst.WorkerID] = true
+	}
 	workerOut := make([]map[string]any, 0, len(workers))
 	for _, wk := range workers {
+		if actor.Kind != "admin" && !allowWorkers[wk.ID] {
+			continue
+		}
 		p := s.firewall.policy("worker", wk.ID)
 		workerOut = append(workerOut, map[string]any{
 			"id": wk.ID, "hostname": wk.Hostname, "status": wk.Status,
@@ -134,6 +143,10 @@ func (s *Server) getFirewall(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) putWorkerFirewall(w http.ResponseWriter, r *http.Request) {
+	if principalFrom(r).Kind != "admin" {
+		fail(w, http.StatusForbidden, "host firewall is managed by CloFix administrators")
+		return
+	}
 	id := r.PathValue("id")
 	if !apiInstanceID.MatchString(id) {
 		fail(w, http.StatusBadRequest, "invalid worker id")
@@ -159,7 +172,7 @@ func (s *Server) putWorkerFirewall(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.Store.Audit(applicationOwner(r), "firewall.worker", id, map[bool]string{true: "restrict", false: "open"}[policy.Restrict])
+	s.audit(r, "firewall.worker", id, map[bool]string{true: "restrict", false: "open"}[policy.Restrict], nil)
 	writeJSON(w, 200, map[string]any{"id": id, "restrict": policy.Restrict, "rules": policy.Rules, "queued": true})
 }
 
@@ -169,7 +182,7 @@ func (s *Server) putInstanceFirewall(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "invalid instance id")
 		return
 	}
-	inst, err := s.Store.GetInstance(id)
+	inst, err := s.getVisibleInstance(r, id)
 	if err != nil {
 		fail(w, http.StatusNotFound, "instance not found")
 		return
@@ -190,7 +203,7 @@ func (s *Server) putInstanceFirewall(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.Store.Audit(applicationOwner(r), "firewall.instance", id, map[bool]string{true: "restrict", false: "open"}[policy.Restrict])
+	s.audit(r, "firewall.instance", id, map[bool]string{true: "restrict", false: "open"}[policy.Restrict], nil)
 	writeJSON(w, 200, map[string]any{"id": id, "restrict": policy.Restrict, "rules": policy.Rules, "queued": true})
 }
 

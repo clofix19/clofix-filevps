@@ -435,7 +435,7 @@ func (s *Server) createDatabaseProject(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, e.Error())
 		return
 	}
-	s.Store.Audit(project.Owner, "database.provision", project.Spec.ID, job.ID)
+	s.auditAccount(r, project.Owner, "database.provision", project.Spec.ID, job.ID, nil)
 	writeJSON(w, 202, map[string]any{"project": project, "job_id": job.ID})
 }
 func (s *Server) retryDatabaseProject(w http.ResponseWriter, r *http.Request) {
@@ -471,7 +471,7 @@ func (s *Server) retryDatabaseProject(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, e.Error())
 		return
 	}
-	s.Store.Audit(p.Owner, "database.provision.retry", p.Spec.ID, job.ID)
+	s.auditAccount(r, p.Owner, "database.provision.retry", p.Spec.ID, job.ID, nil)
 	writeJSON(w, 202, map[string]string{"job_id": job.ID})
 }
 func validateDatabaseAction(p model.Project, op db.Operation) error {
@@ -631,7 +631,7 @@ func (s *Server) databaseOperation(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, e.Error())
 		return
 	}
-	s.Store.Audit(p.Owner, "database."+op.Action, p.Spec.ID, job.ID)
+	s.auditAccount(r, p.Owner, "database."+op.Action, p.Spec.ID, job.ID, nil)
 	writeJSON(w, 202, map[string]string{"job_id": job.ID})
 }
 func (s *Server) deleteDatabaseProject(w http.ResponseWriter, r *http.Request) {
@@ -669,7 +669,7 @@ func (s *Server) deleteDatabaseProject(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, e.Error())
 		return
 	}
-	s.Store.Audit(p.Owner, "database.delete", p.Spec.ID, job.ID)
+	s.auditAccount(r, p.Owner, "database.delete", p.Spec.ID, job.ID, nil)
 	writeJSON(w, 202, map[string]string{"job_id": job.ID})
 }
 func (s *Server) cancelDatabaseJob(w http.ResponseWriter, r *http.Request) {
@@ -699,7 +699,7 @@ func (s *Server) cancelDatabaseJob(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, e.Error())
 		return
 	}
-	s.Store.Audit(j.Owner, "database.job.cancel", j.ID, "")
+	s.auditAccount(r, j.Owner, "database.job.cancel", j.ID, "", nil)
 	writeJSON(w, 202, map[string]string{"state": j.State})
 }
 

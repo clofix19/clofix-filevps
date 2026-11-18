@@ -18,6 +18,7 @@ import (
 
 type Config struct {
 	ID        string `json:"id,omitempty"`
+	AccountID string `json:"account_id,omitempty"`
 	Name      string `json:"name,omitempty"`
 	Provider  string `json:"provider,omitempty"`
 	Endpoint  string `json:"endpoint"`
@@ -30,6 +31,7 @@ type Config struct {
 
 type PublicConfig struct {
 	ID         string `json:"id,omitempty"`
+	AccountID  string `json:"account_id,omitempty"`
 	Name       string `json:"name,omitempty"`
 	Provider   string `json:"provider,omitempty"`
 	Endpoint   string `json:"endpoint"`
@@ -188,7 +190,7 @@ func (s *Store) Public() PublicConfig {
 }
 
 func public(c Config) PublicConfig {
-	return PublicConfig{ID: c.ID, Name: c.Name, Provider: c.Provider, Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, Configured: true}
+	return PublicConfig{ID: c.ID, AccountID: c.AccountID, Name: c.Name, Provider: c.Provider, Endpoint: c.Endpoint, Bucket: c.Bucket, Region: c.Region, Prefix: c.Prefix, Configured: true}
 }
 
 func (s *Store) ListConnections() ([]Config, error) {

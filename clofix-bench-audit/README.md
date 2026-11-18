@@ -37,7 +37,7 @@ sudo ./clofix-bench.sh fx
 sudo ./clofix-audit.sh fx
 sudo ./clofix-audit.sh fx --destructive   # bounded pids/memory/disk/CPU probes
 
-# Product catalog honesty (UNIT / SMOKE / SKIPPED — not “all PASS”)
+# Product catalog honesty (UNIT / SMOKE / SKIPPED - not “all PASS”)
 ./run-unit-notrun-pass.sh
 python3 make-report.py results results/report.md
 ```

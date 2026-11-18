@@ -149,7 +149,7 @@ func (s *Server) createVPC(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not save VPC")
 		return
 	}
-	s.Store.Audit(applicationOwner(r), "vpc.create", v.ID, v.CIDR)
+	s.audit(r, "vpc.create", v.ID, v.CIDR, nil)
 	writeJSON(w, 201, s.vpcViewLocked(v))
 }
 
@@ -205,7 +205,7 @@ func (s *Server) updateVPC(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not save VPC")
 		return
 	}
-	s.Store.Audit(applicationOwner(r), "vpc.update", v.ID, v.CIDR)
+	s.audit(r, "vpc.update", v.ID, v.CIDR, nil)
 	writeJSON(w, 200, s.vpcViewLocked(v))
 }
 
@@ -234,7 +234,7 @@ func (s *Server) deleteVPC(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "could not save VPC")
 		return
 	}
-	s.Store.Audit(applicationOwner(r), "vpc.delete", id, v.CIDR)
+	s.audit(r, "vpc.delete", id, v.CIDR, nil)
 	writeJSON(w, 200, map[string]string{"id": id, "state": "deleted"})
 }
 

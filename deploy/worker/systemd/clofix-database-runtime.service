@@ -1,0 +1,27 @@
+[Unit]
+Description=CloFix managed-database Docker runtime (isolated dockerd)
+Documentation=https://clofix.com
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/dockerd \
+  --host=unix:///var/run/clofix-docker/docker.sock \
+  --data-root=/var/lib/clofix-database-runtime \
+  --exec-root=/var/run/clofix-database-runtime \
+  --pidfile=/var/run/clofix-database-runtime.pid \
+  --storage-driver=overlay2 \
+  --iptables=true \
+  --ip-forward=true
+ExecStartPre=/bin/mkdir -p /var/run/clofix-docker /var/lib/clofix-database-runtime /var/run/clofix-database-runtime /dev/shm/clofix-database
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=1048576
+LimitNPROC=infinity
+TasksMax=infinity
+Delegate=yes
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

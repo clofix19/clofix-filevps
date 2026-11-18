@@ -1,4 +1,4 @@
-# CloFix Linux — security & upgrade policy
+# CloFix Linux - security & upgrade policy
 
 ## Goals
 

@@ -1,0 +1,10 @@
+-- Filled by install-db.sh
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '__DB_USER__') THEN
+    CREATE ROLE __DB_USER__ LOGIN PASSWORD '__DB_PASSWORD__';
+  ELSE
+    ALTER ROLE __DB_USER__ WITH LOGIN PASSWORD '__DB_PASSWORD__';
+  END IF;
+END
+$$;

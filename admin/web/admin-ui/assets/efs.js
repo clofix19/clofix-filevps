@@ -30,7 +30,7 @@
     actions.append(del);
    }
    const list=document.createElement('div');
-   if(!(share.attachments||[]).length)list.textContent='—';
+   if(!(share.attachments||[]).length)list.textContent='-';
    else (share.attachments||[]).forEach(a=>{
     const line=document.createElement('div');
     const link=document.createElement('a');link.href='/instances/'+encodeURIComponent(a.instance_id);link.textContent=a.instance_id;
@@ -56,7 +56,7 @@
   mine.forEach(s=>{
    const a=(s.attachments||[]).find(x=>x.instance_id===selectedID);
    const link=document.createElement('a');link.href='/efs';link.textContent=s.name;
-   row(table,[link,a?.guest_path||'—',s.prefix||'']);
+   row(table,[link,a?.guest_path||'-',s.prefix||'']);
   });
  }
  async function refreshFiles(){
@@ -84,7 +84,7 @@
     const del=document.createElement('button');del.className='danger small-btn';del.textContent=entry.folder?'Delete folder':'Delete';
     del.onclick=async()=>{if(!window.confirm(entry.folder?`Delete folder ${rel}?`:`Delete ${rel}?`))return;try{await api('DELETE','/api/efs/'+id+'/file?path='+encodeURIComponent(rel));await refreshFiles();}catch(e){if(msg)msg.textContent=e.message;}};
     actions.append(del);
-    row(table,[name,entry.folder?'Folder':'File',entry.folder?'—':fmtBytes(entry.size||0),entry.modified?new Date(entry.modified).toLocaleString():'—',actions]);
+    row(table,[name,entry.folder?'Folder':'File',entry.folder?'-':fmtBytes(entry.size||0),entry.modified?new Date(entry.modified).toLocaleString():'-',actions]);
    });
    if($('efs-explorer-location'))$('efs-explorer-location').textContent='/'+(path||'');
    if(msg)msg.textContent='';
@@ -180,8 +180,8 @@
   $('efs-explorer-select').onchange=()=>{path='';refreshFiles();};
   $('efs-explorer-up').onclick=()=>{path=path.replace(/\/?[^/]+\/?$/,'');refreshFiles();};
   $('efs-explorer-refresh').onclick=refreshFiles;
-  $('efs-explorer-folder').onclick=async()=>{const id=$('efs-explorer-select').value,name=window.prompt('New folder name');if(!id||!name)return;try{await api('POST','/api/efs/'+id+'/folder',{path:child(name.trim())});await refreshFiles();}catch(e){$('efs-explorer-message').textContent=e.message;}};
-  $('efs-explorer-file').onclick=async()=>{const id=$('efs-explorer-select').value,name=window.prompt('New text file name');if(!id||!name)return;const rel=child(name.trim());try{await apiRaw('PUT','/api/efs/'+id+'/file?path='+encodeURIComponent(rel),new Blob([''],{type:'text/plain'}),'text/plain');await refreshFiles();openEditor(id,rel);}catch(e){$('efs-explorer-message').textContent=e.message;}};
+  $('efs-explorer-folder').onclick=async()=>{const id=$('efs-explorer-select').value;if(!id)return;const name=await window.cfPrompt('New folder name','',{title:'Create folder',label:'Folder name',confirm:'Create'});if(!name)return;try{await api('POST','/api/efs/'+id+'/folder',{path:child(name.trim())});await refreshFiles();}catch(e){$('efs-explorer-message').textContent=e.message;}};
+  $('efs-explorer-file').onclick=async()=>{const id=$('efs-explorer-select').value;if(!id)return;const name=await window.cfPrompt('New text file name','',{title:'Create file',label:'File name',confirm:'Create'});if(!name)return;const rel=child(name.trim());try{await apiRaw('PUT','/api/efs/'+id+'/file?path='+encodeURIComponent(rel),new Blob([''],{type:'text/plain'}),'text/plain');await refreshFiles();openEditor(id,rel);}catch(e){$('efs-explorer-message').textContent=e.message;}};
   $('efs-explorer-download').onclick=()=>{const id=$('efs-explorer-select').value;if(!id){$('efs-explorer-message').textContent='Select a share first.';return;}downloadFolder(id,path);};
   $('efs-move-close').onclick=()=>$('efs-move-dialog').close();
   $('efs-move').onclick=async()=>{const id=$('efs-explorer-select').value,to=$('efs-move-to').value.trim(),msg=$('efs-move-message');if(!id||!moving||!to){msg.textContent='Enter a destination path.';return;}try{await api('POST','/api/efs/'+id+'/move',{from:moving,to,folder:movingFolder});msg.textContent='Moved.';$('efs-move-dialog').close();await refreshFiles();}catch(e){msg.textContent=e.message;}};

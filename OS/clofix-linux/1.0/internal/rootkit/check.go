@@ -29,7 +29,7 @@ func GuestChecks() Status {
 		"/etc/profile.d",
 	} {
 		if _, err := os.Stat(p); err == nil {
-			// present — deeper FIM covers integrity
+			// present - deeper FIM covers integrity
 		}
 	}
 	// Unexpected world-writable dirs under /etc
@@ -37,12 +37,12 @@ func GuestChecks() Status {
 	if b, err := os.ReadFile("/proc/modules"); err == nil {
 		st.Findings = append(st.Findings, Finding{
 			Code: "KERNEL_MODULES_VISIBLE", Scope: "host-shared",
-			Message: "Guest can read /proc/modules (" + truncate(string(b), 120) + ") — interpretation requires host trust boundary",
+			Message: "Guest can read /proc/modules (" + truncate(string(b), 120) + ") - interpretation requires host trust boundary",
 		})
 	} else {
 		st.Findings = append(st.Findings, Finding{
 			Code: "KERNEL_MODULES_HIDDEN", Scope: "guest",
-			Message: "/proc/modules not readable — expected in some isolated environments",
+			Message: "/proc/modules not readable - expected in some isolated environments",
 		})
 	}
 	return st

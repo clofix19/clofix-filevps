@@ -48,7 +48,7 @@ func Snapshot(allowTerminate bool) (Status, error) {
 			st.RootProcs = append(st.RootProcs, info)
 		}
 		cl := strings.ToLower(info.Cmdline + " " + info.Comm)
-		// Indicators only — never terminate from this list
+		// Indicators only - never terminate from this list
 		for _, needle := range []string{"nc -l", "ncat -l", "crypto_miner", "xmrig", "/dev/tcp/"} {
 			if strings.Contains(cl, needle) {
 				st.Suspicious = append(st.Suspicious, info.Cmdline)
