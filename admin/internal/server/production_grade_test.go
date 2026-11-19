@@ -308,20 +308,9 @@ func TestProductionManagedDatabase(t *testing.T) {
 		t.Fatal("MDB09 tenant B must not see foreign project")
 	}
 
-	// DB15 - Redis prefix isolation; no native backup claim
-	redisID := "dbp-" + strings.Repeat("h", 32)
-	s.databases.Lock()
-	rp := databaseProjectFixture(redisID)
-	rp.Spec.Engine = "redis"
-	rp.Spec.Version = "7.4"
-	rp.Databases = map[string]bool{"cache": true}
-	s.databases.Projects[redisID] = rp
-	s.databases.Unlock()
-	if w := do(h, "POST", "/api/databases/projects/"+redisID+"/backups", `{"database":"cache"}`, tok); w.Code != 400 {
-		t.Fatalf("DB15 redis backup must be rejected: %d %s", w.Code, w.Body.String())
-	}
-	if w := do(h, "POST", "/api/databases/projects/"+redisID+"/operations", `{"action":"create-table","database":"cache","table":"items","columns":[{"name":"id","type":"INTEGER"}]}`, tok); w.Code != 400 {
-		t.Fatalf("DB15 redis SQL schema reject: %d", w.Code)
+	// DB15 - managed Redis create is not offered (use Redis Cluster)
+	if w := do(h, "POST", "/api/databases/projects", `{"name":"cache-prod","spec":{"engine":"redis","version":"7.4","ram_mb":1024,"cpu":1,"disk_mb":2048}}`, tok); w.Code != 400 {
+		t.Fatalf("DB15 redis create must be rejected: %d %s", w.Code, w.Body.String())
 	}
 
 	// DB16 - stopped DB bills storage only

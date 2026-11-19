@@ -47,13 +47,13 @@ func (m *Manager) Acknowledge(ids []string) error {
 	return nil
 }
 
-// Recover only starts instances with a durable READY record. Interrupted work is
-// fenced by New; it never replays a provisioning or restore command.
+// Recover restores tmpfs credentials and starts existing engine containers.
+// It never replays provisioning or restore commands.
 func (m *Manager) Recover(ctx context.Context) {
 	m.Lock()
 	records := []record{}
 	for _, r := range m.records {
-		if r.State == "READY" {
+		if r.State == "READY" || r.State == "NEEDS_INSPECTION" || r.State == "UNHEALTHY" {
 			records = append(records, r)
 		}
 	}
@@ -62,11 +62,14 @@ func (m *Manager) Recover(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		if _, e := m.provision(ctx, r.Spec); e != nil {
+		if _, e := m.ensureEngine(ctx, r); e != nil {
 			m.Lock()
-			r.State = "NEEDS_INSPECTION"
-			m.records[r.Spec.ID] = r
-			m.save()
+			current, ok := m.records[r.Spec.ID]
+			if ok {
+				current.State = "NEEDS_INSPECTION"
+				m.records[r.Spec.ID] = current
+				m.save()
+			}
 			m.Unlock()
 		}
 	}
@@ -91,4 +94,5 @@ func (m *Manager) Reject(op db.Operation, message string) {
 	}
 	m.results[op.JobID] = db.Result{JobID: op.JobID, ProjectID: op.Project.ID, State: "FAILED", Error: message, At: time.Now().UTC()}
 	m.journal()
+	m.signalWake()
 }

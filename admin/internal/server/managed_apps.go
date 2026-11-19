@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"regexp"
 	"sort"
@@ -115,24 +114,6 @@ func managedAppURL(host string, port int) string {
 	return scheme + "://" + net.JoinHostPort(host, strconv.Itoa(port)) + "/"
 }
 
-func databaseURL(engine, host string, port int, name, user, password string) string {
-	u := url.URL{Host: net.JoinHostPort(host, strconv.Itoa(port)), Path: "/" + name, User: url.UserPassword(user, password)}
-	switch engine {
-	case "postgresql":
-		u.Scheme = "postgres"
-	case "mongodb":
-		u.Scheme = "mongodb"
-	case "redis":
-		u.Scheme = "rediss"
-		u.Path = "/0"
-		q := u.Query()
-		q.Set("prefix", name)
-		u.RawQuery = q.Encode()
-	default:
-		u.Scheme = "mysql"
-	}
-	return u.String()
-}
 func (s *Server) deployManagedApp(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Name             string            `json:"name"`
@@ -200,16 +181,8 @@ func (s *Server) deployManagedApp(w http.ResponseWriter, r *http.Request) {
 			if in.Env == nil {
 				in.Env = map[string]string{}
 			}
-			in.Env["DB_ENGINE"] = project.Spec.Engine
-			in.Env["DB_HOST"] = project.Spec.Host
-			in.Env["DB_PORT"] = strconv.Itoa(project.Spec.Port)
-			in.Env["DB_NAME"] = in.Database
-			in.Env["DB_USER"] = in.DatabaseUser
-			in.Env["DB_PASSWORD"] = in.DatabasePassword
-			in.Env["DATABASE_URL"] = databaseURL(project.Spec.Engine, project.Spec.Host, project.Spec.Port, in.Database, in.DatabaseUser, in.DatabasePassword)
-			if project.Spec.Engine == "redis" {
-				in.Env["REDIS_URL"] = in.Env["DATABASE_URL"]
-				in.Env["REDIS_PREFIX"] = in.Database
+			for key, value := range databaseConnectionEnv(project, in.Database, in.DatabaseUser, in.DatabasePassword) {
+				in.Env[key] = value
 			}
 		}
 	}

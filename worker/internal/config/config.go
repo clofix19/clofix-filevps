@@ -29,7 +29,7 @@ type Config struct {
 }
 
 func Default() Config {
-	return Config{HostReserveMB: 512, HeartbeatSeconds: 10, UIDBase: 100000, UserNS: true}
+	return Config{HostReserveMB: 512, HeartbeatSeconds: 3, UIDBase: 100000, UserNS: true}
 }
 
 func envOr(k, d string) string {

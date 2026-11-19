@@ -13,7 +13,7 @@ import (
 
 // linuxkit ships 8 loop nodes. Extra mknod entries let losetup -f scale
 // past that without changing the per-guest layer.img design.
-const maxLoopDevs = 128
+const maxLoopDevs = 256
 
 func ensureLoopNodes() {
 	for i := 0; i < maxLoopDevs; i++ {
@@ -25,9 +25,57 @@ func ensureLoopNodes() {
 	}
 }
 
+// reclaimOrphanLoops detaches CloFix layer/data images that are still attached
+// after a worker crash/restart but are no longer mounted. Without this,
+// Docker Desktop / nested workers exhaust /dev/loopN and Start fails with
+// "failed to set up loop device: No such file or directory".
+func reclaimOrphanLoops() {
+	ensureLoopNodes()
+	mounted := map[string]bool{}
+	if raw, err := os.ReadFile("/proc/self/mounts"); err == nil {
+		for _, line := range strings.Split(string(raw), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) >= 1 && strings.HasPrefix(fields[0], "/dev/loop") {
+				mounted[fields[0]] = true
+			}
+		}
+	}
+	out, err := exec.Command("losetup", "-a").CombinedOutput()
+	if err != nil {
+		return
+	}
+	markers := []string{"/instances/", "/volume-images/", "/managed-apps/", "layer.img", "data.img"}
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		dev, rest, ok := strings.Cut(line, ":")
+		if !ok || !strings.HasPrefix(dev, "/dev/loop") || mounted[dev] {
+			continue
+		}
+		ours := false
+		for _, marker := range markers {
+			if strings.Contains(rest, marker) {
+				ours = true
+				break
+			}
+		}
+		if !ours {
+			continue
+		}
+		_ = exec.Command("losetup", "-d", dev).Run()
+	}
+}
+
 func mountLoopExt4(img, mnt, opts string) error {
 	ensureLoopNodes()
 	out, err := exec.Command("losetup", "-f", "--show", img).CombinedOutput()
+	if err != nil {
+		// One retry after reclaiming leaked attachments from prior crashes.
+		reclaimOrphanLoops()
+		out, err = exec.Command("losetup", "-f", "--show", img).CombinedOutput()
+	}
 	if err != nil {
 		return fmt.Errorf("attach loop device: %s: %w", strings.TrimSpace(string(out)), err)
 	}

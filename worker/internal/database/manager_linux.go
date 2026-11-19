@@ -64,10 +64,11 @@ type Manager struct {
 	running     int
 	connections map[string]map[net.Conn]struct{}
 	paused      map[string]bool
+	wake        chan struct{}
 }
 
 func New(root string) (*Manager, error) {
-	m := &Manager{connections: map[string]map[net.Conn]struct{}{}, paused: map[string]bool{}, Root: filepath.Join(root, "databases"), images: map[string]Image{}, records: map[string]record{}, listeners: map[string]net.Listener{}, cancels: map[string]context.CancelFunc{}, results: map[string]db.Result{}}
+	m := &Manager{connections: map[string]map[net.Conn]struct{}{}, paused: map[string]bool{}, Root: filepath.Join(root, "databases"), images: map[string]Image{}, records: map[string]record{}, listeners: map[string]net.Listener{}, cancels: map[string]context.CancelFunc{}, results: map[string]db.Result{}, wake: make(chan struct{}, 1)}
 	if e := os.MkdirAll(m.Root, 0700); e != nil {
 		return nil, e
 	}
@@ -284,6 +285,28 @@ func (m *Manager) Results() []db.Result {
 	}
 	return out
 }
+
+// Wake returns a signal channel that fires when a database job reaches a terminal state.
+// The agent uses it to heartbeat immediately so explorer ops do not wait a full interval.
+func (m *Manager) Wake() <-chan struct{} {
+	if m == nil || m.wake == nil {
+		ch := make(chan struct{})
+		close(ch)
+		return ch
+	}
+	return m.wake
+}
+
+func (m *Manager) signalWake() {
+	if m == nil || m.wake == nil {
+		return
+	}
+	select {
+	case m.wake <- struct{}{}:
+	default:
+	}
+}
+
 func (m *Manager) Cancel(id string) {
 	m.Lock()
 	defer m.Unlock()
@@ -293,13 +316,43 @@ func (m *Manager) Cancel(id string) {
 }
 func (m *Manager) Run(ctx context.Context, op db.Operation) db.Result {
 	result := db.Result{JobID: op.JobID, ProjectID: op.Project.ID, State: "FAILED", At: time.Now().UTC()}
-	if !db.ID.MatchString(op.JobID) || !strings.HasPrefix(op.JobID, "dbj-") {
-		result.Error = "invalid job ID"
+	persistEarly := func(msg string) db.Result {
+		result.Error = msg
+		result.At = time.Now().UTC()
+		if !db.ID.MatchString(op.JobID) || !strings.HasPrefix(op.JobID, "dbj-") || op.Project.ID == "" {
+			return result
+		}
+		m.Lock()
+		if _, exists := m.results[op.JobID]; exists {
+			existing := m.results[op.JobID]
+			m.Unlock()
+			return existing
+		}
+		m.results[op.JobID] = result
+		if m.journal() != nil {
+			delete(m.results, op.JobID)
+		}
+		m.Unlock()
+		m.signalWake()
 		return result
 	}
-	if e := op.Project.Validate(); e != nil {
-		result.Error = e.Error()
-		return result
+	if !db.ID.MatchString(op.JobID) || !strings.HasPrefix(op.JobID, "dbj-") {
+		return persistEarly("invalid job ID")
+	}
+	// Cleanup and already-provisioned projects must tolerate legacy controller
+	// metadata (e.g. pre-47000 listener ports) after the published port band moved.
+	cleanup := op.Action == "delete-project" || op.Action == "delete-backup"
+	if cleanup {
+		if !db.ID.MatchString(op.Project.ID) || !strings.HasPrefix(op.Project.ID, "dbp-") {
+			return persistEarly("invalid database project specification")
+		}
+	} else if e := op.Project.Validate(); e != nil {
+		m.Lock()
+		existing, ok := m.records[op.Project.ID]
+		m.Unlock()
+		if !ok || existing.Spec.Engine != op.Project.Engine || !db.ID.MatchString(op.Project.ID) || !strings.HasPrefix(op.Project.ID, "dbp-") {
+			return persistEarly(e.Error())
+		}
 	}
 	m.Lock()
 	if previous, ok := m.results[op.JobID]; ok {
@@ -308,14 +361,12 @@ func (m *Manager) Run(ctx context.Context, op db.Operation) db.Result {
 	}
 	if m.running >= 2 {
 		m.Unlock()
-		result.Error = "database job concurrency limit"
-		return result
+		return persistEarly("database job concurrency limit")
 	}
 	for id, r := range m.results {
 		if r.State == "RUNNING" && r.ProjectID == op.Project.ID {
 			m.Unlock()
-			result.Error = "another operation is active for this database project: " + id
-			return result
+			return persistEarly("another operation is active for this database project: " + id)
 		}
 	}
 	jobCtx, cancel := context.WithTimeout(ctx, 6*time.Hour)
@@ -383,6 +434,7 @@ func (m *Manager) Run(ctx context.Context, op db.Operation) db.Result {
 		result.State = "INTERRUPTED"
 		m.results[op.JobID] = result
 	}
+	m.signalWake()
 	return result
 }
 func (m *Manager) apply(ctx context.Context, op db.Operation) (json.RawMessage, error) {
@@ -400,6 +452,9 @@ func (m *Manager) apply(ctx context.Context, op db.Operation) (json.RawMessage, 
 	}
 	if r.Spec.Engine != op.Project.Engine {
 		return nil, fmt.Errorf("engine mismatch")
+	}
+	if op.Action == "update-properties" {
+		return m.updateProperties(ctx, r, op)
 	}
 	if op.Action == "recover-backup" {
 		if !db.ID.MatchString(op.RecoveryJobID) {
@@ -420,35 +475,13 @@ func (m *Manager) apply(ctx context.Context, op db.Operation) (json.RawMessage, 
 		if !exists && r.State != "NEEDS_INSPECTION" {
 			return nil, fmt.Errorf("worker has no matching interrupted backup to recover")
 		}
-		// The TLS and credential mount lives in tmpfs and disappears when the
-		// worker restarts. Recreate it before starting the existing engine
-		// container; its persistent database disk is not modified.
-		if _, _, err := m.prepare(r); err != nil {
-			return nil, fmt.Errorf("could not restore database runtime credentials: %w", err)
+		healed, err := m.ensureEngine(ctx, r)
+		if err != nil {
+			return nil, err
 		}
-		if _, err := m.docker(ctx, nil, "start", container(r.Spec.ID)); err != nil && !strings.Contains(err.Error(), "already started") {
-			return nil, fmt.Errorf("could not start database engine: %w", err)
-		}
-		if _, err := m.engineOperation(ctx, r, db.Operation{Project: op.Project, Action: "ping"}); err != nil {
-			return nil, fmt.Errorf("database health check failed: %w", err)
-		}
-		inventory, err := m.engineOperation(ctx, r, db.Operation{Project: op.Project, Action: "list-databases"})
+		inventory, err := m.engineOperation(ctx, healed, db.Operation{Project: op.Project, Action: "list-databases"})
 		if err != nil {
 			return nil, fmt.Errorf("database inventory check failed: %w", err)
-		}
-		m.Lock()
-		current, exists := m.records[op.Project.ID]
-		if !exists || current.State != "NEEDS_INSPECTION" {
-			m.Unlock()
-			return nil, fmt.Errorf("database project state changed during inspection")
-		}
-		current.State = "READY"
-		m.records[op.Project.ID] = current
-		delete(m.paused, op.Project.ID)
-		err = m.save()
-		m.Unlock()
-		if err != nil {
-			return nil, fmt.Errorf("could not persist inspected database state")
 		}
 		return inventory, nil
 	}
@@ -458,10 +491,47 @@ func (m *Manager) apply(ctx context.Context, op db.Operation) (json.RawMessage, 
 	if op.Action == "delete-project" {
 		return nil, m.remove(ctx, r)
 	}
-	if r.State == "NEEDS_INSPECTION" && op.Action != "ping" && !strings.HasPrefix(op.Action, "list-") {
-		return nil, fmt.Errorf("database project requires inspection after interrupted work")
+	// /dev/shm credential mounts disappear on worker reboot; recreate and start
+	// before schema/data operations so create-table and explorer keep working.
+	healed, err := m.ensureEngine(ctx, r)
+	if err != nil {
+		return nil, err
 	}
-	return m.engineOperation(ctx, r, op)
+	return m.engineOperation(ctx, healed, op)
+}
+
+// ensureEngine restores tmpfs credentials, starts the engine container, and clears
+// NEEDS_INSPECTION after a successful ping. Persistent data mounts are untouched.
+func (m *Manager) ensureEngine(ctx context.Context, r record) (record, error) {
+	if _, _, err := m.prepare(r); err != nil {
+		return r, fmt.Errorf("could not restore database runtime credentials: %w", err)
+	}
+	name := container(r.Spec.ID)
+	if _, err := m.docker(ctx, nil, "inspect", name); err != nil {
+		return r, fmt.Errorf("database container missing; reprovision required")
+	}
+	if _, err := m.docker(ctx, nil, "start", name); err != nil && !strings.Contains(err.Error(), "already started") {
+		return r, fmt.Errorf("could not start database engine: %w", err)
+	}
+	if _, err := m.engineOperation(ctx, r, db.Operation{Project: r.Spec, Action: "ping"}); err != nil {
+		return r, fmt.Errorf("database health check failed: %w", err)
+	}
+	if err := m.listen(r); err != nil {
+		return r, err
+	}
+	m.Lock()
+	defer m.Unlock()
+	current, ok := m.records[r.Spec.ID]
+	if !ok {
+		return r, fmt.Errorf("database project disappeared during start")
+	}
+	current.State = "READY"
+	m.records[r.Spec.ID] = current
+	delete(m.paused, r.Spec.ID)
+	if err := m.save(); err != nil {
+		return current, fmt.Errorf("could not persist database state")
+	}
+	return current, nil
 }
 func makeCertificate(host string) (string, string, string, error) {
 	key, e := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -479,7 +549,7 @@ func makeCertificate(host string) (string, string, string, error) {
 		return "", "", "", e
 	}
 	serial, _ = rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 120))
-	server := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: host}, NotBefore: ca.NotBefore, NotAfter: ca.NotAfter, KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, DNSNames: []string{"localhost"}, IPAddresses: []net.IP{net.ParseIP("127.0.0.1")}}
+	server := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: host}, NotBefore: ca.NotBefore, NotAfter: ca.NotAfter, KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, DNSNames: []string{"localhost"}, IPAddresses: []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("10.231.0.1")}}
 	if ip := net.ParseIP(host); ip != nil {
 		server.IPAddresses = append(server.IPAddresses, ip)
 	} else if host != "" {
@@ -576,6 +646,91 @@ func (m *Manager) prepare(r record) (string, string, error) {
 	}
 	return engineData, private, nil
 }
+func (m *Manager) engineRunArgs(r record, data, private, network string) ([]string, error) {
+	spec := r.Spec
+	props := db.NormalizeProperties(spec.Engine, spec.RAMMB, spec.Properties)
+	name := container(spec.ID)
+	args := []string{"run", "-d", "--name", name, "--label", "clofix.database.project=" + spec.ID, "--network", network, "--memory", strconv.FormatInt(spec.RAMMB<<20, 10), "--memory-swap", strconv.FormatInt(spec.RAMMB<<20, 10), "--cpus", strconv.FormatFloat(spec.CPU, 'f', 2, 64), "--pids-limit", "256", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--read-only", "--user", "999:999", "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m", "--tmpfs", "/run/mysqld:rw,noexec,nosuid,size=16m,uid=999,gid=999", "--tmpfs", "/var/run/postgresql:rw,noexec,nosuid,size=16m,uid=999,gid=999", "--mount", "type=bind,src=" + private + ",dst=/run/clofix,readonly"}
+	switch spec.Engine {
+	case "mysql":
+		args = append(args, "--mount", "type=bind,src="+data+",dst=/var/lib/mysql", "-e", "MYSQL_ROOT_PASSWORD_FILE=/run/clofix/admin-password", r.Image.Ref,
+			"--require-secure-transport=ON", "--ssl-ca=/run/clofix/ca.pem", "--ssl-cert=/run/clofix/server.pem", "--ssl-key=/run/clofix/server.key", "--local-infile=OFF",
+			"--max-connections="+strconv.Itoa(props.MaxConnections),
+			"--innodb-buffer-pool-size="+strconv.Itoa(props.BufferMB)+"M",
+			"--table-open-cache="+strconv.Itoa(clampInt(props.MaxConnections*2, 200, 4000)))
+	case "postgresql":
+		args = append(args, "--mount", "type=bind,src="+data+",dst=/var/lib/postgresql/data", "-e", "PGDATA=/var/lib/postgresql/data/pgdata", "-e", "POSTGRES_PASSWORD_FILE=/run/clofix/admin-password", "-e", "POSTGRES_INITDB_ARGS=--auth-local=scram-sha-256 --auth-host=scram-sha-256", r.Image.Ref, "postgres",
+			"-c", "hba_file=/run/clofix/pg_hba.conf", "-c", "ssl=on", "-c", "ssl_ca_file=/run/clofix/ca.pem", "-c", "ssl_cert_file=/run/clofix/server.pem", "-c", "ssl_key_file=/run/clofix/server.key",
+			"-c", "max_connections="+strconv.Itoa(props.MaxConnections),
+			"-c", "shared_buffers="+strconv.Itoa(props.BufferMB)+"MB",
+			"-c", "work_mem="+strconv.Itoa(props.WorkMemMB)+"MB",
+			"-c", "effective_cache_size="+strconv.Itoa(clampInt(int(spec.RAMMB*70/100), props.BufferMB, int(spec.RAMMB)))+"MB")
+	case "mongodb":
+		cacheGB := float64(props.BufferMB) / 1024
+		if cacheGB < 0.25 {
+			cacheGB = 0.25
+		}
+		args = append(args, "--tmpfs", "/data/configdb:rw,noexec,nosuid,size=16m,uid=999,gid=999", "--mount", "type=bind,src="+data+",dst=/data/db", "-e", "MONGO_INITDB_ROOT_USERNAME=clofixadmin", "-e", "MONGO_INITDB_ROOT_PASSWORD_FILE=/run/clofix/admin-password", r.Image.Ref, "mongod",
+			"--auth", "--bind_ip_all", "--noscripting", "--tlsMode", "requireTLS", "--tlsCertificateKeyFile", "/run/clofix/server-combined.pem", "--tlsCAFile", "/run/clofix/ca.pem", "--tlsAllowConnectionsWithoutCertificates",
+			"--maxConns", strconv.Itoa(props.MaxConnections),
+			"--wiredTigerCacheSizeGB", strconv.FormatFloat(cacheGB, 'f', 2, 64))
+	case "redis":
+		args = append(args, "--mount", "type=bind,src="+data+",dst=/data", r.Image.Ref, "redis-server", "/run/clofix/redis.conf",
+			"--maxclients", strconv.Itoa(props.MaxConnections),
+			"--maxmemory", strconv.Itoa(props.BufferMB)+"mb",
+			"--maxmemory-policy", "allkeys-lru")
+	default:
+		return nil, fmt.Errorf("unsupported engine")
+	}
+	return args, nil
+}
+
+func clampInt(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
+func (m *Manager) updateProperties(ctx context.Context, r record, op db.Operation) (json.RawMessage, error) {
+	if op.Properties == nil {
+		return nil, fmt.Errorf("properties required")
+	}
+	props := db.NormalizeProperties(r.Spec.Engine, r.Spec.RAMMB, *op.Properties)
+	if e := props.Validate(r.Spec.Engine, r.Spec.RAMMB); e != nil {
+		return nil, e
+	}
+	r.Spec.Properties = props
+	m.Lock()
+	m.records[r.Spec.ID] = r
+	if e := m.save(); e != nil {
+		m.Unlock()
+		return nil, e
+	}
+	m.Unlock()
+	name := container(r.Spec.ID)
+	_, _ = m.docker(ctx, nil, "stop", "-t", "20", name)
+	if _, e := m.docker(ctx, nil, "rm", "-f", name); e != nil {
+		return nil, fmt.Errorf("could not recreate database engine container: %w", e)
+	}
+	raw, e := m.provision(ctx, r.Spec)
+	if e != nil {
+		return nil, e
+	}
+	out, _ := json.Marshal(map[string]any{"properties": props, "ca": r.CA})
+	if len(raw) > 0 {
+		var merged map[string]any
+		if json.Unmarshal(raw, &merged) == nil {
+			merged["properties"] = props
+			out, _ = json.Marshal(merged)
+		}
+	}
+	return out, nil
+}
+
 func (m *Manager) provision(ctx context.Context, spec db.Project) (json.RawMessage, error) {
 	m.Lock()
 	r, exists := m.records[spec.ID]
@@ -595,6 +750,7 @@ func (m *Manager) provision(ctx context.Context, spec db.Project) (json.RawMessa
 			m.Unlock()
 			return nil, e
 		}
+		spec.Properties = db.NormalizeProperties(spec.Engine, spec.RAMMB, spec.Properties)
 		r = record{Spec: spec, Image: image, CA: ca, Certificate: cert, Credential: credential, State: "PROVISIONING"}
 		m.records[spec.ID] = r
 		if e = m.save(); e != nil {
@@ -607,8 +763,15 @@ func (m *Manager) provision(ctx context.Context, spec db.Project) (json.RawMessa
 	if r.State == "NEEDS_INSPECTION" {
 		return nil, fmt.Errorf("database project requires inspection after interrupted work")
 	}
-	if r.Spec != spec {
+	if !r.Spec.CoreEqual(spec) {
 		return nil, fmt.Errorf("existing database specification does not match request")
+	}
+	if r.Spec.Properties.Empty() {
+		r.Spec.Properties = db.NormalizeProperties(r.Spec.Engine, r.Spec.RAMMB, spec.Properties)
+		m.Lock()
+		m.records[r.Spec.ID] = r
+		_ = m.save()
+		m.Unlock()
 	}
 	ready := false
 	for _, engine := range m.Ready() {
@@ -631,16 +794,9 @@ func (m *Manager) provision(ctx context.Context, spec db.Project) (json.RawMessa
 		}
 	}
 	if _, e = m.docker(ctx, nil, "inspect", name); e != nil {
-		args := []string{"run", "-d", "--name", name, "--label", "clofix.database.project=" + spec.ID, "--network", network, "--memory", strconv.FormatInt(spec.RAMMB<<20, 10), "--memory-swap", strconv.FormatInt(spec.RAMMB<<20, 10), "--cpus", strconv.FormatFloat(spec.CPU, 'f', 2, 64), "--pids-limit", "256", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--read-only", "--user", "999:999", "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m", "--tmpfs", "/run/mysqld:rw,noexec,nosuid,size=16m,uid=999,gid=999", "--tmpfs", "/var/run/postgresql:rw,noexec,nosuid,size=16m,uid=999,gid=999", "--mount", "type=bind,src=" + private + ",dst=/run/clofix,readonly"}
-		switch spec.Engine {
-		case "mysql":
-			args = append(args, "--mount", "type=bind,src="+data+",dst=/var/lib/mysql", "-e", "MYSQL_ROOT_PASSWORD_FILE=/run/clofix/admin-password", r.Image.Ref, "--require-secure-transport=ON", "--ssl-ca=/run/clofix/ca.pem", "--ssl-cert=/run/clofix/server.pem", "--ssl-key=/run/clofix/server.key", "--local-infile=OFF")
-		case "postgresql":
-			args = append(args, "--mount", "type=bind,src="+data+",dst=/var/lib/postgresql/data", "-e", "PGDATA=/var/lib/postgresql/data/pgdata", "-e", "POSTGRES_PASSWORD_FILE=/run/clofix/admin-password", "-e", "POSTGRES_INITDB_ARGS=--auth-local=scram-sha-256 --auth-host=scram-sha-256", r.Image.Ref, "postgres", "-c", "hba_file=/run/clofix/pg_hba.conf", "-c", "ssl=on", "-c", "ssl_ca_file=/run/clofix/ca.pem", "-c", "ssl_cert_file=/run/clofix/server.pem", "-c", "ssl_key_file=/run/clofix/server.key")
-		case "mongodb":
-			args = append(args, "--tmpfs", "/data/configdb:rw,noexec,nosuid,size=16m,uid=999,gid=999", "--mount", "type=bind,src="+data+",dst=/data/db", "-e", "MONGO_INITDB_ROOT_USERNAME=clofixadmin", "-e", "MONGO_INITDB_ROOT_PASSWORD_FILE=/run/clofix/admin-password", r.Image.Ref, "mongod", "--auth", "--bind_ip_all", "--noscripting", "--tlsMode", "requireTLS", "--tlsCertificateKeyFile", "/run/clofix/server-combined.pem", "--tlsCAFile", "/run/clofix/ca.pem", "--tlsAllowConnectionsWithoutCertificates")
-		case "redis":
-			args = append(args, "--mount", "type=bind,src="+data+",dst=/data", r.Image.Ref, "redis-server", "/run/clofix/redis.conf")
+		args, buildErr := m.engineRunArgs(r, data, private, network)
+		if buildErr != nil {
+			return nil, buildErr
 		}
 		if _, e = m.docker(ctx, nil, args...); e != nil {
 			return nil, e

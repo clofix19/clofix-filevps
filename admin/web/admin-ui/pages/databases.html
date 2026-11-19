@@ -1,11 +1,13 @@
 {{define "content"}}
 <section class="page active database-page">
-  <div class="section-head"><div><p class="eyebrow">Storage</p><h2>Managed Databases</h2><p>Create isolated MySQL, PostgreSQL, MongoDB and Redis instances, then manage logical databases, users, backups and schedules.</p></div><button class="primary" id="database-add-project" type="button">＋ Create database instance</button></div>
+  <div class="section-head"><div><p class="eyebrow">Storage</p><h2>Managed Databases</h2><p>Create isolated MySQL, PostgreSQL and MongoDB instances, then manage logical databases, users, backups and schedules. For Redis, use Redis Cluster under Compute.</p></div><button class="primary" id="database-add-project" type="button">＋ Create database instance</button></div>
   <article class="panel database-activity-card" aria-labelledby="database-activity-title"><div class="database-activity-icon" aria-hidden="true">↻</div><div><span class="eyebrow" id="database-activity-title">Live activity</span><p class="message" id="database-message" role="status" aria-live="polite">No database activity yet.</p></div></article>
   <div class="sync-warning database-readiness" id="database-readiness" role="status" aria-live="polite" hidden></div>
   <div class="settings-layout">
     <nav class="settings-nav" aria-label="Database sections">
       <a href="#database-instances" data-settings-link aria-controls="database-instances" aria-current="location"><strong>Instances</strong><span>Inventory and selected instance</span></a>
+      <a href="#database-explorer" data-settings-link aria-controls="database-explorer"><strong>Explorer</strong><span>Browse schema, rows and SQL</span></a>
+      <a href="#database-properties" data-settings-link aria-controls="database-properties"><strong>Properties</strong><span>Connection info and performance</span></a>
       <a href="#database-backup-manager" data-settings-link aria-controls="database-backup-manager"><strong>Backups</strong><span>Encrypted recovery points</span></a>
       <a href="#database-schedule-list" data-settings-link aria-controls="database-schedule-list"><strong>Schedules</strong><span>Automatic backup jobs</span></a>
       <a href="#database-job-progress" data-settings-link aria-controls="database-job-progress"><strong>Jobs</strong><span>Live operation progress</span></a>
@@ -17,6 +19,75 @@
         <div class="panel"><div class="section-head"><h3>Database instances</h3><button class="secondary" id="database-refresh" type="button">Refresh</button></div><div class="table-wrap"><table id="database-projects"></table></div></div>
         <div class="panel" id="database-project-panel" hidden><div class="section-head"><div><h3 id="database-project-title">Instance details</h3><p id="database-project-connection" class="muted"></p></div><button class="secondary" id="database-inspect-recovery" type="button" hidden>Inspect after interrupted backup</button><button class="danger" id="database-delete-project" type="button">Delete instance</button></div><div class="resource-grid"><div><strong>CPU</strong><span id="database-metric-cpu">-</span></div><div><strong>RAM</strong><span id="database-metric-ram">-</span></div><div><strong>Storage</strong><span id="database-metric-disk">-</span></div><div><strong>Connections</strong><span id="database-metric-connections">-</span></div></div><div class="database-actions"><button class="secondary" id="database-add-logical" type="button">Create database</button><button class="secondary" id="database-add-user" type="button">Create user</button><button class="secondary" id="database-create-backup" type="button">Create backup</button><button class="secondary" id="database-add-schedule" type="button">Add schedule</button></div><h4>Logical databases</h4><div class="table-wrap"><table id="database-logical"></table></div><h4>Database users</h4><div class="table-wrap"><table id="database-users"></table></div></div>
         <div class="row-actions" id="database-ca-actions" hidden><button class="secondary" id="database-download-ca" type="button">Download selected instance TLS CA</button></div>
+      </div>
+      <div class="panel settings-section" id="database-explorer" data-settings-panel aria-labelledby="database-heading-explorer" hidden>
+        <div class="section-head"><div><h3 id="database-heading-explorer" tabindex="-1">Database Explorer</h3><p class="muted">Browse tables, inspect structure, page through rows, and run SQL like phpMyAdmin — against the selected managed instance.</p></div><button class="secondary" id="database-explorer-refresh" type="button">Refresh schema</button></div>
+        <div class="dbx-toolbar form-grid">
+          <div class="form-field"><label for="database-explorer-instance">Instance</label><select id="database-explorer-instance"></select></div>
+          <div class="form-field"><label for="database-explorer-database">Database</label><select id="database-explorer-database"></select></div>
+        </div>
+        <div class="dbx-status" id="database-explorer-status" role="status" aria-live="polite" data-busy="false">
+          <span class="dbx-status-spin progress-icon" aria-hidden="true" hidden></span>
+          <span class="message" id="database-explorer-message"></span>
+        </div>
+        <div class="dbx-layout" id="database-explorer-body">
+          <aside class="dbx-sidebar">
+            <div class="section-head"><h4 id="database-explorer-tables-title">Tables</h4><button class="small-btn" id="database-explorer-new-table" type="button">＋</button></div>
+            <div class="dbx-table-list" id="database-explorer-tables" role="list"></div>
+          </aside>
+          <div class="dbx-main">
+            <div class="dbx-tabs" role="tablist">
+              <button type="button" class="small-btn" data-dbx-tab="structure" aria-selected="true">Structure</button>
+              <button type="button" class="small-btn" data-dbx-tab="browse">Browse</button>
+              <button type="button" class="small-btn" data-dbx-tab="sql">SQL</button>
+            </div>
+            <div class="dbx-panel" data-dbx-panel="structure">
+              <div class="section-head"><h4 id="database-explorer-structure-title">Structure</h4><div class="row-actions"><button class="small-btn" id="database-explorer-add-column" type="button">Add column</button><button class="small-btn" id="database-explorer-drop-table" type="button">Drop table</button></div></div>
+              <div class="table-wrap"><table id="database-explorer-columns"></table></div>
+              <h4>Indexes</h4>
+              <div class="table-wrap"><table id="database-explorer-indexes"></table></div>
+            </div>
+            <div class="dbx-panel" data-dbx-panel="browse" hidden>
+              <div class="section-head"><h4>Browse rows</h4><div class="row-actions"><button class="small-btn" id="database-explorer-insert" type="button">Insert row</button><button class="small-btn" id="database-explorer-prev" type="button">Prev</button><span class="muted" id="database-explorer-page">0–0</span><button class="small-btn" id="database-explorer-next" type="button">Next</button></div></div>
+              <div class="table-wrap dbx-data-wrap"><table id="database-explorer-rows"></table></div>
+            </div>
+            <div class="dbx-panel" data-dbx-panel="sql" hidden>
+              <label class="visually-hidden" for="database-explorer-sql">SQL</label>
+              <textarea id="database-explorer-sql" rows="8" spellcheck="false" placeholder="SELECT * FROM orders LIMIT 50;"></textarea>
+              <div class="row-actions"><button class="primary" id="database-explorer-run" type="button">Run</button><button class="secondary" id="database-explorer-sql-upload" type="button">Upload .sql</button><input id="database-explorer-sql-file" type="file" accept=".sql,text/plain,text/sql" hidden><span class="muted">One statement, or import a .sql file (max 2 MB). Writes require confirmation.</span></div>
+              <div class="table-wrap dbx-data-wrap"><table id="database-explorer-sql-result"></table></div>
+              <pre class="dbx-json" id="database-explorer-sql-json" hidden></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="panel settings-section" id="database-properties" data-settings-panel aria-labelledby="database-heading-properties" hidden>
+        <div class="section-head"><div><h3 id="database-heading-properties" tabindex="-1">Properties</h3><p class="muted">Connection details for clients, plus performance tuning applied when the engine starts.</p></div>
+          <div class="row-actions"><button class="secondary" id="database-properties-defaults" type="button">Use recommended</button><button class="primary" id="database-properties-apply" type="button">Apply performance</button></div>
+        </div>
+        <p class="message" id="database-properties-message" role="status" aria-live="polite"></p>
+        <div class="form-grid dbx-toolbar">
+          <div class="form-field"><label for="database-properties-instance">Instance</label><select id="database-properties-instance"></select></div>
+        </div>
+        <div class="db-props-layout">
+          <article class="db-props-card" aria-labelledby="database-connect-title">
+            <h4 id="database-connect-title">Connection info</h4>
+            <dl class="db-props-dl" id="database-connect-fields"></dl>
+            <div class="form-field"><label for="database-connect-uri">Client URI template</label><textarea id="database-connect-uri" rows="3" readonly spellcheck="false"></textarea></div>
+            <div class="row-actions"><button class="secondary" id="database-connect-copy" type="button">Copy URI</button><button class="secondary" id="database-properties-ca" type="button">Download TLS CA</button><button class="primary" id="database-connect-open" type="button">Connect to…</button></div>
+            <p class="muted" id="database-connect-hint">Public host:port is for external clients. FileVPS and other VPC peers use VPC IP:port (bridge gateway). Create a database user under Instances, then Connect to… VPS, Docker, Applications, or CKS. Admin root credentials stay on the worker.</p>
+          </article>
+          <article class="db-props-card" aria-labelledby="database-perf-title">
+            <h4 id="database-perf-title">Performance settings</h4>
+            <p class="muted" id="database-perf-engine-note">Engine-aware defaults scale with instance RAM. Applying recreates the engine container and keeps data.</p>
+            <div class="form-grid">
+              <div class="form-field"><label for="database-prop-max-connections">Max connections</label><input id="database-prop-max-connections" type="number" min="10" max="5000" step="1"></div>
+              <div class="form-field"><label for="database-prop-buffer" id="database-prop-buffer-label">Buffer pool (MB)</label><input id="database-prop-buffer" type="number" min="64" max="1048576" step="1"></div>
+              <div class="form-field" id="database-prop-workmem-field"><label for="database-prop-workmem">Work mem (MB)</label><input id="database-prop-workmem" type="number" min="1" max="1024" step="1"></div>
+            </div>
+            <p class="muted" id="database-prop-summary"></p>
+          </article>
+        </div>
       </div>
       <div class="panel settings-section" id="database-backup-manager" data-settings-panel aria-labelledby="database-heading-backups" hidden>
         <div class="section-head"><div><h3 id="database-heading-backups" tabindex="-1">Backup Manager</h3><p class="muted">Encrypted central and S3 backups, resumable uploads and staged restores.</p></div><button class="secondary" id="database-upload-backup" type="button">Upload backup</button></div>
@@ -35,6 +106,8 @@
   </div>
 </section>
 
-<dialog class="terminal-dialog form-dialog" id="database-project-dialog"><form id="database-project-form"><div class="section-head"><h2>Create database instance</h2><button class="secondary dialog-close" type="button">Close</button></div><div class="form-grid"><div class="form-field"><label>Name<input id="database-project-name" maxlength="80" required></label></div><div class="form-field"><label>Engine<select id="database-project-engine"><option value="mysql">MySQL</option><option value="postgresql">PostgreSQL</option><option value="mongodb">MongoDB</option><option value="redis">Redis</option></select></label></div><div class="form-field"><label>Worker<select id="database-project-worker" required></select></label></div><div class="form-field"><label>VPC<select id="database-project-vpc"><option value="vpc-default">Default VPC · 10.231.0.0/16</option></select></label></div><div class="form-field"><label>Version<select id="database-project-version" required></select></label></div><div class="form-field"><label>RAM (MB)<input id="database-project-ram" type="number" min="256" value="1024" required></label></div><div class="form-field"><label>CPU cores<input id="database-project-cpu" type="number" min="0.25" max="128" step="0.25" value="1" required></label></div><div class="form-field"><label>Disk (MB)<input id="database-project-disk" type="number" min="512" value="2048" required></label></div></div><button class="primary" type="submit">Create instance</button></form></dialog>
+<dialog class="terminal-dialog form-dialog" id="database-project-dialog"><form id="database-project-form"><div class="section-head"><h2>Create database instance</h2><button class="secondary dialog-close" type="button">Close</button></div><div class="form-grid"><div class="form-field"><label for="database-project-name">Name</label><input id="database-project-name" maxlength="80" required></div><div class="form-field"><label for="database-project-engine">Engine</label><select id="database-project-engine"><option value="mysql">MySQL</option><option value="postgresql">PostgreSQL</option><option value="mongodb">MongoDB</option></select></div><div class="form-field"><label for="database-project-worker">Worker</label><select id="database-project-worker" required></select></div><div class="form-field"><label for="database-project-vpc">VPC</label><select id="database-project-vpc"><option value="vpc-default">Default VPC · 10.231.0.0/16</option></select></div><div class="form-field"><label for="database-project-version">Version</label><select id="database-project-version" required></select></div><div class="form-field"><label for="database-project-ram">RAM (MB)</label><input id="database-project-ram" type="number" min="256" value="1024" required></div><div class="form-field"><label for="database-project-cpu">CPU cores</label><input id="database-project-cpu" type="number" min="0.25" max="128" step="0.25" value="1" required></div><div class="form-field"><label for="database-project-disk">Disk (MB)</label><input id="database-project-disk" type="number" min="512" value="2048" required></div></div><button class="primary" type="submit">Create instance</button></form></dialog>
 <dialog class="terminal-dialog form-dialog" id="database-operation-dialog"><form id="database-operation-form"><div class="section-head"><h2 id="database-operation-title">Database operation</h2><button class="secondary dialog-close" type="button">Close</button></div><div id="database-operation-fields" class="form-grid"></div><p class="message" id="database-operation-message"></p><button class="primary" type="submit">Submit</button></form></dialog>
+<dialog class="terminal-dialog form-dialog" id="database-row-dialog"><form id="database-row-form"><div class="section-head"><h2 id="database-row-title">Edit row</h2><button class="secondary dialog-close" type="button">Close</button></div><p class="muted" id="database-row-hint">Values are typed from the table schema. Leave a field blank and mark NULL to store SQL NULL.</p><div id="database-row-fields" class="form-grid dbx-row-fields"></div><p class="message" id="database-row-message"></p><button class="primary" type="submit" id="database-row-submit">Save</button></form></dialog>
+<dialog class="terminal-dialog form-dialog" id="database-connect-dialog"><form id="database-connect-form"><div class="section-head"><h2>Connect database</h2><button class="secondary dialog-close" type="button">Close</button></div><p class="muted">Injects DB_HOST, DB_PORT, DB_VPC_HOST, DB_VPC_PORT, DB_NAME, DB_USER, DB_PASSWORD, DATABASE_URL, DATABASE_VPC_URL and DB_CA for the selected target. Password is not stored on the database instance.</p><div class="form-grid"><div class="form-field"><label for="database-connect-target">Target</label><select id="database-connect-target"><option value="env">Copy env / .env file</option><option value="secret">Secrets Manager</option><option value="vps">FileVPS (via secret)</option><option value="docker">Docker (via secret refs)</option><option value="application">Application (via secret refs)</option><option value="cks">CKS Kubernetes Secret</option></select></div><div class="form-field"><label for="database-connect-database">Logical database</label><select id="database-connect-database" required></select></div><div class="form-field"><label for="database-connect-user">Database user</label><select id="database-connect-user" required></select></div><div class="form-field"><label for="database-connect-password">User password</label><input id="database-connect-password" type="password" minlength="16" maxlength="128" required autocomplete="off"></div><div class="form-field" id="database-connect-cluster-field" hidden><label for="database-connect-cluster">CKS cluster</label><select id="database-connect-cluster"></select></div><div class="form-field" id="database-connect-ns-field" hidden><label for="database-connect-ns">Namespace</label><input id="database-connect-ns" value="default"></div><div class="form-field"><label for="database-connect-name">Secret / resource name (optional)</label><input id="database-connect-name" maxlength="64" placeholder="auto"></div></div><p class="message" id="database-connect-message"></p><pre class="dbx-json" id="database-connect-result" hidden></pre><button class="primary" type="submit">Connect</button></form></dialog>
 {{end}}

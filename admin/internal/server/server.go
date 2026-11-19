@@ -1553,11 +1553,15 @@ func (s *Server) listS3Connections(w http.ResponseWriter, r *http.Request) {
 // Local UI connections run from the admin container, where localhost points
 // back to the admin process. Migrate the documented local S3 endpoint to the
 // Compose service DNS name, keeping bucket and prefix in their own fields.
+// When S3_ACCESS_KEY/S3_SECRET_KEY are set (Compose / native s3pool), keep the
+// saved CloFix pool credentials aligned so a recreated gateway cannot leave
+// the UI on InvalidAccessKeyId.
 func (s *Server) normalizeLocalS3PoolEndpoints() error {
 	items, err := s.S3.ListConnections()
 	if err != nil {
 		return err
 	}
+	poolAccess, poolSecret := os.Getenv("S3_ACCESS_KEY"), os.Getenv("S3_SECRET_KEY")
 	for _, c := range items {
 		u, parseErr := url.Parse(c.Endpoint)
 		if parseErr != nil || u.Port() != "8333" {
@@ -1585,6 +1589,10 @@ func (s *Server) normalizeLocalS3PoolEndpoints() error {
 		}
 		if host == "s3pool" && c.Provider != "clofix" {
 			c.Provider = "clofix"
+			changed = true
+		}
+		if poolAccess != "" && poolSecret != "" && (c.AccessKey != poolAccess || c.SecretKey != poolSecret) {
+			c.AccessKey, c.SecretKey = poolAccess, poolSecret
 			changed = true
 		}
 		if !changed {

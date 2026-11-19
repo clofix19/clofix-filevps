@@ -121,3 +121,64 @@ func TestDatabaseFailedProjectRetry(t *testing.T) {
 func databaseProjectFixture(id string) model.Project {
 	return model.Project{Spec: db.Project{ID: id, Engine: "mysql", Version: "8.4", RAMMB: 512, CPU: 1, DiskMB: 512, Port: proto.HostDatabaseBase, Host: "192.0.2.20"}, Owner: "root", Name: "test", WorkerID: "worker", State: "READY", Created: time.Now(), Databases: map[string]bool{"orders": true}, Users: map[string]map[string]string{}}
 }
+
+func TestDatabaseHeartbeatRedispatchesStuckRunningDelete(t *testing.T) {
+	s, memory := newSrv(t)
+	memory.UpsertWorker(databaseWorkerFixture())
+	projectID := "dbp-" + strings.Repeat("c", 32)
+	jobID := "dbj-" + strings.Repeat("c", 32)
+	s.databases.Lock()
+	project := databaseProjectFixture(projectID)
+	project.WorkerID = "wrk-database"
+	project.State = "DELETING"
+	s.databases.Projects[projectID] = project
+	s.databases.Jobs[jobID] = model.Job{ID: jobID, ProjectID: projectID, WorkerID: "wrk-database", Owner: "root", Action: "delete-project", State: "RUNNING", Created: time.Now().Add(-48 * time.Hour), Updated: time.Now().Add(-48 * time.Hour)}
+	s.databases.Unlock()
+
+	ops, _ := s.databaseHeartbeat("wrk-database", nil, nil)
+	if len(ops) != 1 || ops[0].Action != "database-job" || ops[0].DatabaseJobID != jobID {
+		t.Fatalf("stuck RUNNING delete must be re-dispatched: %+v", ops)
+	}
+}
+
+func TestDatabaseHeartbeatRequeuesInterruptedDelete(t *testing.T) {
+	s, memory := newSrv(t)
+	memory.UpsertWorker(databaseWorkerFixture())
+	projectID := "dbp-" + strings.Repeat("d", 32)
+	jobID := "dbj-" + strings.Repeat("d", 32)
+	project := databaseProjectFixture(projectID)
+	project.WorkerID = "wrk-database"
+	project.State = "DELETING"
+	payload, err := s.sealDatabase(jobID, db.Operation{JobID: jobID, Action: "delete-project", Project: project.Spec})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.databases.Lock()
+	s.databases.Projects[projectID] = project
+	s.databases.Jobs[jobID] = model.Job{ID: jobID, ProjectID: projectID, WorkerID: "wrk-database", Owner: "root", Action: "delete-project", State: "RUNNING", Payload: payload, Created: time.Now(), Updated: time.Now()}
+	s.databases.Unlock()
+
+	ops, ack := s.databaseHeartbeat("wrk-database", []db.Result{{JobID: jobID, ProjectID: projectID, State: "INTERRUPTED", Error: "worker restarted during operation"}}, nil)
+	if len(ack) != 1 || ack[0] != jobID {
+		t.Fatalf("interrupted delete must be acknowledged: %+v", ack)
+	}
+	s.databases.Lock()
+	job := s.databases.Jobs[jobID]
+	project = s.databases.Projects[projectID]
+	s.databases.Unlock()
+	if job.State != "QUEUED" && job.State != "DISPATCHED" && job.State != "RUNNING" {
+		t.Fatalf("interrupted delete must be re-queued, got %s", job.State)
+	}
+	if project.State != "DELETING" {
+		t.Fatalf("project must stay DELETING, got %s", project.State)
+	}
+	found := false
+	for _, op := range ops {
+		if op.DatabaseJobID == jobID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("re-queued delete should be dispatched: job=%s ops=%+v", job.State, ops)
+	}
+}

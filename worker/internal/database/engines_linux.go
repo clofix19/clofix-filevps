@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode"
 
 	db "github.com/clofix/filevps/worker/pkg/database"
 )
@@ -179,7 +180,7 @@ func (m *Manager) engineOperation(ctx context.Context, r record, op db.Operation
 		if _, e = m.sql(ctx, r, admin, "ALTER DATABASE "+a+" RENAME TO "+b+";"); e != nil {
 			return nil, e
 		}
-	case "list-tables":
+	case "list-tables", "inspect-schema":
 		if e := db.Name(op.Database); e != nil {
 			return nil, e
 		}
@@ -212,6 +213,44 @@ func (m *Manager) engineOperation(ctx context.Context, r record, op db.Operation
 				}
 			}
 			result["tables"] = tables
+		}
+		if op.Action == "inspect-schema" {
+			tables := []string{}
+			switch value := result["tables"].(type) {
+			case []string:
+				tables = value
+			case []any:
+				for _, item := range value {
+					switch row := item.(type) {
+					case string:
+						if row != "" {
+							tables = append(tables, row)
+						}
+					case map[string]any:
+						if name, ok := row["name"].(string); ok && name != "" {
+							tables = append(tables, name)
+						}
+					}
+				}
+			}
+			target := strings.TrimSpace(op.Table)
+			if target == "" && len(tables) > 0 {
+				target = tables[0]
+			}
+			if target != "" {
+				described, e := m.describeTable(ctx, r, db.Operation{Database: op.Database, Table: target})
+				if e != nil {
+					return nil, e
+				}
+				var detail map[string]any
+				if json.Unmarshal(described, &detail) != nil {
+					return nil, fmt.Errorf("invalid table description")
+				}
+				for key, value := range detail {
+					result[key] = value
+				}
+				result["table"] = target
+			}
 		}
 	case "create-table":
 		if e := db.Name(op.Database); e != nil {
@@ -334,6 +373,46 @@ func (m *Manager) engineOperation(ctx context.Context, r record, op db.Operation
 				return nil, e
 			}
 		}
+	case "add-column", "update-column", "delete-column":
+		if e := db.Name(op.Database); e != nil {
+			return nil, e
+		}
+		if e := db.Name(op.Table); e != nil {
+			return nil, e
+		}
+		if engine == "redis" || engine == "mongodb" {
+			return nil, fmt.Errorf("column structure changes require MySQL or PostgreSQL")
+		}
+		if len(op.Columns) != 1 {
+			return nil, fmt.Errorf("provide exactly one column")
+		}
+		col := op.Columns[0]
+		var ddl string
+		var e error
+		switch op.Action {
+		case "add-column":
+			ddl, e = db.AddColumnDDL(engine, op.Table, col)
+		case "update-column":
+			ddl, e = db.AlterColumnDDL(engine, op.Table, col, op.NewName)
+		default:
+			ddl, e = db.DropColumnDDL(engine, op.Table, col.Name)
+		}
+		if e != nil {
+			return nil, e
+		}
+		if _, e = m.sql(ctx, r, op.Database, ddl+";"); e != nil {
+			return nil, e
+		}
+	case "describe-table":
+		return m.describeTable(ctx, r, op)
+	case "select-rows":
+		return m.selectRows(ctx, r, op)
+	case "execute-sql":
+		return m.executeSQL(ctx, r, op)
+	case "insert-row", "update-row", "delete-row":
+		return m.mutateRow(ctx, r, op)
+	case "import-sql":
+		return m.importSQL(ctx, r, op)
 	case "create-user", "update-user", "delete-user":
 		return m.userOperation(ctx, r, op)
 	default:
@@ -341,6 +420,219 @@ func (m *Manager) engineOperation(ctx context.Context, r record, op db.Operation
 	}
 	raw, e := json.Marshal(result)
 	return raw, e
+}
+
+func (m *Manager) describeTable(ctx context.Context, r record, op db.Operation) (json.RawMessage, error) {
+	if e := db.Name(op.Database); e != nil {
+		return nil, e
+	}
+	if e := db.Name(op.Table); e != nil {
+		return nil, e
+	}
+	engine := r.Spec.Engine
+	out := map[string]any{"database": op.Database, "table": op.Table}
+	switch engine {
+	case "mysql":
+		colsRaw, e := m.sql(ctx, r, op.Database, "SELECT column_name, column_type, is_nullable, column_key, column_default, extra FROM information_schema.columns WHERE table_schema="+db.Literal(op.Database)+" AND table_name="+db.Literal(op.Table)+" ORDER BY ordinal_position;")
+		if e != nil {
+			return nil, e
+		}
+		indexesRaw, e := m.sql(ctx, r, op.Database, "SELECT index_name, non_unique, seq_in_index, column_name FROM information_schema.statistics WHERE table_schema="+db.Literal(op.Database)+" AND table_name="+db.Literal(op.Table)+" ORDER BY index_name, seq_in_index;")
+		if e != nil {
+			return nil, e
+		}
+		out["columns"] = parseTSVObjects(colsRaw, []string{"name", "type", "nullable", "key", "default", "extra"})
+		out["indexes"] = parseTSVObjects(indexesRaw, []string{"name", "non_unique", "seq", "column"})
+	case "postgresql":
+		colsRaw, e := m.sql(ctx, r, op.Database, `SELECT c.column_name, c.data_type, c.is_nullable,
+CASE WHEN pk.attname IS NOT NULL THEN 'PRI' ELSE '' END AS column_key,
+c.column_default, '' AS extra
+FROM information_schema.columns c
+LEFT JOIN (
+  SELECT a.attname
+  FROM pg_index i
+  JOIN pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=ANY(i.indkey)
+  JOIN pg_class cl ON cl.oid=i.indrelid
+  JOIN pg_namespace n ON n.oid=cl.relnamespace
+  WHERE i.indisprimary AND n.nspname='public' AND cl.relname=`+db.Literal(op.Table)+`
+) pk ON pk.attname=c.column_name
+WHERE c.table_schema='public' AND c.table_name=`+db.Literal(op.Table)+` ORDER BY c.ordinal_position;`)
+		if e != nil {
+			return nil, e
+		}
+		indexesRaw, e := m.sql(ctx, r, op.Database, "SELECT indexname, indexdef FROM pg_indexes WHERE schemaname='public' AND tablename="+db.Literal(op.Table)+" ORDER BY indexname;")
+		if e != nil {
+			return nil, e
+		}
+		out["columns"] = parseTSVObjects(colsRaw, []string{"name", "type", "nullable", "key", "default", "extra"})
+		out["indexes"] = parseTSVObjects(indexesRaw, []string{"name", "definition"})
+	case "mongodb":
+		raw, e := m.mongo(ctx, r, "print(JSON.stringify({indexes:db.getSiblingDB("+db.MongoJSON(op.Database)+").getCollection("+db.MongoJSON(op.Table)+").getIndexes(),stats:db.getSiblingDB("+db.MongoJSON(op.Database)+").getCollection("+db.MongoJSON(op.Table)+").stats()}))")
+		if e != nil {
+			return nil, e
+		}
+		var value any
+		if json.Unmarshal([]byte(raw), &value) != nil {
+			return nil, fmt.Errorf("invalid collection description")
+		}
+		out["mongodb"] = value
+	default:
+		return nil, fmt.Errorf("describe-table is not supported for %s", engine)
+	}
+	return json.Marshal(out)
+}
+
+func (m *Manager) selectRows(ctx context.Context, r record, op db.Operation) (json.RawMessage, error) {
+	if e := db.Name(op.Database); e != nil {
+		return nil, e
+	}
+	if e := db.Name(op.Table); e != nil {
+		return nil, e
+	}
+	limit := db.ClampExplorerLimit(op.Limit)
+	offset := db.ClampExplorerOffset(op.Offset)
+	engine := r.Spec.Engine
+	out := map[string]any{"database": op.Database, "table": op.Table, "limit": limit, "offset": offset}
+	switch engine {
+	case "mysql", "postgresql":
+		table, e := db.Quote(engine, op.Table)
+		if e != nil {
+			return nil, e
+		}
+		query := fmt.Sprintf("SELECT * FROM %s LIMIT %d OFFSET %d;", table, limit, offset)
+		columns, rows, e := m.sqlTable(ctx, r, op.Database, query)
+		if e != nil {
+			return nil, e
+		}
+		out["columns"] = columns
+		out["rows"] = rows
+	case "mongodb":
+		raw, e := m.mongo(ctx, r, "print(JSON.stringify(db.getSiblingDB("+db.MongoJSON(op.Database)+").getCollection("+db.MongoJSON(op.Table)+").find().skip("+fmt.Sprintf("%d", offset)+").limit("+fmt.Sprintf("%d", limit)+").toArray()))")
+		if e != nil {
+			return nil, e
+		}
+		var docs any
+		if json.Unmarshal([]byte(raw), &docs) != nil {
+			return nil, fmt.Errorf("invalid collection rows")
+		}
+		out["documents"] = docs
+	default:
+		return nil, fmt.Errorf("select-rows is not supported for %s", engine)
+	}
+	return json.Marshal(out)
+}
+
+func (m *Manager) executeSQL(ctx context.Context, r record, op db.Operation) (json.RawMessage, error) {
+	if e := db.Name(op.Database); e != nil {
+		return nil, e
+	}
+	engine := r.Spec.Engine
+	if engine == "mongodb" {
+		script := strings.TrimSpace(op.Query)
+		if script == "" || len(script) > db.MaxExplorerQueryBytes || strings.ContainsAny(script, "\x00") {
+			return nil, fmt.Errorf("MongoDB script required")
+		}
+		blocked := []string{"dropDatabase", "shutdownServer", "fsyncLock", "addUser", "createUser", "dropUser", "grantRoles", "updateUser"}
+		lower := strings.ToLower(script)
+		for _, item := range blocked {
+			if strings.Contains(lower, strings.ToLower(item)) {
+				return nil, fmt.Errorf("MongoDB script contains a blocked operation")
+			}
+		}
+		raw, e := m.mongo(ctx, r, "const __db=db.getSiblingDB("+db.MongoJSON(op.Database)+"); const db=__db; const result=(function(){"+script+"\n})(); print(JSON.stringify(result===undefined?{ok:true}:result));")
+		if e != nil {
+			return nil, e
+		}
+		var value any
+		if json.Unmarshal([]byte(raw), &value) != nil {
+			value = map[string]any{"output": raw}
+		}
+		return json.Marshal(map[string]any{"database": op.Database, "engine": engine, "result": value})
+	}
+	if engine != "mysql" && engine != "postgresql" {
+		return nil, fmt.Errorf("execute-sql is not supported for %s", engine)
+	}
+	kind, e := db.ClassifySQL(op.Query)
+	if e != nil {
+		return nil, e
+	}
+	statement := strings.TrimSpace(op.Query)
+	if !strings.HasSuffix(strings.TrimRightFunc(statement, unicode.IsSpace), ";") {
+		statement += ";"
+	}
+	upper := strings.ToUpper(strings.TrimSpace(statement))
+	isQuery := kind == "read" && (strings.HasPrefix(firstWord(upper), "SELECT") || strings.HasPrefix(firstWord(upper), "WITH") || strings.HasPrefix(firstWord(upper), "SHOW") || strings.HasPrefix(firstWord(upper), "DESCRIBE") || strings.HasPrefix(firstWord(upper), "DESC") || strings.HasPrefix(firstWord(upper), "EXPLAIN") || strings.HasPrefix(firstWord(upper), "TABLE") || strings.HasPrefix(firstWord(upper), "VALUES"))
+	if isQuery {
+		columns, rows, e := m.sqlTable(ctx, r, op.Database, statement)
+		if e != nil {
+			return nil, e
+		}
+		return json.Marshal(map[string]any{"database": op.Database, "engine": engine, "kind": kind, "columns": columns, "rows": rows})
+	}
+	if _, e = m.sql(ctx, r, op.Database, statement); e != nil {
+		return nil, e
+	}
+	return json.Marshal(map[string]any{"database": op.Database, "engine": engine, "kind": kind, "ok": true})
+}
+
+func firstWord(upper string) string {
+	fields := strings.Fields(upper)
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
+}
+
+func parseTSVObjects(raw string, keys []string) []map[string]string {
+	out := []map[string]string{}
+	for _, line := range strings.Split(raw, "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, "\t")
+		row := map[string]string{}
+		for i, key := range keys {
+			if i < len(parts) {
+				row[key] = parts[i]
+			} else {
+				row[key] = ""
+			}
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+func (m *Manager) sqlTable(ctx context.Context, r record, database, statement string) ([]string, [][]string, error) {
+	args := []string{"exec", "-i", "--user", "0:0"}
+	if r.Spec.Engine == "postgresql" {
+		args = append(args, "-e", "PGPASSFILE=/run/clofix/pgpass", "-e", "PGSSLMODE=verify-full", "-e", "PGSSLROOTCERT=/run/clofix/ca.pem", container(r.Spec.ID), "psql", "-X", "--no-password", "--set=ON_ERROR_STOP=1", "-h", "127.0.0.1", "-U", "postgres", "-d", database, "-A", "-F", "\t", "--pset=footer=off")
+		statement = "SET standard_conforming_strings=on;\n" + statement
+	} else {
+		args = append(args, container(r.Spec.ID), "mysql", "--defaults-extra-file=/run/clofix/mysql.cnf", "--batch", "--binary-mode=1", "--local-infile=0")
+		if database != "" {
+			args = append(args, "--database="+database)
+		}
+		statement = "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES';\n" + statement
+	}
+	rawBytes, e := m.docker(ctx, strings.NewReader(statement), args...)
+	if e != nil {
+		return nil, nil, e
+	}
+	raw := strings.TrimRight(string(rawBytes), "\n")
+	if raw == "" {
+		return []string{}, [][]string{}, nil
+	}
+	lines := strings.Split(raw, "\n")
+	columns := strings.Split(lines[0], "\t")
+	rows := [][]string{}
+	for _, line := range lines[1:] {
+		if line == "" {
+			continue
+		}
+		rows = append(rows, strings.Split(line, "\t"))
+	}
+	return columns, rows, nil
 }
 func (m *Manager) userOperation(ctx context.Context, r record, op db.Operation) (json.RawMessage, error) {
 	if e := db.Name(op.Username); e != nil {

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -50,6 +51,7 @@ func (s *Server) databaseRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/databases/projects", s.auth(s.createDatabaseProject))
 	mux.HandleFunc("DELETE /api/databases/projects/{id}", s.auth(s.deleteDatabaseProject))
 	mux.HandleFunc("GET /api/databases/projects/{id}/ca.pem", s.auth(s.downloadDatabaseCA))
+	mux.HandleFunc("POST /api/databases/projects/{id}/connect", s.auth(s.connectDatabaseProject))
 	mux.HandleFunc("POST /api/databases/projects/{id}/operations", s.auth(s.databaseOperation))
 	mux.HandleFunc("POST /api/databases/projects/{id}/retry", s.auth(s.retryDatabaseProject))
 	mux.HandleFunc("POST /api/databases/projects/{id}/recover-backup", s.auth(s.recoverInterruptedDatabaseBackup))
@@ -184,7 +186,23 @@ func (s *Server) saveDatabase(previous []byte) error {
 	return nil
 }
 func (s *Server) databaseCheckpoint() []byte { raw, _ := json.Marshal(s.databases); return raw }
+func (s *Server) normalizeDatabaseSpecPort(spec *db.Project) bool {
+	if spec == nil || proto.ValidHostDatabasePort(spec.Port) {
+		return false
+	}
+	// Legacy projects still carry pre-47000 listener ports in controller metadata.
+	// The worker keeps the real listener; normalize only so sealed ops pass Validate.
+	spec.Port = proto.HostDatabaseBase
+	return true
+}
+
 func (s *Server) queueDatabase(p model.Project, operation db.Operation, after string) (model.Job, error) {
+	if s.normalizeDatabaseSpecPort(&p.Spec) {
+		if cur, ok := s.databases.Projects[p.Spec.ID]; ok {
+			cur.Spec.Port = p.Spec.Port
+			s.databases.Projects[p.Spec.ID] = cur
+		}
+	}
 	operation.Project = p.Spec
 	operation.JobID = "dbj-" + randHex(16)
 	payload, e := s.sealDatabase(operation.JobID, operation)
@@ -324,7 +342,17 @@ func (s *Server) listDatabases(w http.ResponseWriter, r *http.Request) {
 	ready := []map[string]any{}
 	for _, worker := range workers {
 		if worker.Status == "active" && time.Since(worker.LastHeartbeat) < time.Minute && len(worker.Capacity.DatabaseEngines) > 0 && worker.Capacity.DatabasePublicHost != "" {
-			ready = append(ready, map[string]any{"id": worker.ID, "hostname": worker.Hostname, "engines": worker.Capacity.DatabaseEngines})
+			engines := map[string]string{}
+			for engine, version := range worker.Capacity.DatabaseEngines {
+				if strings.EqualFold(engine, "redis") {
+					continue // Redis Cluster is the offered Redis product, not managed DB instances
+				}
+				engines[engine] = version
+			}
+			if len(engines) == 0 {
+				continue
+			}
+			ready = append(ready, map[string]any{"id": worker.ID, "hostname": worker.Hostname, "engines": engines})
 		}
 	}
 	connections, _ := s.S3.PublicConnections()
@@ -346,6 +374,10 @@ func (s *Server) createDatabaseProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" || len(in.Name) > 80 {
 		fail(w, 400, "project name and resource specification required")
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(in.Spec.Engine), "redis") {
+		fail(w, 400, "managed Redis instances are not offered; use Redis Cluster under Compute")
 		return
 	}
 	in.Spec.ID = "dbp-" + randHex(16)
@@ -424,6 +456,11 @@ func (s *Server) createDatabaseProject(w http.ResponseWriter, r *http.Request) {
 			in.Spec.Host = worker.Capacity.DatabasePublicHost
 		}
 	}
+	in.Spec.Properties = db.NormalizeProperties(in.Spec.Engine, in.Spec.RAMMB, in.Spec.Properties)
+	if e := in.Spec.Properties.Validate(in.Spec.Engine, in.Spec.RAMMB); e != nil {
+		fail(w, 400, e.Error())
+		return
+	}
 	project := model.Project{Spec: in.Spec, Owner: applicationOwner(r), Name: strings.TrimSpace(in.Name), WorkerID: decision.WorkerID, State: "PROVISIONING", Created: time.Now().UTC(), Databases: map[string]bool{}, Users: map[string]map[string]string{}}
 	d.Projects[project.Spec.ID] = project
 	job, e := s.queueDatabase(project, db.Operation{Action: "provision"}, "")
@@ -478,7 +515,17 @@ func validateDatabaseAction(p model.Project, op db.Operation) error {
 	switch op.Action {
 	case "list-databases":
 		return nil
-	case "list-tables", "list-users", "create-database", "delete-database", "rename-database", "create-table", "delete-table", "create-index", "delete-index":
+	case "update-properties":
+		if op.Properties == nil {
+			return fmt.Errorf("properties required")
+		}
+		props := db.NormalizeProperties(p.Spec.Engine, p.Spec.RAMMB, *op.Properties)
+		if e := props.Validate(p.Spec.Engine, p.Spec.RAMMB); e != nil {
+			return e
+		}
+		*op.Properties = props
+		return nil
+	case "list-tables", "inspect-schema", "list-users", "create-database", "delete-database", "rename-database", "create-table", "delete-table", "create-index", "delete-index", "add-column", "update-column", "delete-column", "describe-table", "select-rows", "execute-sql", "insert-row", "update-row", "delete-row", "import-sql":
 		if op.Action != "list-users" {
 			if e := db.Name(op.Database); e != nil {
 				return e
@@ -520,7 +567,7 @@ func validateDatabaseAction(p model.Project, op db.Operation) error {
 	}
 	if p.Spec.Engine == "redis" {
 		switch op.Action {
-		case "rename-database", "list-tables", "create-table", "delete-table", "create-index", "delete-index":
+		case "rename-database", "list-tables", "inspect-schema", "create-table", "delete-table", "create-index", "delete-index", "add-column", "update-column", "delete-column", "describe-table", "select-rows", "execute-sql", "insert-row", "update-row", "delete-row", "import-sql":
 			return fmt.Errorf("Redis uses a shared keyspace; SQL schema operations are not supported")
 		}
 	}
@@ -536,8 +583,96 @@ func validateDatabaseAction(p model.Project, op db.Operation) error {
 		}
 		_, e := db.TableDDL(p.Spec.Engine, op.Table, op.Columns)
 		return e
-	case "delete-table":
+	case "add-column", "update-column", "delete-column":
+		if p.Spec.Engine != "mysql" && p.Spec.Engine != "postgresql" {
+			return fmt.Errorf("column structure changes require MySQL or PostgreSQL")
+		}
+		if e := db.Name(op.Table); e != nil {
+			return e
+		}
+		if len(op.Columns) != 1 {
+			return fmt.Errorf("provide exactly one column")
+		}
+		col := op.Columns[0]
+		switch op.Action {
+		case "add-column":
+			_, e := db.AddColumnDDL(p.Spec.Engine, op.Table, col)
+			return e
+		case "update-column":
+			_, e := db.AlterColumnDDL(p.Spec.Engine, op.Table, col, op.NewName)
+			return e
+		default:
+			_, e := db.DropColumnDDL(p.Spec.Engine, op.Table, col.Name)
+			return e
+		}
+	case "inspect-schema":
+		if op.Table != "" {
+			return db.Name(op.Table)
+		}
+		return nil
+	case "delete-table", "describe-table", "select-rows":
 		return db.Name(op.Table)
+	case "insert-row", "update-row", "delete-row":
+		if e := db.Name(op.Table); e != nil {
+			return e
+		}
+		if p.Spec.Engine == "mongodb" {
+			if op.Action == "insert-row" {
+				doc := strings.TrimSpace(op.Query)
+				if doc == "" && op.Values != nil {
+					if raw := op.Values["document"]; raw != nil {
+						doc = strings.TrimSpace(*raw)
+					}
+				}
+				if doc == "" || len(doc) > db.MaxRowValueBytes || !json.Valid([]byte(doc)) {
+					return fmt.Errorf("MongoDB document JSON required")
+				}
+				return nil
+			}
+			if strings.TrimSpace(op.Keys["_id"]) == "" {
+				return fmt.Errorf("MongoDB row changes require _id")
+			}
+			if op.Action == "update-row" {
+				doc := strings.TrimSpace(op.Query)
+				if doc == "" && op.Values != nil {
+					if raw := op.Values["document"]; raw != nil {
+						doc = strings.TrimSpace(*raw)
+					}
+				}
+				if doc == "" || !json.Valid([]byte(doc)) {
+					return fmt.Errorf("MongoDB update document JSON required")
+				}
+			}
+			return nil
+		}
+		if e := db.ValidateRowMaps(op.Values, op.Keys); e != nil {
+			return e
+		}
+		if op.Action == "insert-row" && len(op.Values) == 0 {
+			return fmt.Errorf("provide at least one column value")
+		}
+		if op.Action == "update-row" && (len(op.Values) == 0 || len(op.Keys) == 0) {
+			return fmt.Errorf("update requires values and primary key fields")
+		}
+		if op.Action == "delete-row" && len(op.Keys) == 0 {
+			return fmt.Errorf("delete requires primary key fields")
+		}
+		return nil
+	case "import-sql":
+		if p.Spec.Engine != "mysql" && p.Spec.Engine != "postgresql" {
+			return fmt.Errorf("SQL import is only supported for MySQL and PostgreSQL")
+		}
+		return db.ValidateImportSQL(op.Query)
+	case "execute-sql":
+		if p.Spec.Engine == "mongodb" {
+			q := strings.TrimSpace(op.Query)
+			if q == "" || len(q) > db.MaxExplorerQueryBytes {
+				return fmt.Errorf("MongoDB script required")
+			}
+			return nil
+		}
+		_, e := db.ClassifySQL(op.Query)
+		return e
 	case "create-index", "delete-index":
 		if e := db.Name(op.Table); e != nil {
 			return e
@@ -574,16 +709,31 @@ func (s *Server) databaseOperation(w http.ResponseWriter, r *http.Request) {
 		db.Operation
 		Confirm string `json:"confirm"`
 	}
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 256<<10)).Decode(&input) != nil {
+	rawBody, readErr := io.ReadAll(http.MaxBytesReader(w, r.Body, int64(db.MaxImportSQLBytes+64<<10)))
+	if readErr != nil {
+		fail(w, 400, "invalid operation payload")
+		return
+	}
+	if json.Unmarshal(rawBody, &input) != nil {
 		fail(w, 400, "invalid operation")
 		return
 	}
 	op = input.Operation
+	if op.Action == "import-sql" && len(op.Query) > db.MaxImportSQLBytes {
+		fail(w, 400, "SQL script exceeds import size limit")
+		return
+	}
 	// Credentials, job IDs, runtime images, backup keys and restore URLs are server controlled.
+	desiredProps := op.Properties
+	desiredValues := op.Values
+	desiredKeys := op.Keys
 	op.Project = db.Project{}
 	op.JobID = ""
 	op.Backup = nil
 	op.Restore = nil
+	op.Properties = nil
+	op.Values = nil
+	op.Keys = nil
 	resource := ""
 	if op.Action == "create-database" {
 		resource = "databases"
@@ -609,13 +759,40 @@ func (s *Server) databaseOperation(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, "project is not ready or another job is active")
 		return
 	}
+	if op.Action == "update-properties" {
+		if desiredProps == nil {
+			fail(w, 400, "properties required")
+			return
+		}
+		normalized := db.NormalizeProperties(p.Spec.Engine, p.Spec.RAMMB, *desiredProps)
+		if e := normalized.Validate(p.Spec.Engine, p.Spec.RAMMB); e != nil {
+			fail(w, 400, e.Error())
+			return
+		}
+		op.Properties = &normalized
+	}
+	if op.Action == "insert-row" || op.Action == "update-row" || op.Action == "delete-row" {
+		op.Values = desiredValues
+		op.Keys = desiredKeys
+	}
 	if e := validateDatabaseAction(p, op); e != nil {
 		fail(w, 400, e.Error())
 		return
 	}
-	if strings.HasPrefix(op.Action, "delete-") && input.Confirm != "DELETE" {
+	if (strings.HasPrefix(op.Action, "delete-") || op.Action == "delete-row") && input.Confirm != "DELETE" {
 		fail(w, 400, "type DELETE to confirm this destructive operation")
 		return
+	}
+	if op.Action == "import-sql" && input.Confirm != "IMPORT" {
+		fail(w, 400, "type IMPORT to confirm SQL file import")
+		return
+	}
+	if op.Action == "execute-sql" && p.Spec.Engine != "mongodb" {
+		kind, _ := db.ClassifySQL(op.Query)
+		if kind == "write" && input.Confirm != "EXECUTE" {
+			fail(w, 400, "type EXECUTE to run write SQL in the explorer")
+			return
+		}
 	}
 	if op.Action == "list-users" {
 		writeJSON(w, 200, map[string]any{"users": p.Users})
@@ -660,6 +837,7 @@ func (s *Server) deleteDatabaseProject(w http.ResponseWriter, r *http.Request) {
 	before := s.databaseCheckpoint()
 	job, e := s.queueDatabase(p, db.Operation{Action: "delete-project"}, "")
 	if e == nil {
+		p = d.Projects[p.Spec.ID]
 		p.State = "DELETING"
 		d.Projects[p.Spec.ID] = p
 		e = s.saveDatabase(before)
@@ -802,6 +980,10 @@ func (s *Server) databaseHeartbeat(worker string, results []db.Result, statuses 
 		if status.State == "NEEDS_INSPECTION" {
 			p.State = status.State
 			p.Error = "worker requires inspection after interrupted work"
+		} else if status.State == "READY" && (p.State == "NEEDS_INSPECTION" || p.State == "UNHEALTHY") {
+			// Worker healed tmpfs mounts / restarted the engine; allow schema ops again.
+			p.State = "READY"
+			p.Error = ""
 		}
 		d.Projects[status.ProjectID] = p
 	}
@@ -883,6 +1065,22 @@ func (s *Server) databaseHeartbeat(worker string, results []db.Result, statuses 
 				p.Users[op.Username] = op.Grants
 			case "delete-user":
 				delete(p.Users, op.Username)
+			case "create-table", "delete-table", "create-index", "delete-index", "add-column", "update-column", "delete-column", "execute-sql", "insert-row", "update-row", "delete-row", "import-sql":
+				// Schema/data changed; clear cached inventory until the next list-tables.
+				p.Inventory = nil
+			case "update-properties":
+				if op.Properties != nil {
+					p.Spec.Properties = *op.Properties
+				} else {
+					var data struct {
+						Properties db.Properties `json:"properties"`
+					}
+					if json.Unmarshal(result.Data, &data) == nil && !data.Properties.Empty() {
+						p.Spec.Properties = data.Properties
+					}
+				}
+				p.State = "READY"
+				p.Error = ""
 			case "list-databases", "list-tables":
 				p.Inventory = result.Data
 			case "restore":
@@ -941,7 +1139,7 @@ func (s *Server) databaseHeartbeat(worker string, results []db.Result, statuses 
 				p.State = "FAILED"
 				p.Error = j.Error
 			}
-			if j.Action != "backup" && (j.State == "INTERRUPTED" || j.State == "CANCELLED" || j.Action == "restore" && strings.Contains(j.Error, "inspection")) {
+			if j.Action != "backup" && j.Action != "delete-project" && j.Action != "delete-backup" && (j.State == "INTERRUPTED" || j.State == "CANCELLED" || j.Action == "restore" && strings.Contains(j.Error, "inspection")) {
 				p.State = "NEEDS_INSPECTION"
 				p.Error = j.Error
 			}
@@ -953,8 +1151,20 @@ func (s *Server) databaseHeartbeat(worker string, results []db.Result, statuses 
 				d.Backups[b.ID] = b
 			}
 			if j.Action == "delete-project" {
-				p.State = "FAILED"
-				p.Error = j.Error
+				// Cleanup must finish even after worker restart mid-delete. Re-queue
+				// interrupted/cancelled deletes instead of leaving DELETING forever.
+				if j.State == "INTERRUPTED" || j.State == "CANCELLED" {
+					j.State = "QUEUED"
+					j.Error = ""
+					j.Cancellation = false
+					j.Progress = 0
+					j.Updated = time.Now().UTC()
+					p.State = "DELETING"
+					p.Error = ""
+				} else {
+					p.State = "FAILED"
+					p.Error = j.Error
+				}
 			}
 			s.databaseAlert(j.ID, "Database "+j.Action, "DOWN")
 		}
@@ -1011,8 +1221,10 @@ func (s *Server) databaseHeartbeat(worker string, results []db.Result, statuses 
 			break
 		}
 	} else {
+		// Re-dispatch DISPATCHED and RUNNING jobs. RUNNING must be retried when the
+		// worker loses its journal after restart; Run() is idempotent per job ID.
 		for _, j := range d.Jobs {
-			if j.WorkerID == worker && j.State == "DISPATCHED" && !j.Cancellation {
+			if j.WorkerID == worker && (j.State == "DISPATCHED" || j.State == "RUNNING") && !j.Cancellation {
 				operations = append(operations, proto.Operation{ID: j.ID, Action: "database-job", DatabaseJobID: j.ID})
 			}
 		}

@@ -79,6 +79,23 @@ func (s *Server) getKubernetesCatalog(w http.ResponseWriter, r *http.Request) {
 	for _, inst := range filterInstances(instances, allow, admin) {
 		vpsOut = append(vpsOut, map[string]any{"id": inst.ID, "name": inst.Spec.Hostname, "state": inst.State, "ssh_port": inst.Spec.SSHPort, "ip_address": inst.Spec.IPAddress})
 	}
+	dbOut := []map[string]any{}
+	if s.databases != nil {
+		s.databases.Lock()
+		for _, project := range s.databases.Projects {
+			if project.State != "READY" {
+				continue
+			}
+			if !admin && !s.canAccessAccount(p, project.Owner) {
+				continue
+			}
+			dbOut = append(dbOut, map[string]any{
+				"id": project.Spec.ID, "name": project.Name, "engine": project.Spec.Engine,
+				"host": project.Spec.Host, "port": project.Spec.Port, "databases": project.Databases,
+			})
+		}
+		s.databases.Unlock()
+	}
 	writeJSON(w, 200, map[string]any{
 		"cluster_id":     cluster.ID,
 		"load_balancers": lbs,
@@ -86,7 +103,8 @@ func (s *Server) getKubernetesCatalog(w http.ResponseWriter, r *http.Request) {
 		"efs":            efsOut,
 		"s3":             s3Out,
 		"vps":            vpsOut,
-		"note":           "CKS attaches existing CloFix LB, volume, EFS, S3 and FileVPS resources. FileVPS guests cannot run kubelet.",
+		"databases":      dbOut,
+		"note":           "CKS attaches existing CloFix LB, volume, EFS, S3, FileVPS and managed database resources. Attach databases from Databases → Properties → Connect.",
 		"integrations":   cluster.Integrations,
 	})
 }
@@ -131,7 +149,12 @@ func (s *Server) postKubernetesIntegration(w http.ResponseWriter, r *http.Reques
 		fail(w, 400, "resource_id is required")
 		return
 	}
-	yaml, item, err := s.buildKubernetesIntegration(principalFrom(r), in.Kind, in.ResourceID, in.Namespace, in.Name, in.Selector)
+	var dbAttach k8sDatabaseAttach
+	if in.Kind == "database" || in.Kind == "db" {
+		fail(w, 400, "attach managed databases from Databases → Properties → Connect (CKS), which collects the logical database user password")
+		return
+	}
+	yaml, item, err := s.buildKubernetesIntegration(principalFrom(r), in.Kind, in.ResourceID, in.Namespace, in.Name, in.Selector, dbAttach)
 	if err != nil {
 		fail(w, 400, err.Error())
 		return
@@ -174,7 +197,7 @@ func (s *Server) postKubernetesIntegration(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, 202, map[string]any{"job_id": job.ID, "integration": item})
 }
 
-func (s *Server) buildKubernetesIntegration(p iamPrincipal, kind, id, ns, name, selector string) (string, model.Integration, error) {
+func (s *Server) buildKubernetesIntegration(p iamPrincipal, kind, id, ns, name, selector string, dbAttach k8sDatabaseAttach) (string, model.Integration, error) {
 	admin := p.Kind == "admin"
 	item := model.Integration{Kind: kind, ResourceID: id, Namespace: ns, Status: "PENDING"}
 	switch kind {
@@ -361,8 +384,60 @@ subsets:
     port: 80
 `, item.K8sName, ns, inst.ID, item.K8sName, ns, host)
 		return yaml, item, nil
+	case "database", "db":
+		if s.databases == nil {
+			return "", item, fmt.Errorf("managed databases unavailable")
+		}
+		s.databases.Lock()
+		project, ok := s.databases.Projects[id]
+		s.databases.Unlock()
+		if !ok || (!admin && !s.canAccessAccount(p, project.Owner)) || project.State != "READY" {
+			return "", item, fmt.Errorf("managed database not found")
+		}
+		if dbAttach.Database == "" || dbAttach.Username == "" || len(dbAttach.Env) == 0 {
+			return "", item, fmt.Errorf("database connect requires logical database, user and password")
+		}
+		if !project.Databases[dbAttach.Database] || project.Users[dbAttach.Username] == nil {
+			return "", item, fmt.Errorf("logical database or user is unavailable")
+		}
+		item.Kind, item.Name, item.K8sKind = "database", project.Name+"/"+dbAttach.Database, "Secret"
+		item.K8sName = kubernetesObjectName(name, project.Name+"-"+dbAttach.Database, id)
+		item.ResourceID = id + ":" + dbAttach.Database
+		ca := dbAttach.Env["DB_CA"]
+		if ca == "" {
+			ca = project.CA
+		}
+		yaml := fmt.Sprintf(`apiVersion: v1
+kind: Secret
+metadata:
+  name: %s
+  namespace: %s
+  annotations:
+    clofix.io/database: %s
+    clofix.io/database-name: %s
+type: Opaque
+stringData:
+  DB_ENGINE: %s
+  DB_HOST: %s
+  DB_PORT: %s
+  DB_VPC_HOST: %s
+  DB_VPC_PORT: %s
+  DB_NAME: %s
+  DB_USER: %s
+  DB_PASSWORD: %s
+  DATABASE_URL: %s
+  DATABASE_VPC_URL: %s
+  DB_CA: %s
+  ca.pem: %s
+`, item.K8sName, ns, id, yamlQuote(dbAttach.Database),
+			yamlQuote(dbAttach.Env["DB_ENGINE"]), yamlQuote(dbAttach.Env["DB_HOST"]), yamlQuote(dbAttach.Env["DB_PORT"]),
+			yamlQuote(dbAttach.Env["DB_VPC_HOST"]), yamlQuote(dbAttach.Env["DB_VPC_PORT"]),
+			yamlQuote(dbAttach.Env["DB_NAME"]), yamlQuote(dbAttach.Env["DB_USER"]), yamlQuote(dbAttach.Env["DB_PASSWORD"]),
+			yamlQuote(dbAttach.Env["DATABASE_URL"]), yamlQuote(dbAttach.Env["DATABASE_VPC_URL"]),
+			yamlQuote(dbAttach.Env["DB_CA"]), yamlQuote(ca))
+		return yaml, item, nil
 	default:
-		return "", item, fmt.Errorf("kind must be lb, volume, efs, s3 or vps")
+		return "", item, fmt.Errorf("kind must be lb, volume, efs, s3, vps or database")
 	}
 }
 

@@ -311,11 +311,19 @@
     const auth = instanceAuth(inst);
     let method = methodAtClick === 'password' ? 'password' : 'pem';
     if (method === 'password' && !auth.pam) {
-      msg('PAM is off. Set a root password under Access → Root password, wait a few seconds, then retry.');
+      if (auth.key) {
+        msg('Password login is off on this VPS. Switch to PEM key, or set a root password under Access → Root password and wait a few seconds.');
+      } else {
+        msg('PAM is off. Set a root password under Access → Root password, wait a few seconds, then retry.');
+      }
       return;
     }
     if (method === 'pem' && !auth.key) {
-      msg('No authorized SSH key on this VPS. Use PAM password, or add a key under Access.');
+      if (auth.pam) {
+        msg('No authorized SSH key on this VPS. Switch to PAM password, or add a key under Access.');
+      } else {
+        msg('No authorized SSH key on this VPS. Use PAM password, or add a key under Access.');
+      }
       return;
     }
     // Restore fields if refresh wiped them so the user still sees what will be sent.

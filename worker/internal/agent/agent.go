@@ -198,17 +198,35 @@ func (a *Agent) Run(ctx context.Context) {
 	go a.databaseMonitor(ctx)
 	go a.dockerMonitor(ctx)
 	go a.executor(ctx)
-	t := time.NewTicker(time.Duration(a.Cfg.HeartbeatSeconds) * time.Second)
+	seconds := a.Cfg.HeartbeatSeconds
+	if seconds < 1 {
+		seconds = 10
+	}
+	t := time.NewTicker(time.Duration(seconds) * time.Second)
 	defer t.Stop()
+	var wake <-chan struct{}
+	if a.Database != nil {
+		wake = a.Database.Wake()
+	}
 	for {
 		a.Managed.Reconcile()
 		if err := a.beat(ctx); err != nil {
 			log.Printf("heartbeat: %v (instances keep running)", err)
 		}
+		// After a database job finishes, beat again immediately so explorer
+		// list/describe results reach the UI without waiting a full interval.
+		if a.Database != nil {
+			select {
+			case <-a.Database.Wake():
+				continue
+			default:
+			}
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		case <-wake:
 		}
 	}
 }

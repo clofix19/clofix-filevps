@@ -52,7 +52,7 @@ write_packaged_config() {
   "installation_id": "${INSTALL_ID}",
   "host_reserve_mb": 512,
   "zram_mb": 0,
-  "heartbeat_seconds": 10,
+  "heartbeat_seconds": 3,
   "uid_base": 100000,
   "user_ns": true
 }
@@ -63,7 +63,7 @@ EOF
   "controller_url": "",
   "host_reserve_mb": 512,
   "zram_mb": 0,
-  "heartbeat_seconds": 10,
+  "heartbeat_seconds": 3,
   "uid_base": 100000,
   "user_ns": true
 }

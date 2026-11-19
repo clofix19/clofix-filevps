@@ -30,23 +30,121 @@ func Engine(engine string) bool {
 	return engine == "mysql" || engine == "postgresql" || engine == "mongodb" || engine == "redis"
 }
 
+// Properties holds tunable performance settings applied at engine start.
+// Zero values mean "fill recommended defaults for the instance RAM".
+type Properties struct {
+	MaxConnections int `json:"max_connections"`
+	BufferMB       int `json:"buffer_mb"`
+	WorkMemMB      int `json:"work_mem_mb"`
+}
+
 type Project struct {
-	ID      string  `json:"id"`
-	Engine  string  `json:"engine"`
-	Version string  `json:"version"`
-	RAMMB   int64   `json:"ram_mb"`
-	CPU     float64 `json:"cpu"`
-	DiskMB  int64   `json:"disk_mb"`
-	Port    int     `json:"port"`
-	Host    string  `json:"host"`
-	VPCID   string  `json:"vpc_id,omitempty"`
+	ID         string     `json:"id"`
+	Engine     string     `json:"engine"`
+	Version    string     `json:"version"`
+	RAMMB      int64      `json:"ram_mb"`
+	CPU        float64    `json:"cpu"`
+	DiskMB     int64      `json:"disk_mb"`
+	Port       int        `json:"port"`
+	Host       string     `json:"host"`
+	VPCID      string     `json:"vpc_id,omitempty"`
+	Properties Properties `json:"properties"`
+}
+
+func clampInt(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
+// DefaultProperties returns engine-aware performance defaults for the given RAM.
+func DefaultProperties(engine string, ramMB int64) Properties {
+	if ramMB < 256 {
+		ramMB = 256
+	}
+	maxConn := clampInt(int(ramMB/8), 50, 500)
+	buffer := clampInt(int(ramMB*60/100), 128, int(ramMB*80/100))
+	work := clampInt(int(ramMB/64), 4, 64)
+	switch engine {
+	case "postgresql":
+		buffer = clampInt(int(ramMB/4), 128, int(ramMB/2))
+		work = clampInt(int(ramMB/64), 4, 64)
+	case "mongodb":
+		buffer = clampInt(int(ramMB/2), 128, int(ramMB*70/100))
+		work = 0
+	case "redis":
+		buffer = clampInt(int(ramMB*70/100), 64, int(ramMB*90/100))
+		work = 0
+		maxConn = clampInt(int(ramMB/4), 100, 10000)
+	default: // mysql
+		work = 0
+	}
+	return Properties{MaxConnections: maxConn, BufferMB: buffer, WorkMemMB: work}
+}
+
+func (p Properties) Empty() bool {
+	return p.MaxConnections == 0 && p.BufferMB == 0 && p.WorkMemMB == 0
+}
+
+// NormalizeProperties fills defaults for zero fields and clamps to safe ranges.
+func NormalizeProperties(engine string, ramMB int64, in Properties) Properties {
+	def := DefaultProperties(engine, ramMB)
+	out := in
+	if out.MaxConnections == 0 {
+		out.MaxConnections = def.MaxConnections
+	}
+	if out.BufferMB == 0 {
+		out.BufferMB = def.BufferMB
+	}
+	if out.WorkMemMB == 0 && engine == "postgresql" {
+		out.WorkMemMB = def.WorkMemMB
+	}
+	if engine != "postgresql" {
+		out.WorkMemMB = 0
+	}
+	return out
+}
+
+func (p Properties) Validate(engine string, ramMB int64) error {
+	if p.Empty() {
+		return nil
+	}
+	maxBuffer := int(ramMB * 80 / 100)
+	if maxBuffer < 128 {
+		maxBuffer = 128
+	}
+	if p.MaxConnections < 10 || p.MaxConnections > 5000 {
+		return fmt.Errorf("max_connections must be between 10 and 5000")
+	}
+	if p.BufferMB < 64 || p.BufferMB > maxBuffer {
+		return fmt.Errorf("buffer_mb must be between 64 and %d for this RAM size", maxBuffer)
+	}
+	if engine == "postgresql" {
+		if p.WorkMemMB < 1 || p.WorkMemMB > 1024 || int64(p.WorkMemMB) > ramMB/4 {
+			return fmt.Errorf("work_mem_mb must be between 1 and min(1024, ram/4)")
+		}
+	} else if p.WorkMemMB != 0 {
+		return fmt.Errorf("work_mem_mb is only valid for PostgreSQL")
+	}
+	return nil
 }
 
 func (p Project) Validate() error {
 	if !ID.MatchString(p.ID) || !strings.HasPrefix(p.ID, "dbp-") || !Engine(p.Engine) || p.RAMMB < 256 || p.RAMMB > 1048576 || math.IsNaN(p.CPU) || math.IsInf(p.CPU, 0) || p.CPU < 0.25 || p.CPU > 128 || p.DiskMB < 512 || p.DiskMB > 1048576 || p.Port < hostDatabaseBase || p.Port >= hostDatabaseBase+hostDatabaseCount {
 		return fmt.Errorf("invalid database project specification")
 	}
-	return nil
+	return p.Properties.Validate(p.Engine, p.RAMMB)
+}
+
+// CoreEqual compares identity/resources and ignores performance properties.
+func (p Project) CoreEqual(other Project) bool {
+	a, b := p, other
+	a.Properties, b.Properties = Properties{}, Properties{}
+	return a == b
 }
 
 type Column struct {
@@ -75,6 +173,12 @@ type Operation struct {
 	Table         string            `json:"table,omitempty"`
 	Columns       []Column          `json:"columns,omitempty"`
 	Index         *Index            `json:"index,omitempty"`
+	Query         string            `json:"query,omitempty"`
+	Limit         int               `json:"limit,omitempty"`
+	Offset        int               `json:"offset,omitempty"`
+	Values        map[string]*string `json:"values,omitempty"`
+	Keys          map[string]string  `json:"keys,omitempty"`
+	Properties    *Properties       `json:"properties,omitempty"`
 	Backup        *BackupSpec       `json:"backup,omitempty"`
 	Restore       *RestoreSpec      `json:"restore,omitempty"`
 }

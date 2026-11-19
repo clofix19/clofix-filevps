@@ -19,7 +19,7 @@
   if(p){Object.keys(p.databases||{}).sort().forEach(name=>db.add(new Option(name,name)));Object.keys(p.users||{}).sort().forEach(name=>user.add(new Option(name,name)));}
   if([...db.options].some(o=>o.value===dbValue))db.value=dbValue;
   if([...user.options].some(o=>o.value===userValue))user.value=userValue;
-  if(note)note.textContent=dbProjects.length?'Uses an existing READY managed database. CloFix injects DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, and DATABASE_URL into the app.':'No READY managed database is available. Create one under Databases, then return here.';
+  if(note)note.textContent=dbProjects.length?'Uses an existing READY managed database. CloFix injects DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DATABASE_URL, and DB_CA into the app.':'No READY managed database is available. Create one under Databases, then return here.';
  }
  async function loadManagedDatabases(){
   dbProjects=[];

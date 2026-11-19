@@ -241,6 +241,7 @@ func (e *Engine) Load() error {
 
 // Reconcile aligns reality with persisted desired state after a worker or host restart.
 func (e *Engine) Reconcile() {
+	reclaimOrphanLoops()
 	e.mu.Lock()
 	var ids []string
 	for id := range e.meta {
@@ -389,20 +390,38 @@ func (e *Engine) setRootPassword(id, password string) error {
 	if err != nil {
 		return err
 	}
-	if err := e.writeRootShadow(id, m, hash); err != nil {
+	body, err := e.rootShadowBody(id, m, hash)
+	if err != nil {
 		return err
 	}
-	if e.CG.Alive(id) && m.Pid > 0 {
-		// Apply the exact crypt hash inside the guest. usermod -p is easy to
-		// mishandle with $6$ hashes; rewriting the root shadow line is reliable.
-		safeHash := strings.ReplaceAll(hash, "'", `'"'"'`)
-		script := "hash='" + safeHash + "'\n" +
-			"awk -F: -v h=\"$hash\" 'BEGIN{OFS=FS} $1==\"root\"{$2=h} {print}' /etc/shadow > /etc/shadow.clofix && " +
-			"cat /etc/shadow.clofix > /etc/shadow && rm -f /etc/shadow.clofix && chmod 640 /etc/shadow && " +
-			"kill -HUP 1 2>/dev/null || true\n"
-		if err := e.guestExec(id, m.Pid, "/bin/sh", []string{"-c", script}); err != nil {
-			return fmt.Errorf("apply root password in guest: %w", err)
-		}
+	owner := e.guestOwner(m)
+	upperEtc := filepath.Join(e.upperDir(id), "etc")
+	if err := os.MkdirAll(upperEtc, 0o755); err != nil {
+		return err
+	}
+	// Persist into the overlay upper so the hash survives stop/start.
+	persist := filepath.Join(upperEtc, "shadow")
+	if err := os.WriteFile(persist, body, 0o640); err != nil {
+		return err
+	}
+	if err := os.Lchown(persist, owner, owner); err != nil {
+		return err
+	}
+	if !(e.CG.Alive(id) && m.Pid > 0 && isMounted(e.merged(id))) {
+		return nil
+	}
+	// Running guests can keep a stale overlay dentry for /etc/shadow. Writing a
+	// fresh sibling then copying onto the live inode updates sshd's view without
+	// rename/ESTALE failures. Direct upperdir writes alone are not enough.
+	next := filepath.Join(upperEtc, "shadow.clofix-next")
+	if err := os.WriteFile(next, body, 0o640); err != nil {
+		return err
+	}
+	_ = os.Lchown(next, owner, owner)
+	script := "cp -f /etc/shadow.clofix-next /etc/shadow && rm -f /etc/shadow.clofix-next && chmod 640 /etc/shadow && kill -HUP 1 2>/dev/null || true"
+	if err := e.guestExec(id, m.Pid, "/bin/sh", []string{"-c", script}); err != nil {
+		_ = os.Remove(next)
+		return fmt.Errorf("apply root password in guest: %w", err)
 	}
 	return nil
 }
@@ -428,12 +447,7 @@ func cryptSHA512(password string) (string, error) {
 	return hash, nil
 }
 
-func (e *Engine) writeRootShadow(id string, m *Meta, hash string) error {
-	owner := e.guestOwner(m)
-	upperEtc := filepath.Join(e.upperDir(id), "etc")
-	if err := os.MkdirAll(upperEtc, 0o755); err != nil {
-		return err
-	}
+func (e *Engine) rootShadowBody(id string, m *Meta, hash string) ([]byte, error) {
 	src := filepath.Join(e.merged(id), "etc", "shadow")
 	if _, err := os.Stat(src); err != nil {
 		if root, imgErr := e.Images.Ensure(m.Spec.Image); imgErr == nil {
@@ -442,7 +456,16 @@ func (e *Engine) writeRootShadow(id string, m *Meta, hash string) error {
 	}
 	raw, err := os.ReadFile(src)
 	if err != nil {
-		raw = []byte("root:*:19600:0:99999:7:::\n")
+		// Fall back to image / locked template when overlay dentry is stale.
+		if root, imgErr := e.Images.Ensure(m.Spec.Image); imgErr == nil {
+			if b, rerr := os.ReadFile(filepath.Join(root, "etc", "shadow")); rerr == nil {
+				raw = b
+			} else {
+				raw = []byte("root:*:19600:0:99999:7:::\n")
+			}
+		} else {
+			raw = []byte("root:*:19600:0:99999:7:::\n")
+		}
 	}
 	var lines []string
 	replaced := false
@@ -465,11 +488,7 @@ func (e *Engine) writeRootShadow(id string, m *Meta, hash string) error {
 	if !replaced {
 		lines = append([]string{"root:" + hash + ":19600:0:99999:7:::"}, lines...)
 	}
-	path := filepath.Join(upperEtc, "shadow")
-	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o640); err != nil {
-		return err
-	}
-	return os.Lchown(path, owner, owner)
+	return []byte(strings.Join(lines, "\n") + "\n"), nil
 }
 
 // Create prepares metadata and writable-layer directories. Idempotent.

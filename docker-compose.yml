@@ -53,6 +53,9 @@ services:
       CLOFIX_ACME_EMAIL: ${CLOFIX_ACME_EMAIL:-}
       CLOFIX_ACME_DIRECTORY: ${CLOFIX_ACME_DIRECTORY:-}
       CLOFIX_S3_MASTER_ADDRESS: ${CLOFIX_S3_MASTER_ADDRESS:-s3pool:9333}
+      # Keep CloFix S3 connection credentials aligned with the local gateway.
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-clofixdevaccesskey}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-clofixdevsecretkey-change-me}
       CLOFIX_K8S_E2E: ${CLOFIX_K8S_E2E:-}
     ports:
       - "8080:8080"   # Admin UI + API

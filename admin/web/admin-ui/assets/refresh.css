@@ -198,7 +198,8 @@ tbody tr:hover td,.table-wrap tbody tr:hover td { background:var(--ui-hover); }
   border-radius:10px; box-shadow:var(--ui-shadow);
   position:relative; overflow:hidden;
 }
-.page .stat-wave,.page .s3-pool-card .stat-wave,.page .database-stats .stat-card .stat-wave{
+.page .s3-pool-metrics .s3-pool-card .stat-wave{display:none!important}
+.page .stat-wave,.page .database-stats .stat-card .stat-wave{
   position:absolute; left:0; right:0; bottom:0; height:46px;
   width:100%; pointer-events:none; opacity:.78; z-index:0;
 }
@@ -853,16 +854,40 @@ body:not(.auth-body) .shell.no-sidebar .main{padding-bottom:calc(var(--site-foot
 .form-dialog input::placeholder,
 .form-dialog textarea::placeholder,
 .table-search::placeholder{color:var(--muted);opacity:.8}
-.form-field{gap:6px!important}
-.form-grid{gap:12px 14px!important}
-.form-field > label:first-child,
-.form-field > label:not(:has(input)){
+.form-field{gap:6px!important;align-content:start;align-items:stretch}
+.form-grid{gap:12px 14px!important;align-items:start}
+.form-field > label:not(:has(input, select, textarea)){
   font-size:11px;
   font-weight:650;
   letter-spacing:.3px;
   text-transform:uppercase;
   color:color-mix(in srgb,var(--muted) 90%,var(--text));
   margin:0;
+}
+/* Nested caption+control labels (legacy markup): stack cleanly without shrinking controls */
+.form-field > label:has(> input:not([type=checkbox]):not([type=radio])),
+.form-field > label:has(> select),
+.form-field > label:has(> textarea){
+  display:grid;
+  gap:6px;
+  align-content:start;
+  width:100%;
+  font-size:11px;
+  font-weight:650;
+  letter-spacing:.3px;
+  text-transform:uppercase;
+  color:color-mix(in srgb,var(--muted) 90%,var(--text));
+  margin:0;
+}
+.form-field > label:has(> input:not([type=checkbox]):not([type=radio])) > input,
+.form-field > label:has(> select) > select,
+.form-field > label:has(> textarea) > textarea{
+  font-size:12px;
+  font-weight:500;
+  letter-spacing:normal;
+  text-transform:none;
+  color:var(--text);
+  width:100%;
 }
 .form-field small,
 .terminal-dialog small,
@@ -2780,4 +2805,79 @@ body[data-page="billing"] .smart-invoice-badge{text-transform:uppercase;letter-s
 @media (max-width:720px){
   body[data-page="billing"] .smart-invoice-meta{grid-template-columns:1fr 1fr}
   body[data-page="billing"] .smart-invoice-totals{max-width:none;margin-left:18px}
+}
+
+/* Managed DB explorer (phpMyAdmin-style) */
+#database-properties .db-props-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start;margin-top:8px}
+#database-properties .db-props-card{
+  border:1px solid var(--line);border-radius:12px;padding:14px 16px;
+  background:color-mix(in srgb,var(--panel2,#151f2a) 92%,transparent);
+}
+#database-properties .db-props-card h4{margin:0 0 10px;font-size:14px}
+#database-properties .db-props-dl{display:grid;grid-template-columns:140px minmax(0,1fr);gap:6px 12px;margin:0 0 12px}
+#database-properties .db-props-dl dt{color:var(--muted,#8ea0b0);font-size:12px}
+#database-properties .db-props-dl dd{margin:0;font-size:13px;overflow-wrap:anywhere}
+#database-properties #database-connect-uri{
+  width:100%;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical;
+  background:#081216;border:1px solid var(--line);border-radius:8px;color:#a7e6de;padding:10px 12px;
+}
+@media (max-width:960px){#database-properties .db-props-layout{grid-template-columns:1fr}}
+#database-row-dialog .dbx-row-fields{max-height:min(60vh,520px);overflow:auto;align-content:start}
+#database-row-dialog .dbx-null-toggle{display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:var(--muted,#8ea0b0)}
+#database-row-dialog .is-readonly{opacity:.75}
+#database-explorer .dbx-data-wrap td.row-actions,
+#database-explorer .dbx-data-wrap .row-actions{white-space:nowrap}
+#database-explorer .dbx-toolbar{grid-template-columns:repeat(2,minmax(0,1fr));margin:0 0 12px}
+#database-explorer .dbx-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:14px;align-items:start;position:relative}
+#database-explorer .dbx-sidebar{
+  border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--panel2,#151f2a) 88%,transparent);
+  padding:10px;min-height:360px;
+}
+#database-explorer .dbx-sidebar .section-head{margin:0 0 8px;align-items:center}
+#database-explorer .dbx-sidebar h4{margin:0;font-size:13px}
+#database-explorer .dbx-table-list{display:flex;flex-direction:column;gap:4px;max-height:520px;overflow:auto}
+#database-explorer .dbx-table-item{
+  display:block;width:100%;text-align:left;border:0;background:transparent;color:var(--text);
+  padding:8px 10px;border-radius:8px;cursor:pointer;font:inherit;
+}
+#database-explorer .dbx-table-item:hover{background:color-mix(in srgb,var(--brand,#43d6c5) 12%,transparent)}
+#database-explorer .dbx-table-item.is-active{background:color-mix(in srgb,var(--brand,#43d6c5) 22%,transparent);font-weight:650}
+#database-explorer .dbx-main{min-width:0}
+#database-explorer .dbx-tabs{display:flex;gap:8px;margin:0 0 12px}
+#database-explorer .dbx-tabs [aria-selected="true"]{border-color:var(--brand,#43d6c5);color:var(--text)}
+#database-explorer #database-explorer-sql{
+  width:100%;min-height:140px;margin:0 0 10px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:12px;line-height:1.45;resize:vertical;
+}
+#database-explorer .dbx-data-wrap{max-height:420px;overflow:auto}
+#database-explorer .dbx-json{
+  margin:10px 0 0;padding:10px 12px;border-radius:8px;border:1px solid var(--line);
+  background:#0a1119;color:#c3d2df;font-size:11px;overflow:auto;max-height:240px;
+}
+#database-explorer .dbx-status{
+  display:flex;align-items:center;gap:8px;min-height:34px;margin:0 0 12px;padding:8px 10px;
+  border:1px solid var(--line);border-radius:8px;
+  background:color-mix(in srgb,var(--panel2,#151f2a) 88%,transparent);
+}
+#database-explorer .dbx-status[data-busy="true"]{
+  border-color:color-mix(in srgb,var(--brand,#43d6c5) 45%,var(--line));
+  background:color-mix(in srgb,var(--brand,#43d6c5) 12%,var(--panel2,#151f2a));
+}
+#database-explorer .dbx-status .dbx-status-spin{display:none;margin:0;flex:none}
+#database-explorer .dbx-status[data-busy="true"] .dbx-status-spin,
+#database-explorer .dbx-status[data-busy="true"] .dbx-status-spin[hidden]{display:inline-block}
+#database-explorer #database-explorer-message{min-height:1.2em;margin:0;flex:1;font-weight:550}
+#database-explorer .dbx-status[data-busy="true"] #database-explorer-message{color:var(--brand,#43d6c5)}
+#database-explorer .dbx-layout.is-busy{opacity:.72;pointer-events:none;cursor:wait}
+#database-explorer .dbx-layout.is-busy::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+}
+#database-explorer{position:relative}
+#database-explorer #database-explorer-refresh .progress-icon,
+#database-explorer #database-explorer-run .progress-icon{margin-right:6px}
+
+@media (max-width:900px){
+  #database-explorer .dbx-layout{grid-template-columns:1fr}
+  #database-explorer .dbx-sidebar{min-height:0}
+  #database-explorer .dbx-table-list{max-height:180px;flex-direction:row;flex-wrap:wrap}
 }

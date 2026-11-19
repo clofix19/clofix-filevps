@@ -199,7 +199,7 @@
    workloadRows(get('cks-sa-table'),['Namespace','Name','Actions'],current.inventory?.service_accounts,'No service accounts.',item=>[item.namespace,item.name,resourceActions('ServiceAccount',item)]);
    const attached=get('cks-integrate-table');row(attached,['Kind','CloFix resource','Kubernetes','Namespace','Status','URL'],true);
    const integrations=current.integrations||[];
-   if(!integrations.length)row(attached,['No CloFix LB, VPS, volume, EFS or S3 attachments yet.','','','','','']);
+   if(!integrations.length)row(attached,['No CloFix LB, VPS, volume, EFS, S3 or database attachments yet.','','','','','']);
    integrations.forEach(item=>row(attached,[item.kind,item.name||item.resource_id,item.k8s_kind+'/'+item.k8s_name,item.namespace||'default',item.status||'-',item.url||'']));
    get('cks-logs').textContent=current.inventory?.logs||'Select a pod to request logs.';
    const pools=get('cks-pools-table');row(pools,['Name','Kind','Count','CPU','RAM','Disk','Actions'],true);
