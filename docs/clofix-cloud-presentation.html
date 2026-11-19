@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CloFix Cloud - Client Briefing</title>
+<style>
+:root{
+  --bg:#0a0e12;--text:#f4f6f8;--muted:#9aa5b1;--line:#2a3440;
+  --brand:#22c55e;--panel:#141a21;--ink:#052e16;
+  --font:"Segoe UI",ui-sans-serif,system-ui,-apple-system,sans-serif;
+  --pad-x:clamp(32px,5vw,80px);
+  --pad-y:clamp(24px,3.5vw,48px);
+  --pad-b:108px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);overflow:hidden}
+button{font:inherit;cursor:pointer;border:0;background:transparent;color:inherit}
+.deck{position:relative;height:100%}
+.slide{
+  position:absolute;inset:0;display:none;flex-direction:column;justify-content:flex-start;
+  align-items:stretch;width:100%;
+  padding:var(--pad-y) var(--pad-x) var(--pad-b);
+  background:linear-gradient(165deg,#0a0e12 0%,#101820 55%,#0c1218 100%);
+  opacity:0;transform:translateY(12px);transition:opacity .3s ease,transform .3s ease;
+}
+.slide.is-active{display:flex;opacity:1;transform:none}
+.slide.is-exit{display:flex;opacity:0;transform:translateY(-8px);pointer-events:none}
+.slide.hero{background:linear-gradient(120deg,#0a0e12 0%,#0d1510 45%,#0a0e12 100%)}
+.logo{
+  height:48px;width:auto;max-width:220px;object-fit:contain;
+  align-self:flex-start;display:block;margin:0 0 1.5rem;
+}
+.logo.sm{height:36px;max-width:160px;margin:0 0 .85rem}
+.eyebrow{
+  color:var(--brand);font-size:.75rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+  margin:0 0 .65rem;align-self:flex-start;
+}
+h1{font-size:clamp(2.2rem,5vw,3.6rem);font-weight:700;letter-spacing:-.02em;line-height:1.1;max-width:18ch;margin:0;align-self:flex-start}
+h2{font-size:clamp(1.55rem,3.2vw,2.25rem);font-weight:700;letter-spacing:-.02em;line-height:1.15;margin:0;max-width:none;width:100%;align-self:flex-start}
+.lead{font-size:clamp(1rem,1.5vw,1.2rem);color:var(--muted);max-width:54rem;line-height:1.5;margin:.55rem 0 0;width:100%;align-self:flex-start}
+.grid{display:grid;gap:14px;margin:1.1rem 0 0;width:100%;align-items:stretch}
+h2 + .grid,h2 + .list,h2 + .stat-row,.lead + .grid,.lead + .stat-row{margin-top:1.1rem}
+.grid.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.grid.cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.card{
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 16px 14px;
+  min-height:100%;display:flex;flex-direction:column;
+}
+.card strong{display:block;font-size:1rem;margin:0 0 .4rem;color:var(--text)}
+.card p,.card li{color:var(--muted);font-size:.92rem;line-height:1.45}
+.card p{margin:0}
+.card ul{margin:.25rem 0 0 1.05rem;padding:0}
+.card code{font-size:.82rem;color:#c7e0dc;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.stat-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:1.15rem 0 0;width:100%}
+.stat{
+  min-width:0;padding:14px 16px;border-radius:10px;border:1px solid var(--line);
+  background:var(--panel);border-left:3px solid var(--brand);
+}
+.stat b{display:block;font-size:1.4rem;letter-spacing:-.02em;font-weight:700;line-height:1.15}
+.stat span{display:block;color:var(--muted);font-size:.78rem;margin-top:.25rem}
+.list{list-style:none;margin:1.1rem 0 0;padding:0;display:grid;gap:12px;max-width:52rem;width:100%;align-self:flex-start}
+.list li{
+  display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:start;
+  font-size:1.02rem;line-height:1.4;margin:0;
+}
+.list li span{
+  width:22px;height:22px;border-radius:50%;background:var(--brand);color:var(--ink);
+  display:inline-flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:800;margin-top:2px;
+}
+.footer-note{position:absolute;left:var(--pad-x);bottom:88px;color:#667584;font-size:.78rem;margin:0;z-index:1}
+.chrome{
+  position:fixed;z-index:20;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:stretch;
+  gap:8px;padding:10px var(--pad-x) 12px;background:linear-gradient(180deg,transparent,#0a0e12f0 35%);
+  pointer-events:none;
+}
+.chrome > *{pointer-events:auto}
+.chrome-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%}
+.dots{
+  display:flex;flex-wrap:wrap;justify-content:center;align-items:center;
+  gap:5px;width:100%;
+}
+.dots button{
+  min-width:26px;height:26px;padding:0 5px;border-radius:7px;border:1px solid var(--line);
+  background:#151c24;color:var(--muted);font-size:.72rem;font-weight:700;font-variant-numeric:tabular-nums;
+}
+.dots button:hover{border-color:var(--brand);color:var(--brand)}
+.dots button.is-active{
+  background:var(--brand);border-color:var(--brand);color:var(--ink);
+}
+.nav{display:flex;gap:8px;align-items:center}
+.nav button{
+  min-width:40px;height:40px;border-radius:8px;border:1px solid var(--line);background:#151c24;color:var(--text);font-weight:700;
+}
+.nav button:hover{border-color:var(--brand);color:var(--brand)}
+.nav .count{min-width:58px;text-align:center;color:var(--muted);font-size:.85rem;font-variant-numeric:tabular-nums}
+.hint{color:#667584;font-size:.78rem}
+.cta{
+  margin-top:1.5rem;display:inline-flex;align-self:flex-start;padding:12px 18px;border-radius:8px;
+  background:var(--brand);color:var(--ink);font-weight:700;font-size:1rem;
+}
+.mini{font-size:.82rem;color:#667584;margin:.85rem 0 0;align-self:flex-start}
+
+
+.svc-total{display:inline-block;margin-left:.55rem;padding:.15rem .55rem;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--brand);font-size:.78rem;font-weight:700;letter-spacing:.02em;vertical-align:middle}
+.svc-count{display:inline-flex;align-items:center;justify-content:center;min-width:1.4rem;height:1.25rem;margin-left:.4rem;padding:0 .4rem;border-radius:999px;background:rgba(34,197,94,.16);color:var(--brand);font-size:.72rem;font-weight:800;letter-spacing:0;text-transform:none}
+.slide.services .lead{margin:.35rem 0 0;font-size:.95rem;max-width:48rem}
+
+.svc-group{margin:1rem 0 0;width:100%}
+.svc-group h3{font-size:.78rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--brand);margin:0 0 .5rem}
+.svc-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;width:100%;align-items:stretch}
+.svc{
+  display:flex;align-items:center;gap:10px;padding:10px 12px;
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;min-height:48px;
+}
+.svc svg{
+  width:22px;height:22px;flex:0 0 auto;stroke:var(--brand);fill:none;
+  stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;
+}
+.svc span{font-size:.88rem;font-weight:600;line-height:1.2;color:var(--text)}
+
+
+.slide.dense .eyebrow{margin:0 0 .45rem}
+.slide.dense .lead{margin:.4rem 0 0;font-size:clamp(.95rem,1.35vw,1.1rem)}
+.slide.dense .grid{margin-top:.85rem;gap:12px}
+.slide.dense .card{padding:12px 14px 12px}
+.slide.dense .card p,.slide.dense .card li{font-size:.86rem;line-height:1.4}
+.slide.dense .stat-row{margin-top:.85rem;gap:10px}
+.slide.dense .stat{padding:12px 14px}
+.slide.dense .stat b{font-size:1.25rem}
+.slide.dense .mini{margin-top:.65rem;font-size:.78rem}
+.slide.dense h2{font-size:clamp(1.4rem,2.8vw,2rem)}
+
+.slide.services h2{margin:0}
+.slide.services .svc-group{margin-top:.75rem}
+.slide.services .svc-group h3{margin:0 0 .4rem}
+.slide.services .svc-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.slide.services .svc{min-height:40px;padding:8px 10px}
+.slide.services .svc span{font-size:.82rem}
+.slide.services .svc svg{width:18px;height:18px}
+@media (max-width:1100px){
+  .slide.services .svc-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .stat-row{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:900px){
+  .grid.cols-2,.grid.cols-3,.grid.cols-4,.svc-grid{grid-template-columns:1fr 1fr}
+  h1{max-width:none}
+}
+@media (max-width:700px){
+  .slide.services .svc-grid,.grid.cols-2,.grid.cols-3,.grid.cols-4,.svc-grid,.stat-row{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){.slide{transition:none}}
+</style>
+</head>
+<body>
+<div class="deck" id="deck" aria-live="polite">
+
+   
+  <!-- 1 -->
+  <section class="slide hero is-active" data-title="Title">
+    <img class="logo" src="../admin/web/admin-ui/clofix-logo.png" alt="CloFix">
+    <p class="eyebrow">Client briefing</p>
+    <h1>CloFix Cloud</h1>
+    <p class="lead">New FileVPS technology for business clients. Lower cost than typical VMs. Faster servers. Security built in. One console for your team.</p>
+    <p class="footer-note">Confidential · For partners and clients</p>
+  </section>
+
+   
+  <!-- 2 -->
+  <section class="slide" data-title="Agenda">
+    <img class="logo sm" src="../admin/web/admin-ui/clofix-logo.png" alt="CloFix">
+    <p class="eyebrow">Agenda</p>
+    <h2>What we will cover</h2>
+    <ol class="list">
+      <li><span>1</span>Problem with typical cloud VMs</li>
+      <li><span>2</span>Our technology and FileVPS</li>
+      <li><span>3</span>Low cost and client benefits</li>
+      <li><span>4</span>CloFix Linux, Protection Mode, security</li>
+      <li><span>5</span>All services, icons, and next step</li>
+    </ol>
+  </section>
+
+   
+  <!-- 3 -->
+  <section class="slide" data-title="Problem">
+    <img class="logo sm" src="../admin/web/admin-ui/clofix-logo.png" alt="CloFix">
+    <p class="eyebrow">The problem</p>
+    <h2>Typical VMs cost more than you need</h2>
+    <div class="grid cols-2">
+      <article class="card">
+        <strong>What clients feel today</strong>
+        <ul>
+          <li>Slow to create and boot servers</li>
+          <li>High idle RAM and disk per VM</li>
+          <li>Hard to run many small servers cheaply</li>
+          <li>Security and tools split across vendors</li>
+        </ul>
+      </article>
+      <article class="card">
+        <strong>What clients want</strong>
+        <ul>
+          <li>Fast Linux servers at low unit cost</li>
+          <li>Clear technology they can explain</li>
+          <li>One place for ops and security</li>
+          <li>Billing that matches real usage</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+   
+  <!-- 4 -->
+  <section class="slide dense" data-title="Our Technology">
+    <img class="logo sm" src="../admin/web/admin-ui/clofix-logo.png" alt="CloFix">
+    <p class="eyebrow">Our technology</p>
+    <h2>Built by CloFix, not a bolted-on panel</h2>
+    <p class="lead">FileVPS + CloFix Linux + Protection Mode + one console, designed to work together.</p>
+    <div class="grid cols-2">
+      <article class="card">
+        <strong>What you get</strong>
+        <ul>
+          <li>FileVPS compute engine (not classic KVM VM)</li>
+          <li>Shared host kernel + namespaces, cgroup, OverlayFS</li>
+          <li>CloFix Linux with CloFix Guard</li>
+          <li>Protection Mode on by default</li>
+          <li>One console for compute, data, network, security</li>
+        </ul>
+      </article>
+      <article class="card">
+        <strong>Benefits if you use our technology</strong>
+        <ul>
+          <li>Servers ready in ~1.7 s, not tens of seconds</li>
+          <li>Tiny idle RAM: more VPS per host, lower unit cost</li>
+          <li>Security built into OS and platform, not afterthoughts</li>
+          <li>One vendor stack teams can explain to leadership</li>
+          <li>Usage billing aligned to what actually runs</li>
+          <li>Faster path from request to production</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+   
+  <!-- 5 -->
+  <section class="slide dense" data-title="FileVPS">
+    <img class="logo sm" src="../admin/web/admin-ui/clofix-logo.png" alt="CloFix">
+    <p class="eyebrow">FileVPS engine</p>
+    <h2>FileVPS vs typical cloud VM</h2>
+    <p class="lead">Not a classic KVM VM. Guests share host OS base and kernel. CPU, RAM, and GPU are shared with per-VPS limits. RAM optimized with cgroup + optional worker ZRAM.</p>
+    <div class="grid cols-3">
+      <article class="card">
+        <strong>Typical cloud VM</strong>
+        <ul>
+          <li>Own guest kernel per VM</li>
+          <li>Full guest OS disk copy</li>
+          <li>Heavy idle RAM (often 100 to 500+ MB)</li>
+          <li>Swap usually on disk (slow)</li>
+          <li>GPU often needs passthrough</li>
+        </ul>
+      </article>
+      <article class="card">
+        <strong>CloFix FileVPS (shared)</strong>
+        <ul>
+          <li><strong style="color:#dfe7ee">Share kernel</strong> - no second guest kernel</li>
+          <li><strong style="color:#dfe7ee">Share OS base</strong> - OverlayFS + writable layer</li>
+          <li><strong style="color:#dfe7ee">Share CPU / RAM</strong> - cgroup v2 limits</li>
+          <li><strong style="color:#dfe7ee">Share GPU</strong> - on capable workers</li>
+          <li>~1.7s ready · ~1.6 to 2.6 MB idle</li>
+        </ul>
+      </article>
+      <article class="card">
+        <strong>RAM optimize + ZRAM</strong>
+        <ul>
+          <li>Per-VPS RAM / swap limits (cgroup)</li>
+          <li>Tiny idle footprint vs classic VMs</li>
+          <li><strong style="color:#dfe7ee">Worker ZRAM</strong> - compressed RAM swap</li>
+          <li>Faster than disk swap under pressure</li>
+          <li>More VPS density on the same host RAM</li>
+        </ul>
+      </article>
+    </div>
+    <p class="mini">ZRAM is host-wide worker capacity (CLOFIX_ZRAM_MB). Isolation: namespaces, seccomp, cgroup, Protection Mode - not hardware hypervisor isolation.</p>
+  </section>
+
+   
+  <!-- 6 -->
+  <section class="slide dense" data-title="Numbers">
+    <img class="logo sm" src="../admin/web/admin-ui/clofix-logo.png" alt="CloFix">
+    <p class="eyebrow">Measured results</p>
+    <h2>Why FileVPS beats a typical VM</h2>
+    <p class="lead">Measured on CloFix FileVPS (1 Nov 2026, Ubuntu 24.04). Not marketing estimates.</p>
+    <div class="stat-row">
+      <div class="stat"><b>~38 ms</b><span>Create time (median)</span></div>
+      <div class="stat"><b>~1.7 s</b><span>Ready for use</span></div>
+      <div class="stat"><b>~1.6 MB</b><span>Idle host RAM / VPS</span></div>
+      <div class="stat"><b>100</b><span>SSH-ready guests / worker</span></div>
+    </div>
+    <div class="grid cols-3">
+      <article class="card">
+        <strong>Faster</strong>
+        <p>About 10 to 35x faster to ready vs typical VM boot (often 15 to 60s).</p>
+      </article>
+      <article class="card">
+        <strong>Denser</strong>
+        <p>About 40 to 300x less idle host RAM than many classic VMs (100 to 500+ MB).</p>
+      </article>
+      <article class="card">
+        <strong>Cheaper to run</strong>
+        <p>~0.1 MB extra disk at create. Same hardware serves more client workloads.</p>
+      </article>
+    </div>
+    <p class="mini">Also measured: ~3 ms in-guest exec · guest-to-guest SSH blocked · Protection Mode pass · 25-guest Nginx ~14k req/s.</p>
+  </section>
+
+   
+  <!-- 7 -->
+  <section class="slide" data-title="Low cost">
+    <img class="logo sm" src="../admin/web/admin-ui/clofix-logo.png" alt="CloFix">
+    <p class="eyebrow">Low cost selling point</p>
+    <h2>Low cost by design</h2>
+    <div class="grid cols-3">
+      <article class="card">
+        <strong>Lower infrastructure cost</strong>
+        <p>More VPS per worker means fewer hosts to buy, power, and maintain for the same load.</p>
+      </article>
+      <article class="card">
+        <strong>Lower client price</strong>
+        <p>Standard and Low-cost rate cards. Minute-level billing. Stopped VPS bills storage only.</p>
+      </article>
+      <article class="card">
+        <strong>Less waste</strong>
+        <p>Fast create and destroy. Tiny idle footprint. You do not pay for heavy unused kernels.</p>
+      </article>
+    </div>
+  </section>
+
+   
+  <!-- 8 -->
+  <section class="slide" data-title="Benefits">
+    <img class="logo sm" src="../admin/web/admin-ui/clofix-logo.png" alt="CloFix">
+    <p class="eyebrow">Client benefits</p>
+    <h2>What your business gets</h2>
+    <div class="grid cols-2">
+      <article class="card">
+        <strong>Business owners / finance</strong>
+        <ul>
+          <li>Lower unit cost per Linux server</li>
+          <li>Live resource estimates and clear invoices</li>
+          <li>Pay for what ran, not idle waste</li>
+          <li>Easy to scale many small workloads</li>
+        </ul>
+      </article>
+      <article class="card">
+        <strong>Ops / delivery teams</strong>
+        <ul>
+          <li>Servers ready in seconds</li>
+          <li>One console for compute, data, network, security</li>
+          <li>Protection Mode and WAF for safer defaults</li>
+          <li>IAM and audit for accountability</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+   
+  <!-- 9 -->
+  <section class="slide dense" data-title="CloFix Linux">
+    <img class="logo sm" src="../admin/web/admin-ui/clofix-logo.png" alt="CloFix">
+    <p class="eyebrow">Guest OS</p>
+    <h2>CloFix Linux 1.0</h2>
+    <p class="lead">Use CloFix Linux instead of a plain Ubuntu image. You get a branded OS plus the built-in CloFix Guard security engine.</p>
+    <div class="grid cols-2">
+      <article class="card">
+        <strong>What you get</strong>
+        <ul>
+          <li>Ubuntu 24.04–based, CloFix-branded guest</li>
+          <li>CloFix Guard built into the OS</li>
+          <li>Library packages still work (Ubuntu-compatible)</li>
+          <li>Same FileVPS speed and density</li>
+          <li>Ready update and status tools inside the guest</li>
+        </ul>
+      </article>
+      <article class="card">
+        <strong>Benefits if you use CloFix Linux</strong>
+        <ul>
+          <li>Security scan, score, and event history in-guest</li>
+          <li>SSH, firewall, FIM, and process monitoring</li>
+          <li>Security modes: standard, strict, immutable</li>
+          <li>AutoPilot for guided security response</li>
+          <li>Rollback path after security changes</li>
+          <li>Hardened baseline vs plain stock Ubuntu</li>
+          <li>One OS story for clients and support teams</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+   
+  <!-- 10 -->
+  <section class="slide dense" data-title="Protection Mode">
+    <img class="logo sm" src="../admin/web/admin-ui/clofix-logo.png" alt="CloFix">
+    <p class="eyebrow">Default security</p>
+    <h2>Protection Mode</h2>
+    <p class="lead">Use Protection Mode on FileVPS. Guest root stays read-only by default. Safer production with less risk of accidental or malicious system changes.</p>
+    <div class="grid cols-2">
+      <article class="card">
+        <strong>What you get</strong>
+        <ul>
+          <li>On by default for new FileVPS</li>
+          <li>Persistent guest root stays read-only</li>
+          <li>`/run`, `/tmp`, `/var/log` stay temporary</li>
+          <li>`apt update` still works for indexes</li>
+          <li>Works with Security Modes templates</li>
+        </ul>
+      </article>
+      <article class="card">
+        <strong>Benefits if you use Protection Mode</strong>
+        <ul>
+          <li>Harder for attackers to change system files</li>
+          <li>Less risk of accidental OS breakage</li>
+          <li>Safer default for public websites</li>
+          <li>Clear change window: turn off only to install packages, then turn back on</li>
+          <li>Pairs with modes: Standard, Hardened, Lockdown, Maintenance, Web Block</li>
+          <li>Processes and network keep running while disk stays locked</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+   
+  <!-- 11 -->
+  <section class="slide dense" data-title="Security">
+    <img class="logo sm" src="../admin/web/admin-ui/clofix-logo.png" alt="CloFix">
+    <p class="eyebrow">Security list</p>
+    <h2>Full security service list</h2>
+    <div class="grid cols-3">
+      <article class="card">
+        <strong>Per VPS controls</strong>
+        <ul>
+          <li>Protection Mode</li>
+          <li>Security Modes (5 templates)</li>
+          <li>SSH Login Block / Key-Only</li>
+          <li>Delete Protection</li>
+          <li>Network Quarantine</li>
+        </ul>
+      </article>
+      <article class="card">
+        <strong>Edge and network</strong>
+        <ul>
+          <li>WAF (OWASP CRS)</li>
+          <li>Firewall CIDR rules</li>
+          <li>Guest-to-guest TCP blocked</li>
+          <li>Health Checks</li>
+          <li>Certificates (ACME / TLS)</li>
+        </ul>
+      </article>
+      <article class="card">
+        <strong>Account and fleet</strong>
+        <ul>
+          <li>Security Center score (0 to 100)</li>
+          <li>Advanced Protection</li>
+          <li>Secrets Manager</li>
+          <li>IAM / Users</li>
+          <li>Audit Trail (90-day client)</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+   
+  <!-- 12 -->
+  <section class="slide dense" data-title="Security benefits">
+    <img class="logo sm" src="../admin/web/admin-ui/clofix-logo.png" alt="CloFix">
+    <p class="eyebrow">Security benefits</p>
+    <h2>Benefits of CloFix security</h2>
+    <p class="lead">Use Protection Mode, Security Modes, WAF, and Security Center together. Safer production without extra security products.</p>
+    <div class="grid cols-2">
+      <article class="card">
+        <strong>What you get</strong>
+        <ul>
+          <li>Protection Mode on by default</li>
+          <li>Security Modes: Standard, Hardened, Lockdown, Maintenance, Web Block</li>
+          <li>OWASP CRS WAF bindings</li>
+          <li>Firewall CIDR and guest isolation</li>
+          <li>Live security score, IAM, Secrets, Audit</li>
+        </ul>
+      </article>
+      <article class="card">
+        <strong>Benefits if you use CloFix security</strong>
+        <ul>
+          <li>Harder for attackers to change system files</li>
+          <li>HTTP attacks filtered at the edge with WAF</li>
+          <li>Clear templates instead of guesswork</li>
+          <li>One score leadership can understand</li>
+          <li>Less need for separate security tools</li>
+          <li>Faster incident response with Quarantine</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+   
+  <!-- 13 -->
+  <section class="slide services" data-title="Services Compute">
+    <img class="logo sm" src="../admin/web/admin-ui/clofix-logo.png" alt="CloFix">
+    <p class="eyebrow">Slide 13 · Client catalog</p>
+    <h2>Compute and Storage <span class="svc-total">12 services</span></h2>
+    <p class="lead">From the CloFix Cloud client feature guide.</p>
+    <div class="svc-group">
+      <h3>Compute <span class="svc-count">7</span></h3>
+      <div class="svc-grid">
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-6v-7h-4v7H4a1 1 0 0 1-1-1z"/></svg><span>Dashboard</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 8h8M8 12h8M8 16h4"/></svg><span>FileVPS</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6"/></svg><span>CloFix Library</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg><span>Jobs &amp; Functions</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14h2v2H4zm3 0h2v2H7zm3 0h2v2h-2zm3 0h2v2h-2zM7 11h2v2H7zm3 0h2v2h-2zm3 0h2v2h-2zM10 8h2v2h-2z"/><path d="M3 17h13.5a4.5 4.5 0 0 0 .4-9 5.5 5.5 0 0 0-10.3-1.6A3.5 3.5 0 0 0 3 12.5z"/></svg><span>Docker</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 8h8M8 12h8M8 16h4"/></svg><span>CKS</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7"/></svg><span>Redis Cluster</span></div>
+      </div>
+    </div>
+
+    <div class="svc-group">
+      <h3>Storage <span class="svc-count">5</span></h3>
+      <div class="svc-grid">
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5zM3 12l9 5 9-5M3 16l9 5 9-5"/></svg><span>Volumes</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg><span>EFS</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg><span>Object Storage (S3)</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v13H4zM8 7V4h8v3M8 12h8M8 16h5"/></svg><span>Backups</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7"/></svg><span>Managed Databases</span></div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- 14 -->
+  <section class="slide services" data-title="Services Network">
+    <img class="logo sm" src="../admin/web/admin-ui/clofix-logo.png" alt="CloFix">
+    <p class="eyebrow">Slide 14 · Client catalog</p>
+    <h2>Networking and Security <span class="svc-total">9 services</span></h2>
+    <p class="lead">From the CloFix Cloud client feature guide.</p>
+    <div class="svc-group">
+      <h3>Networking <span class="svc-count">5</span></h3>
+      <div class="svc-grid">
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v7M4 20v-9h16v9M12 11v9"/><circle cx="12" cy="4" r="2"/></svg><span>Load Balancers</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="7" height="8" rx="1"/><rect x="14" y="8" width="7" height="8" rx="1"/><path d="M10 12h4M7 8V6h10v2"/></svg><span>VPC</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/></svg><span>DNS Service</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h5l3-8 4 16 3-8h5"/></svg><span>Health Checks</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v4H4zM4 14h7v4H4zM13 14h7v4h-7z"/></svg><span>Firewall</span></div>
+      </div>
+    </div>
+
+    <div class="svc-group">
+      <h3>Security <span class="svc-count">4</span></h3>
+      <div class="svc-grid">
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v4H4zm0 5h10v4H4zm0 5h16v4H4z"/><path d="M16 10h4v4h-4z"/></svg><span>WAF</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 6v5c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V6z"/><path d="m9 12 2 2 4-4"/></svg><span>Security Center</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 6v5c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V6z"/><path d="m9 12 2 2 4-4"/></svg><span>Secrets Manager</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 6v5c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V6z"/><path d="m9 12 2 2 4-4"/></svg><span>Audit Trail</span></div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- 15 -->
+  <section class="slide services" data-title="Services Platform">
+    <img class="logo sm" src="../admin/web/admin-ui/clofix-logo.png" alt="CloFix">
+    <p class="eyebrow">Slide 15 · Client catalog</p>
+    <h2>Account and Platform <span class="svc-total">5 services</span></h2>
+    <p class="lead">From the CloFix Cloud client feature guide.</p>
+    <div class="svc-group">
+      <h3>Account <span class="svc-count">2</span></h3>
+      <div class="svc-grid">
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 19c.6-3 2.4-4.5 5.5-4.5s4.9 1.5 5.5 4.5M16 6.5a3 3 0 0 1 0 5.8M17 15c2 .5 3.1 1.8 3.5 4"/></svg><span>IAM</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 19c.6-3 2.4-4.5 5.5-4.5s4.9 1.5 5.5 4.5M16 6.5a3 3 0 0 1 0 5.8M17 15c2 .5 3.1 1.8 3.5 4"/></svg><span>My Profile</span></div>
+      </div>
+    </div>
+
+    <div class="svc-group">
+      <h3>Platform <span class="svc-count">3</span></h3>
+      <div class="svc-grid">
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="16" rx="1"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span>Log Service</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg><span>Billing &amp; Payments</span></div>
+      <div class="svc"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1 1.4 1.1-1.4 2.4-1.7-.6a8 8 0 0 1-1.8 1l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.8-1l-1.7.6-1.4-2.4 1.4-1.1a1.7 1.7 0 0 0 .3-1.8 7 7 0 0 1 0-2 1.7 1.7 0 0 0-.3-1.8l-1.4-1.1 1.4-2.4 1.7.6a8 8 0 0 1 1.8-1l.3-1.8h2.8l.3 1.8a8 8 0 0 1 1.8 1l1.7-.6 1.4 2.4-1.4 1.1a1.7 1.7 0 0 0-.3 1.8 7 7 0 0 1 0 2z"/></svg><span>Settings</span></div>
+      </div>
+    </div>
+
+    <p class="mini">Total client catalog: <strong>26 services</strong> (client-features.md sections 2 to 27). Provider tools (Workers, License, NLB pool) are separate.</p>
+  </section>
+
+   
+  <!-- 16 -->
+  <section class="slide" data-title="Why CloFix">
+    <img class="logo sm" src="../admin/web/admin-ui/clofix-logo.png" alt="CloFix">
+    <p class="eyebrow">Why CloFix</p>
+    <h2>Better than a typical VM panel</h2>
+    <ol class="list">
+      <li><span>1</span>New FileVPS tech: faster, denser, lower unit cost</li>
+      <li><span>2</span>CloFix Linux + Ubuntu options clients already know</li>
+      <li><span>3</span>Protection Mode on by default for safer production</li>
+      <li><span>4</span>WAF, IAM, audit, and billing in one console</li>
+    </ol>
+  </section>
+
+   
+  <!-- 17 -->
+  <section class="slide hero" data-title="Next step">
+    <img class="logo" src="../admin/web/admin-ui/clofix-logo.png" alt="CloFix">
+    <p class="eyebrow">Next step</p>
+    <h1>Ready for a client pilot</h1>
+    <p class="lead">We can demo FileVPS vs typical VM timing, show low idle cost, walk Protection Mode and WAF, and set a clear pilot with owners and billing.</p>
+    <p class="cta">Thank you · Questions welcome</p>
+    <p class="footer-note">CloFix Cloud · Client briefing</p>
+  </section>
+
+</div>
+
+<div class="chrome" role="navigation" aria-label="Presentation controls">
+  <div class="dots" id="dots" aria-label="Slide numbers"></div>
+  <div class="chrome-bar">
+    <span class="hint">← → · F fullscreen</span>
+    <div class="nav">
+      <button type="button" id="prev" aria-label="Previous slide">‹</button>
+      <span class="count" id="count">1 / 1</span>
+      <button type="button" id="next" aria-label="Next slide">›</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const slides = [...document.querySelectorAll('.slide')];
+  let i = 0, locking = false;
+  const dots = document.getElementById('dots');
+  const count = document.getElementById('count');
+  const dotBtns = slides.map((_, idx) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = String(idx + 1);
+    b.setAttribute('aria-label', `Go to slide ${idx + 1}`);
+    b.onclick = () => show(idx);
+    dots.append(b);
+    return b;
+  });
+
+  function show(n) {
+    if (locking) return;
+    const next = Math.max(0, Math.min(slides.length - 1, n));
+    if (next === i && slides[i].classList.contains('is-active')) {
+      updateChrome();
+      return;
+    }
+    locking = true;
+    const cur = slides[i];
+    const tgt = slides[next];
+    cur.classList.remove('is-active');
+    cur.classList.add('is-exit');
+    tgt.classList.add('is-active');
+    i = next;
+    updateChrome();
+    setTimeout(() => {
+      cur.classList.remove('is-exit');
+      locking = false;
+    }, 280);
+  }
+
+  function updateChrome() {
+    count.textContent = `${i + 1} / ${slides.length}`;
+    dotBtns.forEach((b, idx) => b.classList.toggle('is-active', idx === i));
+    document.title = `CloFix Cloud - ${slides[i].dataset.title || 'Briefing'}`;
+  }
+
+  document.getElementById('prev').onclick = () => show(i - 1);
+  document.getElementById('next').onclick = () => show(i + 1);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+      e.preventDefault(); show(i + 1);
+    } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+      e.preventDefault(); show(i - 1);
+    } else if (e.key === 'Home') {
+      e.preventDefault(); show(0);
+    } else if (e.key === 'End') {
+      e.preventDefault(); show(slides.length - 1);
+    } else if (e.key === 'f' || e.key === 'F') {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+      else document.exitFullscreen?.();
+    }
+  });
+
+  let touchX = null;
+  document.addEventListener('touchstart', (e) => { touchX = e.changedTouches[0].screenX; }, { passive: true });
+  document.addEventListener('touchend', (e) => {
+    if (touchX == null) return;
+    const dx = e.changedTouches[0].screenX - touchX;
+    if (Math.abs(dx) > 50) show(i + (dx < 0 ? 1 : -1));
+    touchX = null;
+  }, { passive: true });
+
+  updateChrome();
+})();
+</script>
+</body>
+</html>

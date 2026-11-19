@@ -142,7 +142,7 @@
  function matchQuery(q){
   const list=visibleCatalog();
   const toks=tokens(q);
-  if(!toks.length)return list.filter(s=>s.core);
+  if(!toks.length)return list;
   return list.map(s=>({s,score:scoreService(s,toks)})).filter(x=>x.score>0).sort((a,b)=>b.score-a.score||a.s.name.localeCompare(b.s.name)).map(x=>x.s);
  }
  function item(s,active){
@@ -164,7 +164,7 @@
   results.replaceChildren();
   if(!query){
    const rec=recent().filter(s=>visible.some(v=>v.href===s.href));
-   const browse=visible.filter(s=>s.core&&!rec.some(r=>r.href===s.href));
+   const browse=visible.filter(s=>!rec.some(r=>r.href===s.href));
    const flat=[...rec,...browse];
    if(!flat.length){
     const empty=document.createElement('p');empty.className='console-result-empty';empty.textContent='No CloFix services available.';results.append(empty);
@@ -179,18 +179,29 @@
   if(!panel)return;
   panel.replaceChildren();
   const path=(location.pathname.replace(/\/$/,'')||'/');
-  const wrap=document.createElement('div');
-  wrap.className='console-menu-grid';
-  visibleCatalog().filter(s=>s.core).forEach(s=>{
-   const a=document.createElement('a');
-   a.href=s.href;
-   a.setAttribute('role','menuitem');
-   a.title=s.hint||s.name;
-   a.innerHTML=`<span class="console-result-icon">${s.icon||icon.dashboard}</span><strong>${s.name}</strong>`;
-   if(s.href==='/'?path==='/':path===s.href||path.startsWith(s.href+'/'))a.setAttribute('aria-current','page');
-   wrap.append(a);
-  });
-  panel.append(wrap);
+  const list=visibleCatalog();
+  const groups=[];
+  for(const s of list){
+   const g=s.group||'Services';
+   if(!groups.includes(g))groups.push(g);
+  }
+  for(const g of groups){
+   const label=document.createElement('p');
+   label.textContent=g;
+   panel.append(label);
+   const wrap=document.createElement('div');
+   wrap.className='console-menu-grid';
+   list.filter(s=>(s.group||'Services')===g).forEach(s=>{
+    const a=document.createElement('a');
+    a.href=s.href;
+    a.setAttribute('role','menuitem');
+    a.title=s.hint||s.name;
+    a.innerHTML=`<span class="console-result-icon">${s.icon||icon.dashboard}</span><strong>${s.name}</strong>`;
+    if(s.href==='/'?path==='/':path===s.href||path.startsWith(s.href+'/'))a.setAttribute('aria-current','page');
+    wrap.append(a);
+   });
+   panel.append(wrap);
+  }
  }
  function closeMenu(){$('console-menu')?.removeAttribute('open');}
  function closeTheme(){$('console-theme')?.removeAttribute('open');}

@@ -32,12 +32,14 @@ This document describes every major CloFix Cloud Console feature and its sub-fea
 18. [Health Checks](#18-health-checks)
 19. [Firewall](#19-firewall)
 20. [Security Center](#20-security-center)
-21. [IAM](#21-iam)
-22. [My Profile](#22-my-profile)
-23. [Log Service](#23-log-service)
-24. [Billing & Payments](#24-billing--payments)
-25. [Settings (client defaults)](#25-settings-client-defaults)
-26. [Platform appendix (provider)](#26-platform-appendix-provider)
+21. [Secrets Manager](#21-secrets-manager)
+22. [Audit Trail](#22-audit-trail)
+23. [IAM](#23-iam)
+24. [My Profile](#24-my-profile)
+25. [Log Service](#25-log-service)
+26. [Billing & Payments](#26-billing--payments)
+27. [Settings (client defaults)](#27-settings-client-defaults)
+28. [Platform appendix (provider)](#28-platform-appendix-provider)
 
 ---
 
@@ -45,19 +47,21 @@ This document describes every major CloFix Cloud Console feature and its sub-fea
 
 ### About
 
-CloFix Cloud is a console to create and operate Linux VPS (FileVPS), containers, Kubernetes, databases, storage, networking, and security from one place-without logging into hypervisors or worker hosts.
+CloFix Cloud is a console to create and operate Linux VPS (FileVPS), containers, Kubernetes, databases, storage, networking, and security from one place—without logging into hypervisors or worker hosts.
 
 ### What you can do
 
 - Register a **root** organization account (self-service)
 - Sign in with password; complete MFA when enabled
-- Use global **service search** (`/` shortcut) to jump to any product
+- Use global **service search** (`/` shortcut or the search bar) to jump to any product—empty focus shows the full catalog; typing filters by name, group, and keywords
+- Open the **hamburger service menu** for every console service, grouped by Overview, Compute, Storage, Networking, Security, Account, and Platform
 - Switch themes; open Billing and Settings from the header
 - See license/quota warnings when the provider’s entitlement blocks creates
 
 ### Benefits
 
 - One login for compute, storage, networking, and security  
+- Discover every product from search or the menu—not only a short “core” list  
 - Faster onboarding than piecing together separate tools  
 - Clear account identity (Account ID, role, email) on every page  
 
@@ -129,12 +133,14 @@ The home page is your fleet overview: usage charts, VPS summary, security snapsh
 - Publish TCP/UDP ports; attach volumes/EFS; enable Protection Mode  
 - Create backups of a **stopped** VPS; restore as a **new** instance  
 - Apply security modes / quarantine from Security Center or detail  
+- Reach managed databases over the **VPC gateway** (`10.231.0.1` + project port) with TLS  
 
 ### Benefits
 
 - Full VPS lifecycle without hypervisor access  
 - CloFix Linux is a branded Ubuntu-based guest (`ID_LIKE=ubuntu`) so Library apt packages still work  
 - Built-in metrics, logs, and security on the same page  
+- Private-path access to managed DBs without exposing engines on the public internet  
 - Safe defaults (no privileged guest escape paths exposed to tenants)  
 
 ---
@@ -190,7 +196,7 @@ Run scripts, ZIP projects, or binaries as **Jobs** (one-shot / cron) or **Functi
 ### What you can do
 
 - Create Jobs or Functions (Python, Go, Node, PHP, Java, Ruby, Bun, Deno, …)  
-- Upload a single file or ZIP; set encrypted secrets  
+- Upload a single file or ZIP; set encrypted secrets (or reference **Secrets Manager**)  
 - Schedule cron Jobs; invoke Functions over HTTP  
 - Review history and download outputs  
 
@@ -232,6 +238,8 @@ Deploy containers and Compose stacks on the worker Docker Engine. Tenants do **n
 - Deploy via image, Compose YAML, or **Git** (select Git registration → Docker Compose or Dockerfile → optional Docker registry)  
 - Manage containers, Compose projects, networks, and volumes  
 - Connect private registries and Git registrations (add/edit/delete)  
+- Inject secrets with `sec:name:KEY` / Secrets Manager refs  
+- Wire managed DB connection env via **Databases → Connect to… → Docker**  
 - Backup and restore CloFix Docker volumes  
 - Scan images; review hardening; bind WAF for published ports  
 
@@ -239,6 +247,7 @@ Deploy containers and Compose stacks on the worker Docker Engine. Tenants do **n
 
 - Production-style containers with platform guardrails  
 - Private repo and private image workflows without shell on the host  
+- Credentials and DB wiring without baking secrets into images  
 - Billing-aware Docker / Compose / volume / backup quotas  
 
 ---
@@ -247,7 +256,7 @@ Deploy containers and Compose stacks on the worker Docker Engine. Tenants do **n
 
 ### About
 
-Shared **OWASP CRS** (ModSecurity) engines on workers. You create **bindings** for FileVPS HTTP or Docker apps-no per-guest engine reinstall.
+Shared **OWASP CRS** (ModSecurity) engines on workers. You create **bindings** for FileVPS HTTP or Docker apps—no per-guest engine reinstall.
 
 ### Sub-features
 
@@ -298,12 +307,13 @@ Managed Kubernetes on dedicated workers (not inside FileVPS guests), with consol
 - Create and manage clusters; download kubeconfig  
 - Apply Kubernetes objects from the console  
 - Attach CloFix load balancers and storage products  
+- Sync vault secrets or managed DB credentials into a CKS Secret  
 - Run Helm and etcd backup/restore  
 
 ### Benefits
 
 - Kubernetes without self-managing every control-plane detail on guests  
-- Native hooks to CloFix networking and storage  
+- Native hooks to CloFix networking, storage, and Secrets Manager  
 - Single console for cluster ops and platform integrations  
 
 ---
@@ -369,7 +379,7 @@ Worker-local persistent directories you attach **1:1** to a FileVPS on the same 
 
 ### About
 
-Named **shared** file stores backed by CloFix object storage. Mount the same share on many FileVPS instances-ideal for load-balanced web roots.
+Named **shared** file stores backed by CloFix object storage. Mount the same share on many FileVPS instances—ideal for load-balanced web roots.
 
 ### Sub-features
 
@@ -454,31 +464,41 @@ Worker-local compressed snapshots of a **stopped** FileVPS writable root. This i
 
 ### About
 
-Managed MySQL, PostgreSQL, MongoDB, and Redis instances with logical databases, users, backups, and schedules-without installing engines yourself on a VPS.
+Managed **MySQL**, **PostgreSQL**, and **MongoDB** instances (isolated engine containers on database-capable workers) with logical databases, users, TLS-required gateways, Explorer, Properties, Connect-to targets, backups, and schedules. For multi-VPS Redis topologies use **Redis Cluster** under Compute—not this page.
 
 ### Sub-features
 
 | Sub-feature | Purpose |
 |---|---|
-| Instances | Create and manage database servers |
-| Logical DBs & users | App-level databases and credentials |
-| Backup Manager | Manual backups, upload, recovery points |
+| Instances | Create/manage engines; logical DBs & users; live CPU/RAM/disk/connections |
+| Explorer | phpMyAdmin-style browse: tables, Structure, Browse rows, SQL + `.sql` upload |
+| Structure CRUD | Create tables; add / edit / delete / update columns; indexes; drop table |
+| Browse & SQL | Paginated rows, insert/edit/delete rows, run statements (writes confirm) |
+| Properties · Connection | Public host:port, **VPC IP:port** (`10.231.0.1` + project port), URI, TLS CA |
+| Properties · Performance | Max connections, buffer / work_mem; apply recreates engine, keeps data |
+| Connect to… | Inject env into Secrets Manager, FileVPS, Docker, Applications, or CKS Secret |
+| Backup Manager | Encrypted central/S3 backups, upload, staged restore |
 | Schedules | Automatic backup schedules |
-| Jobs | Live progress of long operations |
-| TLS CA | Download CA for secure clients |
+| Jobs | Live progress; inspect after interrupted backup |
+| TLS CA | Download per-instance CA for `VERIFY_CA` clients |
 
 ### What you can do
 
 - Provision instances (engine, version, worker, VPC, CPU/RAM/disk)  
-- Create databases and users; view connection info and metrics  
-- Run and schedule backups; track jobs  
-- Attach databases to Library Quick Apps where supported  
+- Create databases and users (`REQUIRE SSL` where the engine enforces it)  
+- Explore schema and data without installing a separate admin UI  
+- Tune performance settings from Properties  
+- Copy connection URI; download CA; connect apps via **Connect to…**  
+- From a FileVPS on the same VPC: `mysql -h 10.231.0.1 -P <DB_VPC_PORT> -u USER -p --ssl-mode=VERIFY_CA --ssl-ca=./ca.pem` (use capital **`-P`** for port)  
+- Run and schedule backups; track jobs; recover after interrupted work  
 
 ### Benefits
 
-- Database tier without DIY installation  
-- Integrated backup and schedule operations  
-- Fits Security Center database posture scoring  
+- Database tier without DIY installation on a VPS  
+- In-console Explorer replaces jumping to Adminer/phpMyAdmin for day-to-day work  
+- VPC private path + mandatory TLS for safer app wiring  
+- One-click credential injection into VPS, Docker, apps, and CKS  
+- Integrated backup/schedule operations and Security Center DB posture  
 
 ---
 
@@ -517,7 +537,7 @@ Managed MySQL, PostgreSQL, MongoDB, and Redis instances with logical databases, 
 
 ### About
 
-Private IPv4 segmentation on the FileVPS network (`10.231.0.0/16`), with a default block plus optional named subnets.
+Private IPv4 segmentation on the FileVPS network (`10.231.0.0/16`), with a default block plus optional named subnets. Managed database gateways listen on the VPC bridge (`10.231.0.1`) in the **47000+** port band.
 
 ### Sub-features
 
@@ -535,7 +555,7 @@ Private IPv4 segmentation on the FileVPS network (`10.231.0.0/16`), with a defau
 ### Benefits
 
 - Logical isolation between app and data tiers  
-- Predictable private addressing  
+- Predictable private addressing for VPS ↔ managed DB  
 - Safe defaults with room for custom blocks  
 
 ---
@@ -544,7 +564,7 @@ Private IPv4 segmentation on the FileVPS network (`10.231.0.0/16`), with a defau
 
 ### About
 
-DNS zones and records for FileVPS, load balancers, CKS, databases, managed apps, and workers-plus TLS certificates (ACME).
+DNS zones and records for FileVPS, load balancers, CKS, databases, managed apps, and workers—plus TLS certificates (ACME).
 
 ### Sub-features
 
@@ -644,7 +664,7 @@ Fleet security posture: live **score**, explainable **findings**, **Security Mod
 | Detection & FIM | Runtime detections and file integrity |
 | Vulns / DB / CKS panels | Product-specific posture |
 | AutoPilot | Monitor → harden → emergency styles |
-| Audit | Mutation trail |
+| Security audit panel | Security Center–scoped audit view |
 | Guide | Control map with deep links |
 | Per-VPS controls | Bulk Protection Mode, SSH block, delete protection |
 
@@ -652,19 +672,80 @@ Fleet security posture: live **score**, explainable **findings**, **Security Mod
 
 - Track score and findings; apply modes to VPS sets  
 - Unlock advanced protections with TTL; quarantine risky guests  
-- Review detections, FIM baselines, and audit events  
+- Review detections, FIM baselines, and security audit events  
 - Set AutoPilot mode; export compliance mapping where offered  
 - Manage fleet port-forward inventory  
 
 ### Benefits
 
-- Transparent scoring-not a black box  
+- Transparent scoring—not a black box  
 - Maps controls to Firewall, WAF, Logs, and instance detail  
 - Governance (approvals, audit, AutoPilot) for production fleets  
 
 ---
 
-## 21. IAM
+## 21. Secrets Manager
+
+### About
+
+Encrypted **vault** for application credentials. Store a secret once, then inject it into Jobs & Functions, Docker, FileVPS apps, managed database Connect flows, and CKS Kubernetes Secrets—without putting plaintext in images or git.
+
+### Sub-features
+
+| Sub-feature | Purpose |
+|---|---|
+| Vault | Create, list, reveal (on demand), copy, delete |
+| Usage guide | FileVPS runtime fetch, Docker `sec:` / `{{secret:…}}` refs, CKS sync |
+| Managed DB Connect | Write DB env (`DB_*`, `DATABASE_URL`, `DB_CA`, …) into a secret |
+| IAM gates | `secrets:read` for runtime fetch; `secrets:manage` for console create/sync |
+
+### What you can do
+
+- Create named secrets; values encrypted at rest (list APIs never return plaintext)  
+- Reveal/copy when needed; dismiss after use  
+- Reference secrets from Jobs, Docker env, and Application env templates  
+- Sync a secret into a CKS namespace as a Kubernetes Secret  
+- From Databases → Properties → **Connect to… → Secrets Manager / FileVPS / Docker / Application / CKS**  
+
+### Benefits
+
+- One vault instead of scattered passwords in tickets and `.env` commits  
+- Least-privilege IAM for automation vs. console operators  
+- Same secret can feed VPS apps, containers, and Kubernetes  
+- Complements managed DB Connect without storing the DB root password on the instance  
+
+---
+
+## 22. Audit Trail
+
+### About
+
+Account activity log for **who did what**: root and IAM users under your organization. Clients retain **90 days** (platform admin can view longer). Older rows are deleted automatically.
+
+### Sub-features
+
+| Sub-feature | Purpose |
+|---|---|
+| Activity table | Actor, action, target, result, time |
+| Filters | Search, action pattern (e.g. `iam.*`), actor, date range |
+| Detail | Expand a row for request context (JSON where available) |
+| Scope | Your account’s root + IAM users (admin can filter across accounts) |
+
+### What you can do
+
+- Review login, IAM, instance, billing, and other mutations  
+- Filter by action prefix or actor email/username  
+- Export/review for compliance investigations alongside Security Center  
+
+### Benefits
+
+- Accountability without hunting worker syslog  
+- Clear trail for team and API key activity  
+- Complements Security Center’s security-scoped audit panel  
+
+---
+
+## 23. IAM
 
 ### About
 
@@ -682,8 +763,8 @@ Identity and Access Management for a **root** client account: sub-users, groups,
 ### What you can do
 
 - Create IAM users and assign groups/policies  
-- Generate API keys without sharing the root password  
-- Scope automation to least privilege  
+- Generate API keys (e.g. bearer for Secrets Manager runtime fetch) without sharing the root password  
+- Scope automation to least privilege (`secrets:read`, compute, billing, …)  
 
 ### Benefits
 
@@ -693,7 +774,7 @@ Identity and Access Management for a **root** client account: sub-users, groups,
 
 ---
 
-## 22. My Profile
+## 24. My Profile
 
 ### About
 
@@ -720,11 +801,11 @@ Self-service account hardening for any signed-in role.
 
 ---
 
-## 23. Log Service
+## 25. Log Service
 
 ### About
 
-Bounded live log tailing across VPS, LB, database, Library apps, workers, and WAF-with analysis and keyword/level alerts.
+Bounded live log tailing across VPS, LB, database, Library apps, workers, and WAF—with analysis and keyword/level alerts.
 
 ### Sub-features
 
@@ -750,7 +831,7 @@ Bounded live log tailing across VPS, LB, database, Library apps, workers, and WA
 
 ---
 
-## 24. Billing & Payments
+## 26. Billing & Payments
 
 ### About
 
@@ -785,7 +866,7 @@ Customer financial operations: live billable resources, due bill, invoices, wall
 
 ---
 
-## 25. Settings (client defaults)
+## 27. Settings (client defaults)
 
 ### About
 
@@ -809,7 +890,7 @@ Operators can save **browser defaults** for new FileVPS creations. Commercial ca
 
 ---
 
-## 26. Platform appendix (provider)
+## 28. Platform appendix (provider)
 
 These areas are typically **admin/provider** only. End customers consume the capacity they unlock.
 
@@ -817,6 +898,7 @@ These areas are typically **admin/provider** only. End customers consume the cap
 
 - Host capacity that runs FileVPS, Docker engine, WAF engines, databases, CKS  
 - Enrollment tokens, drain, host charts, host firewall  
+- Database-capable workers need a local database runtime + pinned engine images  
 
 ### License
 
@@ -829,9 +911,13 @@ These areas are typically **admin/provider** only. End customers consume the cap
 - Discounts, payment gateway credentials, currency/tax, billing notification flags  
 - Notification channels used by Health Checks and Log Service  
 
-### NLB network
+### NLB network / Floating IPs
 
 - Public IPv4 pool and listener helpers for floating IPs  
+
+### Users (provider directory)
+
+- Partner / client account directory (not the same as customer IAM)  
 
 ---
 
@@ -849,18 +935,23 @@ These areas are typically **admin/provider** only. End customers consume the cap
 | Shared web root across VPS | **EFS** |
 | Buckets / external S3 | **Object Storage** |
 | Guest OS snapshot | **Backups** |
-| Managed SQL / Mongo / Redis instance | **Databases** |
+| Managed MySQL / PostgreSQL / MongoDB | **Databases** |
+| Browse / edit DB schema & rows | **Databases → Explorer** |
+| Wire DB into VPS / Docker / CKS | **Databases → Properties → Connect to…** |
+| Encrypted app credentials | **Secrets Manager** |
 | Scale HTTP/TCP frontends | **Load Balancers** |
-| Private addressing | **VPC** |
+| Private addressing / DB VPC path | **VPC** |
 | Hostnames & TLS | **DNS** |
 | Uptime monitors | **Health Checks** |
 | Port CIDR filters | **Firewall** |
 | OWASP edge WAF | **WAF** |
 | Fleet posture & modes | **Security Center** |
+| Who did what | **Audit Trail** |
 | Team / API access | **IAM** |
 | Live logs & alerts | **Log Service** |
 | Invoices & wallet | **Billing** |
+| Find any service | **Search bar** or **☰ menu** |
 
 ---
 
-*Document version: client feature guide for CloFix Cloud Console. Product names match the console navigation and service search.*
+*Document version: client feature guide for CloFix Cloud Console (updated for full service menu/search, Secrets Manager, Audit Trail, and Managed Databases Explorer / Properties / Connect / VPC TLS). Product names match the console navigation and service search.*
